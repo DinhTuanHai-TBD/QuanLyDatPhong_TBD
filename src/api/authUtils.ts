@@ -49,9 +49,19 @@ export function getUserRole(): UserRole {
 
   if (roleClaim) {
     const roleStr = String(roleClaim).toLowerCase()
-    if (roleStr.includes('admin') || roleStr.includes('quản trị')) return 'admin'
-    if (roleStr.includes('approver') || roleStr.includes('duyệt')) return 'approver'
-    if (roleStr.includes('staff') || roleStr.includes('cán bộ') || roleStr.includes('nhân viên')) return 'staff'
+    if (roleStr.includes('admin') || roleStr.includes('quản trị') || roleStr.includes('quantri')) return 'admin'
+    if (
+      roleStr.includes('approver') ||
+      roleStr.includes('manager') ||
+      roleStr.includes('staff') ||
+      roleStr.includes('quanly') ||
+      roleStr.includes('quản lý') ||
+      roleStr.includes('đào tạo') ||
+      roleStr.includes('daotao') ||
+      roleStr.includes('cán bộ') ||
+      roleStr.includes('nhân viên') ||
+      roleStr.includes('duyệt')
+    ) return 'approver'
     if (roleStr.includes('lecturer') || roleStr.includes('giảng viên')) return 'lecturer'
     if (roleStr.includes('student') || roleStr.includes('sinh viên')) return 'student'
   }
@@ -67,7 +77,14 @@ export function getUserRole(): UserRole {
   if (emailClaim) {
     const emailStr = String(emailClaim).toLowerCase();
     if (emailStr.includes('admin')) return 'admin'
-    if (emailStr.includes('approver')) return 'approver'
+    if (
+      emailStr.includes('quanly') ||
+      emailStr.includes('approver') ||
+      emailStr.includes('manager') ||
+      emailStr.includes('nhanvien') ||
+      emailStr.includes('staff') ||
+      emailStr.includes('daotao')
+    ) return 'approver'
   }
 
   return 'student' // Default fallback

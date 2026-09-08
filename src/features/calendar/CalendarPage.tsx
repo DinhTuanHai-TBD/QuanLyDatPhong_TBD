@@ -13,7 +13,7 @@ import { getOfficialRooms } from '../../utils/roomUtils'
 import dayjs from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
-import { CalendarOutlined, UnorderedListOutlined, AppstoreOutlined } from '@ant-design/icons'
+import { CalendarOutlined, UnorderedListOutlined, AppstoreOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
 
 dayjs.extend(isBetween)
 dayjs.extend(isSameOrAfter)
@@ -24,7 +24,13 @@ const { Title, Text } = Typography
 const { useBreakpoint } = Grid
 
 async function fetchRooms() {
-  return (await http.get<Room[]>('/api/rooms')).data
+  try {
+    return (await http.get<Room[]>('/api/rooms')).data
+  } catch {
+    const localStr = localStorage.getItem('tbd_admin_rooms')
+    if (localStr) return JSON.parse(localStr) as Room[]
+    return []
+  }
 }
 async function fetchBookings() {
   return (await http.get<Booking[]>('/api/bookings')).data
@@ -36,8 +42,13 @@ const isOverlapping = (b1: Booking, b2: Booking) => {
 
   const s1 = String(b1.status)
   const s2 = String(b2.status)
-  if (s1 === 'Cancelled' || s1 === 'Rejected' || s1 === '-1' || s1 === '2') return false
-  if (s2 === 'Cancelled' || s2 === 'Rejected' || s2 === '-1' || s2 === '2') return false
+  const reason1 = (b1.rejectReason || b1.rejectionReason || b1.adminNotes || '').toLowerCase()
+  const reason2 = (b2.rejectReason || b2.rejectionReason || b2.adminNotes || '').toLowerCase()
+  const isExp1 = s1 === 'Expired' || s1 === '3' || reason1.includes('hết hạn')
+  const isExp2 = s2 === 'Expired' || s2 === '3' || reason2.includes('hết hạn')
+
+  if (s1 === 'Cancelled' || s1 === 'Rejected' || s1 === '-1' || s1 === '2' || isExp1) return false
+  if (s2 === 'Cancelled' || s2 === 'Rejected' || s2 === '-1' || s2 === '2' || isExp2) return false
 
   const start1 = new Date(b1.startTime).getTime()
   const end1 = new Date(b1.endTime).getTime()
@@ -48,8 +59,12 @@ const isOverlapping = (b1: Booking, b2: Booking) => {
 }
 
 const getEventStatusGroup = (booking: Booking, allBookings: Booking[]) => {
+  if (booking.isSchoolOverride || booking.IsSchoolOverride) return 'school-schedule'
   const s = String(booking.status)
-  if (s === 'Completed' || s === 'Cancelled' || s === '-1') return 'completed'
+  const reason = (booking.rejectReason || booking.rejectionReason || booking.adminNotes || '').toLowerCase()
+  const isExp = s === 'Expired' || s === '3' || reason.includes('hết hạn')
+
+  if (s === 'Completed' || s === 'Cancelled' || s === '-1' || isExp) return 'completed'
   if (s === 'Rejected' || s === '2') return 'rejected'
   const hasOverlap = allBookings.some(other => isOverlapping(booking, other))
   if (hasOverlap) return 'rejected'
@@ -58,17 +73,19 @@ const getEventStatusGroup = (booking: Booking, allBookings: Booking[]) => {
   return 'completed'
 }
 
-const statusColors = {
+const statusColors: Record<string, string> = {
+  'school-schedule': '#1e3a8a',
   pending: '#f59e0b',
   approved: '#10b981',
   completed: '#94a3b8',
   rejected: '#ef4444'
 }
 
-const statusLabels = {
+const statusLabels: Record<string, string> = {
+  'school-schedule': 'TKB Nhà trường (Đã khóa)',
   pending: 'Chờ duyệt',
   approved: 'Đã duyệt / Đang dùng',
-  completed: 'Hoàn thành / Đã hủy',
+  completed: 'Hoàn thành / Đã hủy / Hết hạn',
   rejected: 'Từ chối / Trùng'
 }
 
@@ -78,6 +95,7 @@ export default function CalendarPage() {
   
   const [mode, setMode] = useState<'room' | 'week' | 'list'>('room')
   const [filterDate, setFilterDate] = useState<dayjs.Dayjs>(dayjs())
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left')
   const [filterBuilding, setFilterBuilding] = useState<string>('all')
   const [filterRoomType, setFilterRoomType] = useState<string>('all')
   const [filterMinCapacity, setFilterMinCapacity] = useState<number | null>(null)
@@ -116,7 +134,9 @@ export default function CalendarPage() {
     if (localStr) {
       try {
         localData = JSON.parse(localStr)
-      } catch (e) {}
+      } catch {
+        // ignore parse error
+      }
     }
     const apiData = bookingsQuery.data ?? []
     const combined = [...apiData]
@@ -181,8 +201,58 @@ export default function CalendarPage() {
 
   const handleSlotClick = (room: Room, startHour: number, startMinute: number) => {
     const start = filterDate.hour(startHour).minute(startMinute).second(0)
-    const end = start.add(1, 'hour')
-    navigate(`/bookings?roomId=${room.id}&start=${start.toISOString()}&end=${end.toISOString()}`)
+    const end = start.add(30, 'minute')
+    const sTime = start.toDate().getTime()
+    const eTime = end.toDate().getTime()
+
+    // Check if slot overlaps with an existing booking in this room
+    const conflictingBooking = filteredBookings.find(b => {
+      if (b.roomId !== room.id) return false
+      const s = String(b.status)
+      if (s === 'Cancelled' || s === 'Rejected' || s === '-1' || s === '2' || s === 'Expired' || s === '3') return false
+      const bStart = new Date(b.startTime).getTime()
+      const bEnd = new Date(b.endTime).getTime()
+      return sTime < bEnd && eTime > bStart
+    })
+
+    if (conflictingBooking) {
+      if (conflictingBooking.isSchoolOverride || conflictingBooking.IsSchoolOverride) {
+        Modal.warning({
+          title: 'Khung Giờ Đã Khóa Bởi Nhà Trường',
+          content: (
+            <div>
+              <p>
+                Phòng <strong>{room.name}</strong> trong khung giờ{' '}
+                <strong>
+                  {dayjs(conflictingBooking.startTime).format('HH:mm')} - {dayjs(conflictingBooking.endTime).format('HH:mm')}
+                </strong>{' '}
+                đã được phân bổ cho <strong>Lịch học / Thời khóa biểu chính khóa của Nhà trường</strong>.
+              </p>
+              <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#0f172a', margin: '8px 0' }}>
+                <div>🏛️ <strong>Học phần:</strong> {conflictingBooking.subjectCode ? `${conflictingBooking.subjectCode} - ` : ''}{conflictingBooking.purpose}</div>
+                {conflictingBooking.lecturerName && <div>👨‍🏫 <strong>Giảng viên:</strong> {conflictingBooking.lecturerName}</div>}
+                {conflictingBooking.semester && <div>📅 <strong>Học kỳ:</strong> {conflictingBooking.semester}</div>}
+              </div>
+              <p style={{ margin: 0, color: '#ef4444', fontSize: 12, fontWeight: 500 }}>
+                ⚠️ Ràng buộc hệ thống: Khung giờ có cờ IsSchoolOverride được ưu tiên tuyệt đối và đã khóa slot cố định. Sinh viên không thể đặt trùng.
+              </p>
+            </div>
+          ),
+          okText: 'Đã hiểu',
+        })
+        return
+      }
+
+      Modal.info({
+        title: 'Khung Giờ Đã Có Người Đặt',
+        content: `Phòng ${room.name} vào khung giờ này đã có người đăng ký (${conflictingBooking.purpose || 'Đã đặt'}). Vui lòng chọn khung giờ hoặc phòng khác.`,
+        okText: 'Đóng',
+      })
+      return
+    }
+
+    const defaultEnd = start.add(1, 'hour')
+    navigate(`/bookings?roomId=${room.id}&start=${start.toISOString()}&end=${defaultEnd.toISOString()}`)
   }
 
   const handleBookingClick = (booking: Booking) => {
@@ -357,6 +427,7 @@ export default function CalendarPage() {
         dataSource={sortedBookings} 
         rowKey="id"
         pagination={{ pageSize: 15 }}
+        scroll={{ x: 'max-content' }}
         onRow={(record) => ({
           onClick: () => handleBookingClick(record),
           style: { cursor: 'pointer' }
@@ -390,22 +461,48 @@ export default function CalendarPage() {
             { label: 'Danh sách', value: 'list', icon: <UnorderedListOutlined /> },
           ]} 
           value={mode} 
-          onChange={(val) => setMode(val as any)} 
+          onChange={(val) => {
+            setMode(val as any);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }} 
           size="large"
         />
       </div>
 
       <Card style={{ marginBottom: 24, borderRadius: 12 }}>
         <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} md={6} lg={4}>
+          <Col xs={24} sm={24} md={12} lg={6}>
             <Text strong>Ngày</Text>
-            <DatePicker 
-              value={filterDate} 
-              onChange={(d) => d && setFilterDate(d)} 
-              format="DD/MM/YYYY" 
-              style={{ width: '100%', marginTop: 8 }} 
-              allowClear={false}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+              <Button 
+                icon={<LeftOutlined />} 
+                onClick={() => {
+                  setSlideDirection('right')
+                  setFilterDate(prev => prev.subtract(1, 'day'))
+                }}
+                title="Lùi 1 ngày"
+              />
+              <DatePicker 
+                value={filterDate} 
+                onChange={(d) => {
+                  if (d) {
+                    setSlideDirection(d.isAfter(filterDate) ? 'left' : 'right')
+                    setFilterDate(d)
+                  }
+                }} 
+                format="DD/MM/YYYY" 
+                style={{ flex: 1 }} 
+                allowClear={false}
+              />
+              <Button 
+                icon={<RightOutlined />} 
+                onClick={() => {
+                  setSlideDirection('left')
+                  setFilterDate(prev => prev.add(1, 'day'))
+                }}
+                title="Tiến 1 ngày"
+              />
+            </div>
           </Col>
           <Col xs={24} sm={12} md={6} lg={4}>
             <Text strong>Tòa nhà</Text>
@@ -464,7 +561,7 @@ export default function CalendarPage() {
               options={[
                 { value: 'pending', label: 'Chờ duyệt' },
                 { value: 'approved', label: 'Đã duyệt / Đang dùng' },
-                { value: 'completed', label: 'Hoàn thành / Đã hủy' },
+                { value: 'completed', label: 'Hoàn thành / Đã hủy / Hết hạn' },
                 { value: 'rejected', label: 'Từ chối / Trùng' },
               ]}
               maxTagCount="responsive"
@@ -492,23 +589,32 @@ export default function CalendarPage() {
           <Space size="middle" align="center" style={{ flexWrap: 'wrap' }}>
             <Badge color="#f59e0b" text="Chờ duyệt" />
             <Badge color="#10b981" text="Đã duyệt/Đang dùng" />
-            <Badge color="#94a3b8" text="Hoàn thành/Đã hủy" />
+            <Badge color="#94a3b8" text="Hoàn thành/Đã hủy/Hết hạn" />
             <Badge color="#ef4444" text="Từ chối/Trùng" />
           </Space>
         </div>
       </Card>
 
-      {mode === 'room' && renderRoomView()}
-      {mode === 'week' && renderWeekView()}
-      {mode === 'list' && (
-        <Card style={{ borderRadius: 12, padding: 0 }} styles={{ body: { padding: 0 } }}>
-          {renderListView()}
-        </Card>
-      )}
+      <div
+        key={`${filterDate.format('YYYY-MM-DD')}-${mode}`}
+        className={slideDirection === 'left' ? 'calendar-slide-left' : 'calendar-slide-right'}
+      >
+        {mode === 'room' && renderRoomView()}
+        {mode === 'week' && renderWeekView()}
+        {mode === 'list' && (
+          <Card style={{ borderRadius: 12, padding: 0 }} styles={{ body: { padding: 0 } }}>
+            {renderListView()}
+          </Card>
+        )}
+      </div>
 
       {/* Booking Details Modal */}
       <Modal
-        title="Thông tin Đặt phòng"
+        title={
+          selectedBooking?.isSchoolOverride || selectedBooking?.IsSchoolOverride
+            ? "🏛️ Lịch Học / Thời Khóa Biểu Nhà Trường"
+            : "Thông tin Đặt phòng"
+        }
         open={!!selectedBooking}
         onCancel={() => setSelectedBooking(null)}
         footer={[
@@ -518,15 +624,52 @@ export default function CalendarPage() {
         {selectedBooking && (
           <Descriptions column={1} bordered size="small" style={{ marginTop: 16 }}>
             <Descriptions.Item label="Phòng">{selectedBooking.roomName || `Phòng ${selectedBooking.roomId}`}</Descriptions.Item>
-            <Descriptions.Item label="Mục đích">{selectedBooking.purpose || 'Không có'}</Descriptions.Item>
+            
+            {(selectedBooking.isSchoolOverride || selectedBooking.IsSchoolOverride) && (
+              <Descriptions.Item label="Phân loại">
+                <Tag color="#1e3a8a" style={{ fontWeight: 600 }}>
+                  🏛️ LỊCH HỌC CHÍNH KHÓA (KHÓA SLOT)
+                </Tag>
+              </Descriptions.Item>
+            )}
+
+            {selectedBooking.subjectCode && (
+              <Descriptions.Item label="Mã học phần">{selectedBooking.subjectCode}</Descriptions.Item>
+            )}
+
+            <Descriptions.Item label={selectedBooking.isSchoolOverride ? "Môn học / Mục đích" : "Mục đích"}>
+              {selectedBooking.purpose || 'Không có'}
+            </Descriptions.Item>
+
+            {selectedBooking.lecturerName && (
+              <Descriptions.Item label="Giảng viên phụ trách">{selectedBooking.lecturerName}</Descriptions.Item>
+            )}
+
+            {selectedBooking.semester && (
+              <Descriptions.Item label="Học kỳ áp dụng">{selectedBooking.semester}</Descriptions.Item>
+            )}
+
             <Descriptions.Item label="Thời gian">
               {dayjs(selectedBooking.startTime).format('HH:mm DD/MM/YYYY')} - {dayjs(selectedBooking.endTime).format('HH:mm DD/MM/YYYY')}
             </Descriptions.Item>
+
             <Descriptions.Item label="Trạng thái">
               <Tag color={statusColors[getEventStatusGroup(selectedBooking, localBookings)]}>
                 {statusLabels[getEventStatusGroup(selectedBooking, localBookings)]}
               </Tag>
             </Descriptions.Item>
+
+            {selectedBooking.department && (
+              <Descriptions.Item label="Đơn vị / Khoa">{selectedBooking.department}</Descriptions.Item>
+            )}
+
+            {(selectedBooking.rejectReason || selectedBooking.rejectionReason || selectedBooking.adminNotes) && (
+              <Descriptions.Item label="Ghi chú / Lý do">
+                <span style={{ color: '#b91c1c' }}>
+                  {selectedBooking.rejectReason || selectedBooking.rejectionReason || selectedBooking.adminNotes}
+                </span>
+              </Descriptions.Item>
+            )}
           </Descriptions>
         )}
       </Modal>

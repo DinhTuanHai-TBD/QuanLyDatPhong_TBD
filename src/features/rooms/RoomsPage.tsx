@@ -1,48 +1,78 @@
 import { 
-  EnvironmentOutlined, 
   ReloadOutlined, 
-  TeamOutlined, 
-  AppstoreOutlined,
-  CalendarOutlined,
   SearchOutlined
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Empty, Row, Space, Spin, Tag, Typography, Input, Select, Modal, Descriptions } from 'antd'
-import { InfoCircleOutlined, ToolOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Col, Empty, Row, Typography, Input, Select, Modal, Descriptions } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { http } from '../../api/http'
 import type { Room } from '../../types/room'
-import { getOfficialRooms } from '../../utils/roomUtils'
+import { getOfficialRooms, cleanupLocalStorageRooms, isFakeOrDisallowedRoom } from '../../utils/roomUtils'
 
-
-
-
-const statusLabels: Record<string, { label: string; color: string }> = { 
-  '0': { label: 'Đang sử dụng', color: 'green' }, 
-  '1': { label: 'Bảo trì', color: 'gold' }, 
-  '2': { label: 'Đóng', color: 'red' }, 
-  Active: { label: 'Đang sử dụng', color: 'green' }, 
-  Maintenance: { label: 'Bảo trì', color: 'gold' }, 
-  Closed: { label: 'Đóng', color: 'red' } 
-}
-
-async function fetchRooms() {
+async function fetchRooms(): Promise<Room[]> {
+  cleanupLocalStorageRooms()
   try {
-    return (await http.get<Room[]>('/api/rooms')).data
-  } catch (e) {
-    const localStr = localStorage.getItem('tbd_admin_rooms')
-    if (localStr) return JSON.parse(localStr) as Room[]
-    return getOfficialRooms()
+    const res = await http.get<Room[]>('/api/rooms')
+    if (Array.isArray(res.data) && res.data.length > 0) {
+      return res.data.filter((r) => !isFakeOrDisallowedRoom(r))
+    }
+  } catch {
+    // fallback
   }
+  const localStr = localStorage.getItem('tbd_admin_rooms')
+  if (localStr) {
+    try {
+      const parsed = JSON.parse(localStr)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((r: any) => !isFakeOrDisallowedRoom(r))
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return getOfficialRooms()
 }
-
-
-
 
 const getRoomImageUrl = (room: any) => {
   if (!room.imageUrl) return '';
   return room.imageUrl;
+};
+
+const getFormattedRoomType = (room: any) => {
+  const type = String(room._displayType || room.roomType || 'Phòng học').toLowerCase();
+  if (type.includes('lab')) return 'PHÒNG THỰC HÀNH LAB';
+  if (type.includes('hội trường')) return 'HỘI TRƯỜNG';
+  if (type.includes('cinema')) return 'PHÒNG CINEMA';
+  if (type.includes('nhóm')) return 'PHÒNG HỌC NHÓM';
+  return 'PHÒNG HỌC TIÊU CHUẨN';
+};
+
+const getRoomEquipments = (room: any, allEquipments: any[] = []) => {
+  const roomEquips = allEquipments
+    .filter((e: any) => e.roomId === room.id && e.status !== 'Maintenance' && e.status !== 'Broken')
+    .map((e: any) => e.name || e.type);
+  if (roomEquips.length > 0) {
+    return roomEquips.join(', ');
+  }
+  const type = String(room._displayType || room.roomType || '').toLowerCase();
+  if (type.includes('lab')) return 'Máy tính cấu hình cao, Máy chiếu, Điều hòa, Bảng từ';
+  if (type.includes('hội trường')) return 'Hệ thống âm thanh, Màn hình LED, Micro không dây, Điều hòa';
+  if (type.includes('cinema')) return 'Màn chiếu lớn, Âm thanh vòm, Điều hòa, Ghế rạp';
+  if (type.includes('nhóm')) return 'Bảng thông minh, Điều hòa, Wifi tốc độ cao';
+  return 'Máy chiếu, Điều hòa, Micro';
+};
+
+const isKhuA = (room: any) => {
+  const b = (room.building || '').toLowerCase();
+  const name = (room.name || '').toLowerCase();
+  return b.includes('a') || name.startsWith('a');
+};
+
+const isKhuB = (room: any) => {
+  const b = (room.building || '').toLowerCase();
+  const name = (room.name || '').toLowerCase();
+  return b.includes('b') || name.startsWith('b');
 };
 
 function RoomsPage() {
@@ -51,9 +81,8 @@ function RoomsPage() {
   const [searchText, setSearchText] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('All')
   const [buildingFilter, setBuildingFilter] = useState<string>('All')
+  const [quickTab, setQuickTab] = useState<'all' | 'khu-a' | 'khu-b'>('all')
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
-  const isLoggedIn = Boolean(localStorage.getItem('accessToken'))
-
 
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
@@ -64,8 +93,17 @@ function RoomsPage() {
     }
   })
   const apiRooms = roomsQuery.data ?? []
-  
   const rooms = getOfficialRooms(apiRooms)
+
+  const totalCount = rooms.length;
+  const countA = rooms.filter(isKhuA).length;
+  const countB = rooms.filter(isKhuB).length;
+
+  const handleSelectQuickTab = (tab: 'all' | 'khu-a' | 'khu-b') => {
+    setQuickTab(tab);
+    setTypeFilter('All');
+    setBuildingFilter('All');
+  };
 
   // Client side filtering for better UX
   const filteredRooms = rooms.filter((room) => {
@@ -77,6 +115,13 @@ function RoomsPage() {
       buildingStr.toLowerCase().includes(searchText.toLowerCase()) ||
       descStr.toLowerCase().includes(searchText.toLowerCase())
     
+    let matchesQuickTab = true
+    if (quickTab === 'khu-a') {
+      matchesQuickTab = isKhuA(room)
+    } else if (quickTab === 'khu-b') {
+      matchesQuickTab = isKhuB(room)
+    }
+
     let matchesType = typeFilter === 'All'
     if (!matchesType) {
       matchesType = (room as any)._displayType === typeFilter
@@ -87,18 +132,18 @@ function RoomsPage() {
       matchesBuilding = room.building === buildingFilter
     }
 
-    return matchesSearch && matchesType && matchesBuilding
+    return matchesSearch && matchesQuickTab && matchesType && matchesBuilding
   })
 
   return (
     <main className="app-content" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px' }}>
-      <div className="toolbar" style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+      <div className="toolbar" style={{ marginBottom: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
         <div>
           <Typography.Title level={2} style={{ color: '#0d2e5c', margin: 0, fontWeight: 800 }}>
             Thông tin phòng
           </Typography.Title>
           <Typography.Text type="secondary" style={{ fontSize: 15 }}>
-            Tra cứu sức chứa, loại phòng, thiết bị và trạng thái sử dụng tại các giảng đường của TBD.
+            Tra cứu sức chứa, phân loại, trang thiết bị sẵn có tại các giảng đường Đại học Thái Bình Dương.
           </Typography.Text>
         </div>
         <Button 
@@ -112,15 +157,88 @@ function RoomsPage() {
         </Button>
       </div>
 
-      
-      {/* Filter and Search Section */}
+      {/* Thanh Tab phân loại khu vực: Tất cả, Khu A, Khu B */}
+      <div 
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '8px 12px',
+          background: '#f8fafc',
+          borderRadius: 8,
+          border: '1px solid #e2e8f0',
+          marginBottom: 20,
+          overflowX: 'auto',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => handleSelectQuickTab('all')}
+          style={{
+            background: quickTab === 'all' ? '#0d2e5c' : 'transparent',
+            color: quickTab === 'all' ? '#ffffff' : '#475569',
+            border: 'none',
+            padding: '7px 16px',
+            borderRadius: 6,
+            fontWeight: quickTab === 'all' ? 700 : 500,
+            fontSize: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Tất cả ({totalCount})
+        </button>
+
+        <span style={{ color: '#cbd5e1', margin: '0 4px', userSelect: 'none' }}>|</span>
+
+        <button
+          type="button"
+          onClick={() => handleSelectQuickTab('khu-a')}
+          style={{
+            background: quickTab === 'khu-a' ? '#0d2e5c' : 'transparent',
+            color: quickTab === 'khu-a' ? '#ffffff' : '#475569',
+            border: 'none',
+            padding: '7px 16px',
+            borderRadius: 6,
+            fontWeight: quickTab === 'khu-a' ? 700 : 500,
+            fontSize: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Khu A ({countA})
+        </button>
+
+        <span style={{ color: '#cbd5e1', margin: '0 4px', userSelect: 'none' }}>|</span>
+
+        <button
+          type="button"
+          onClick={() => handleSelectQuickTab('khu-b')}
+          style={{
+            background: quickTab === 'khu-b' ? '#0d2e5c' : 'transparent',
+            color: quickTab === 'khu-b' ? '#ffffff' : '#475569',
+            border: 'none',
+            padding: '7px 16px',
+            borderRadius: 6,
+            fontWeight: quickTab === 'khu-b' ? 700 : 500,
+            fontSize: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Khu B ({countB})
+        </button>
+      </div>
+
+      {/* Bộ lọc và tìm kiếm */}
       <Card 
         style={{ 
           marginBottom: 32, 
-          borderRadius: 12, 
-          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.02)',
+          borderRadius: 10, 
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
           border: '1px solid #e2e8f0',
-          padding: '4px'
+          padding: '2px'
         }}
       >
         <Row gutter={[16, 16]} align="middle">
@@ -139,7 +257,10 @@ function RoomsPage() {
             <div style={{ display: 'flex', gap: 12 }}>
               <Select
                 value={buildingFilter}
-                onChange={(value) => setBuildingFilter(value)}
+                onChange={(value) => {
+                  setBuildingFilter(value)
+                  if (value !== 'All') setQuickTab('all')
+                }}
                 size="large"
                 style={{ width: '50%', borderRadius: 6 }}
                 options={[
@@ -150,7 +271,10 @@ function RoomsPage() {
               />
               <Select
                 value={typeFilter}
-                onChange={(value) => setTypeFilter(value)}
+                onChange={(value) => {
+                  setTypeFilter(value)
+                  if (value !== 'All') setQuickTab('all')
+                }}
                 size="large"
                 style={{ width: '50%', borderRadius: 6 }}
                 options={[
@@ -168,40 +292,80 @@ function RoomsPage() {
       </Card>
 
       {roomsQuery.isLoading ? (
-        <div className="rooms-loading" style={{ display: 'grid', placeItems: 'center', minHeight: 300 }}>
-          <Space orientation="vertical" align="center">
-            <Spin size="large" />
-            <Typography.Text type="secondary">Đang tải danh sách phòng học...</Typography.Text>
-          </Space>
-        </div>
+        <Row gutter={[24, 24]}>
+          {[1, 2, 3, 4, 5, 6].map((key) => (
+            <Col xs={24} sm={12} lg={8} key={key}>
+              <Card 
+                style={{
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  border: '1px solid #e2e8f0',
+                }}
+                cover={
+                  <div className="skeleton-card-loading" style={{ height: 195, borderRadius: '10px 10px 0 0' }} />
+                }
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div className="skeleton-shimmer-box" style={{ width: 140, height: 20, borderRadius: 4 }} />
+                  <div className="skeleton-shimmer-box" style={{ width: '60%', height: 24, borderRadius: 6, margin: '4px 0' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="skeleton-shimmer-box" style={{ width: '50%', height: 16, borderRadius: 4 }} />
+                    <div className="skeleton-shimmer-box" style={{ width: '55%', height: 16, borderRadius: 4 }} />
+                    <div className="skeleton-shimmer-box" style={{ width: '85%', height: 16, borderRadius: 4 }} />
+                  </div>
+                  <div className="skeleton-shimmer-box" style={{ width: '100%', height: 32, borderRadius: 4, marginTop: 4 }} />
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                    <div className="skeleton-shimmer-box" style={{ flex: 1, height: 38, borderRadius: 6 }} />
+                    <div className="skeleton-shimmer-box" style={{ flex: 1, height: 38, borderRadius: 6 }} />
+                  </div>
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
       ) : roomsQuery.isError ? (
         <Alert 
           showIcon 
           type="error" 
           title="Không thể kết nối máy chủ để lấy danh sách phòng" 
-          description="Vui lòng xác minh máy chủ backend ASP.NET Core đang hoạt động trên hệ thống và thử lại." 
+          description="Vui lòng xác minh máy chủ backend đang hoạt động trên hệ thống và thử lại." 
           style={{ borderRadius: 8 }}
         />
       ) : filteredRooms.length ? (
         <Row gutter={[24, 24]}>
           {filteredRooms.map((room) => {
-            const status = statusLabels[String(room.status)] ?? { label: String(room.status), color: 'default' }
-            const isAvailable = String(room.status) === '0' || room.status === 'Active'
             return (
               <Col xs={24} sm={12} lg={8} key={room.id}>
                 <Card 
-                  className="room-grid-card" 
+                  className="room-grid-card academic-room-card" 
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 10,
                     overflow: 'hidden',
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
                     border: '1px solid #e2e8f0',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+                    background: '#ffffff',
+                  }}
+                  styles={{
+                    body: {
+                      padding: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      flex: 1,
+                      justifyContent: 'space-between'
+                    }
                   }}
                   cover={
                     getRoomImageUrl(room) ? (
-                      <div style={{ height: 210, overflow: 'hidden', position: 'relative' }}>
+                      <div 
+                        style={{ height: 195, overflow: 'hidden', position: 'relative', cursor: 'pointer' }}
+                        onClick={() => setSelectedRoom(room)}
+                      >
                         <img 
                           src={getRoomImageUrl(room)} 
                           alt={`Phòng ${room.name}`} 
@@ -209,10 +373,10 @@ function RoomsPage() {
                             width: '100%', 
                             height: '100%', 
                             objectFit: 'cover',
-                            transition: 'transform 0.4s ease'
+                            transition: 'transform 0.35s ease'
                           }} 
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'scale(1.06)'
+                            e.currentTarget.style.transform = 'scale(1.05)'
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.transform = 'scale(1)'
@@ -220,104 +384,123 @@ function RoomsPage() {
                         />
                       </div>
                     ) : (
-                      <div className="room-empty-image" style={{ height: 210, background: '#f1f5f9', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        <AppstoreOutlined style={{ fontSize: 48, color: '#94a3b8' }} />
+                      <div 
+                        className="room-empty-image" 
+                        style={{ 
+                          height: 160, 
+                          background: '#f8fafc', 
+                          borderBottom: '1px solid #f1f5f9',
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          justifyContent: 'center', 
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          padding: '16px',
+                          textAlign: 'center'
+                        }}
+                        onClick={() => setSelectedRoom(room)}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#0d2e5c', letterSpacing: '0.8px' }}>
+                          ĐẠI HỌC THÁI BÌNH DƯƠNG
+                        </span>
+                        <span style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                          Cơ sở Đào tạo Pasteur - Nha Trang
+                        </span>
                       </div>
                     )
                   }
                 >
-                  <Space orientation="vertical" size={12} style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>
-                          {(room as any)._displayType} {(room as any)._displayNote && <span style={{ marginLeft: 4, color: '#64748b', fontWeight: 'normal', fontSize: 12 }}>({(room as any)._displayNote})</span>}
-                        </Tag>
-                        <Tag color={status.color} style={{ borderRadius: 4, fontWeight: 600 }}>
-                          {status.label}
-                        </Tag>
-                      </div>
-
-                      <Typography.Title level={4} style={{ color: '#0d2e5c', margin: '0 0 10px', fontWeight: 750 }}>
-                        {room.name}
-                      </Typography.Title>
-
-                      <div className="room-card-meta" style={{ display: 'flex', flexDirection: 'column', gap: 6, color: '#475569', fontSize: 14, marginBottom: 12 }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <TeamOutlined style={{ color: '#64748b' }} /> 
-                          <span>Sức chứa: <strong>{room.capacity}</strong> người</span>
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <EnvironmentOutlined style={{ color: '#64748b' }} /> 
-                          <span>Khu vực: {room.building ?? 'Cơ sở Pasteur, Nha Trang'}</span>
-                        </span>
-                      </div>
-
-                      <Typography.Paragraph 
-                        ellipsis={{ rows: 2 }} 
-                        style={{ color: '#64748b', fontSize: 13, lineHeight: '1.5', margin: 0 }}
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    {/* 1. Loại phòng: Tag chữ in hoa nhỏ màu xám nhạt (BỎ HOÀN TOÀN NHÃN TRẠNG THÁI) */}
+                    <div style={{ marginBottom: 8 }}>
+                      <span 
+                        style={{
+                          display: 'inline-block',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: '#475569',
+                          background: '#f1f5f9',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 4,
+                          padding: '2px 8px',
+                          letterSpacing: '0.5px'
+                        }}
                       >
-                        {room.description ?? 'Phòng học tiêu chuẩn được trang bị hệ thống máy chiếu hiện đại, máy điều hòa công suất lớn, âm thanh sắc nét.'}
-                      </Typography.Paragraph>
+                        {getFormattedRoomType(room)}
+                      </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                      <Button 
-                        icon={<InfoCircleOutlined />}
-                        onClick={() => setSelectedRoom(room)}
-                        style={{ 
-                          flex: '1 1 calc(33% - 6px)', 
-                          height: 40,
-                          fontWeight: 600,
-                          borderRadius: 6,
-                        }}
-                      >
-                        Chi tiết
-                      </Button>
-                      <Button 
-                        danger
-                        icon={<ToolOutlined />}
-                        onClick={() => {
-                          const target = `/report-issue?roomId=${room.id}`;
-                          if (isLoggedIn) {
-                            navigate(target);
-                          } else {
-                            navigate(`/login?redirect=${encodeURIComponent(target)}`);
-                          }
-                        }}
-                        style={{ 
-                          flex: '1 1 calc(33% - 6px)', 
-                          height: 40,
-                          fontWeight: 600,
-                          borderRadius: 6,
-                        }}
-                      >
-                        Sự cố
-                      </Button>
-                      <Button 
-                        type={isAvailable ? "primary" : "dashed"}
-                        disabled={!isAvailable}
-                        icon={<CalendarOutlined />}
-                        onClick={() => {
-                          const target = `/bookings?roomId=${room.id}`;
-                          if (isLoggedIn) {
-                            navigate(target)
-                          } else {
-                            navigate(`/login?redirect=${encodeURIComponent(target)}`)
-                          }
-                        }}
-                        style={{ 
-                          flex: '1 1 calc(33% - 6px)', 
-                          height: 40,
-                          fontWeight: 600,
-                          borderRadius: 6,
-                          background: isAvailable ? '#0d2e5c' : undefined,
-                          borderColor: isAvailable ? '#0d2e5c' : undefined,
-                        }}
-                      >
-                        Đặt phòng
-                      </Button>
+                    {/* 2. Mã phòng: Tiêu đề in đậm to rõ nét màu xanh Navy TBD #0d2e5c */}
+                    <Typography.Title 
+                      level={3} 
+                      style={{ 
+                        color: '#0d2e5c', 
+                        margin: '0 0 12px 0', 
+                        fontWeight: 800, 
+                        fontSize: 22,
+                        cursor: 'pointer' 
+                      }}
+                      onClick={() => setSelectedRoom(room)}
+                    >
+                      {room.name}
+                    </Typography.Title>
+
+                    {/* 3. Thông số phòng thuần chữ (Typography) */}
+                    <div style={{ fontSize: 13.5, color: '#475569', marginBottom: 12, lineHeight: 1.6 }}>
+                      <span>Sức chứa: <strong style={{ color: '#0f172a' }}>{room.capacity} người</strong></span>
+                      <span style={{ margin: '0 8px', color: '#94a3b8' }}>•</span>
+                      <span>Khu vực: <strong style={{ color: '#0f172a' }}>{room.building ?? 'Khu A'}</strong></span>
+                      <span style={{ margin: '0 8px', color: '#94a3b8' }}>•</span>
+                      <span>Thiết bị: <span style={{ color: '#334155' }}>{getRoomEquipments(room, equipmentsQuery.data)}</span></span>
                     </div>
-                  </Space>
+
+                    {/* Mô tả ngắn về phòng */}
+                    <Typography.Paragraph 
+                      ellipsis={{ rows: 2 }} 
+                      style={{ color: '#64748b', fontSize: 13, lineHeight: '1.5', margin: '0 0 16px 0' }}
+                    >
+                      {room.description && room.description !== room.name
+                        ? room.description 
+                        : 'Phòng học tiêu chuẩn trang bị đầy đủ máy chiếu, điều hòa và hệ thống âm thanh phục vụ giảng dạy.'}
+                    </Typography.Paragraph>
+                  </div>
+
+                  {/* 4. Bố trí 2 Nút Thao Tác Chữ Rõ Ràng dưới chân mỗi thẻ */}
+                  <div style={{ display: 'flex', gap: 10, marginTop: 'auto', paddingTop: 10 }}>
+                    <Button 
+                      type="primary"
+                      onClick={() => navigate('/bookings?roomId=' + room.id)}
+                      style={{ 
+                        flex: 1, 
+                        height: 38,
+                        fontWeight: 600,
+                        fontSize: 13.5,
+                        borderRadius: 6,
+                        background: '#0d2e5c',
+                        borderColor: '#0d2e5c',
+                        color: '#ffffff',
+                        boxShadow: 'none'
+                      }}
+                    >
+                      Đặt phòng này
+                    </Button>
+                    <Button 
+                      onClick={() => navigate('/calendar?roomId=' + room.id)}
+                      style={{ 
+                        flex: 1, 
+                        height: 38,
+                        fontWeight: 600,
+                        fontSize: 13.5,
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        color: '#334155',
+                        background: '#ffffff',
+                        boxShadow: 'none'
+                      }}
+                    >
+                      Xem lịch phòng
+                    </Button>
+                  </div>
                 </Card>
               </Col>
             )
@@ -334,6 +517,7 @@ function RoomsPage() {
         />
       )}
       
+      {/* Modal chi tiết khi người dùng nhấn vào phòng */}
       <Modal
         title="Thông tin chi tiết phòng"
         open={selectedRoom !== null}
@@ -342,36 +526,22 @@ function RoomsPage() {
         footer={[
           <Button key="close" onClick={() => setSelectedRoom(null)}>Đóng</Button>,
           <Button 
-            key="report"
-            danger
-            icon={<ToolOutlined />}
+            key="calendar"
             onClick={() => {
               if (selectedRoom) {
-                const target = `/report-issue?roomId=${selectedRoom.id}`;
-                if (isLoggedIn) {
-                  navigate(target);
-                } else {
-                  navigate(`/login?redirect=${encodeURIComponent(target)}`);
-                }
+                navigate('/calendar?roomId=' + selectedRoom.id);
               }
             }}
           >
-            Báo sự cố
+            Xem lịch phòng
           </Button>,
           <Button 
             key="book" 
             type="primary" 
-            icon={<CalendarOutlined />}
             style={{ background: '#0d2e5c', borderColor: '#0d2e5c' }}
-            disabled={selectedRoom ? (String(selectedRoom.status) !== '0' && selectedRoom.status !== 'Active') : false}
             onClick={() => {
               if (selectedRoom) {
-                const target = `/bookings?roomId=${selectedRoom.id}`;
-                if (isLoggedIn) {
-                  navigate(target)
-                } else {
-                  navigate(`/login?redirect=${encodeURIComponent(target)}`)
-                }
+                navigate('/bookings?roomId=' + selectedRoom.id);
               }
             }}
           >
@@ -382,44 +552,33 @@ function RoomsPage() {
         {selectedRoom && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {selectedRoom.imageUrl && (
-              <div style={{ width: '100%', height: 300, borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden' }}>
                 <img src={selectedRoom.imageUrl} alt={selectedRoom.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             )}
             <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label="Mã/Tên phòng"><strong>{selectedRoom.name}</strong></Descriptions.Item>
-              <Descriptions.Item label="Loại phòng">{(selectedRoom as any)._displayType} {(selectedRoom as any)._displayNote ? `(${(selectedRoom as any)._displayNote})` : ''}</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái">
-                <Tag color={statusLabels[String(selectedRoom.status)]?.color || 'default'}>
-                  {statusLabels[String(selectedRoom.status)]?.label || String(selectedRoom.status)}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Khu vực/Tòa nhà">{selectedRoom.building || 'Không có'}{selectedRoom.floor ? ` - Tầng ${selectedRoom.floor}` : ''}</Descriptions.Item>
+              <Descriptions.Item label="Mã phòng"><strong>{selectedRoom.name}</strong></Descriptions.Item>
+              <Descriptions.Item label="Loại phòng">{getFormattedRoomType(selectedRoom)}</Descriptions.Item>
+              <Descriptions.Item label="Khu vực/Tòa nhà">{selectedRoom.building || 'Khu A'}{selectedRoom.floor ? ` - Tầng ${selectedRoom.floor}` : ''}</Descriptions.Item>
               <Descriptions.Item label="Sức chứa">{selectedRoom.capacity} người</Descriptions.Item>
-              <Descriptions.Item label="Mô tả">{selectedRoom.description || 'Không có'}</Descriptions.Item>
+              <Descriptions.Item label="Trang bị sẵn có">{getRoomEquipments(selectedRoom, equipmentsQuery.data)}</Descriptions.Item>
+              <Descriptions.Item label="Mô tả">{selectedRoom.description || 'Phòng học tiêu chuẩn Đại học Thái Bình Dương'}</Descriptions.Item>
               {selectedRoom.openTime && <Descriptions.Item label="Giờ mở cửa">{selectedRoom.openTime}</Descriptions.Item>}
               {selectedRoom.closeTime && <Descriptions.Item label="Giờ đóng cửa">{selectedRoom.closeTime}</Descriptions.Item>}
-              {equipmentsQuery.data && equipmentsQuery.data.filter((e: any) => e.roomId === selectedRoom.id && e.status !== 'Maintenance' && e.status !== 'Broken').length > 0 && (
-                <Descriptions.Item label="Thiết bị có sẵn">
-                  {equipmentsQuery.data.filter((e: any) => e.roomId === selectedRoom.id && e.status !== 'Maintenance' && e.status !== 'Broken').map((e: any) => e.type).join(', ')}
-                </Descriptions.Item>
-              )}
             </Descriptions>
             
             <div style={{ marginTop: 8, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
               <Typography.Text strong style={{ display: 'block', marginBottom: 8, color: '#334155' }}>
-                Nội quy sử dụng phòng:
+                Nội quy sử dụng phòng học:
               </Typography.Text>
               <ul style={{ paddingLeft: 20, margin: 0, fontSize: 13, color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <li>Sử dụng đúng mục đích đã đăng ký.</li>
-                <li>Không tự ý chuyển phòng hoặc chuyển quyền sử dụng.</li>
-                <li>Không vượt quá sức chứa.</li>
-                <li>Giữ vệ sinh và trật tự.</li>
-                <li>Không tự ý di chuyển thiết bị.</li>
-                <li>Tuân thủ quy định đồ ăn và thức uống của từng phòng.</li>
-                <li>Tắt điện, điều hòa và thiết bị sau khi sử dụng.</li>
-                <li>Báo ngay khi xảy ra sự cố.</li>
-                <li>Người đặt chịu trách nhiệm đối với hư hỏng do sử dụng sai.</li>
+                <li>Không tự ý chuyển phòng hoặc chuyển quyền sử dụng cho người khác.</li>
+                <li>Không tập trung vượt quá sức chứa cho phép.</li>
+                <li>Giữ gìn vệ sinh chung, không mang đồ ăn có mùi vào phòng.</li>
+                <li>Không tự ý tháo lắp, di chuyển trang thiết bị cố định.</li>
+                <li>Tắt toàn bộ hệ thống điện, điều hòa và máy chiếu khi rời phòng.</li>
+                <li>Báo cáo ngay cho Ban quản trị thiết bị khi xảy ra sự cố kỹ thuật.</li>
               </ul>
             </div>
           </div>
@@ -430,5 +589,6 @@ function RoomsPage() {
 }
 
 export default RoomsPage
+
 
 

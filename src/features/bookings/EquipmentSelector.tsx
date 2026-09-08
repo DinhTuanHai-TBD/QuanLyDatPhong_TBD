@@ -18,6 +18,79 @@ interface EquipmentSelectorProps {
   selectedRoomId: number | null;
 }
 
+const DEFAULT_EQUIPMENTS: EquipmentItem[] = [
+  {
+    id: 101,
+    code: 'EQ-MC-001',
+    name: 'Micro không dây Shure (Bộ 2 mic)',
+    type: 'Microphone',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 10,
+    status: 'Active'
+  },
+  {
+    id: 102,
+    code: 'EQ-SP-002',
+    name: 'Loa kéo công suất lớn 500W',
+    type: 'Sound System',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 5,
+    status: 'Active'
+  },
+  {
+    id: 103,
+    code: 'EQ-PJ-003',
+    name: 'Máy chiếu di động Panasonic PT-LB386',
+    type: 'Projector',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 4,
+    status: 'Active'
+  },
+  {
+    id: 104,
+    code: 'EQ-CAM-004',
+    name: 'Webcam/Camera họp & giảng dạy trực tuyến HD',
+    type: 'Camera',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 6,
+    status: 'Active'
+  },
+  {
+    id: 105,
+    code: 'EQ-BO-005',
+    name: 'Bảng di động Flipchart / Bảng phụ',
+    type: 'Board',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 8,
+    status: 'Active'
+  },
+  {
+    id: 106,
+    code: 'EQ-EXT-006',
+    name: 'Ổ cắm điện kéo dài (Dây 10m)',
+    type: 'Extension Cord',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 12,
+    status: 'Active'
+  },
+  {
+    id: 107,
+    code: 'EQ-PRES-007',
+    name: 'Bút trình chiếu Laser (Presenter)',
+    type: 'Presenter',
+    roomId: null,
+    roomName: 'Kho thiết bị dùng chung',
+    quantity: 15,
+    status: 'Active'
+  }
+];
+
 export const EquipmentSelector: React.FC<EquipmentSelectorProps> = ({
   value = [],
   onChange,
@@ -94,7 +167,29 @@ export const EquipmentSelector: React.FC<EquipmentSelectorProps> = ({
   };
 
   const allowedEquipments = useMemo(() => {
-    return equipments.filter(e => e.roomId === null || e.roomId === selectedRoomId);
+    const fetched = Array.isArray(equipments) ? equipments : [];
+    
+    // Combine fetched equipment with DEFAULT_EQUIPMENTS to ensure shared items are always available
+    const combinedMap = new Map<string, EquipmentItem>();
+    
+    // Seed default shared items (Kho thiết bị dùng chung)
+    DEFAULT_EQUIPMENTS.forEach(eq => {
+      combinedMap.set(eq.code || eq.name, eq);
+    });
+    
+    // Add or override with fetched items
+    fetched.forEach(eq => {
+      combinedMap.set(eq.code || eq.name, eq);
+    });
+
+    const allList = Array.from(combinedMap.values());
+
+    return allList.filter(e => {
+      if (e.status === 'Disposed') return false;
+      const isShared = e.roomId === null || e.roomId === undefined || e.roomId === 0 || !e.roomId || (e.roomName && e.roomName.toLowerCase().includes('dùng chung'));
+      const isCurrentRoom = selectedRoomId ? String(e.roomId) === String(selectedRoomId) : false;
+      return isShared || isCurrentRoom;
+    });
   }, [equipments, selectedRoomId]);
 
   if (!startTime || !endTime) {

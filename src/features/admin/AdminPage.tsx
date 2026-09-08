@@ -1,8 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Typography,
-  Tabs,
-  Spin,
   Table,
   Button,
   Tag,
@@ -12,43 +10,40 @@ import {
   Input,
   Select,
   InputNumber,
-  message,
+  App,
   Popconfirm,
   Card,
   Row,
   Col,
-  Statistic,
-  Badge,
-  Tooltip,
   Switch,
   Descriptions,
+  Segmented,
+  Skeleton,
+  Empty,
+  Drawer,
+  Divider,
+  Spin,
 } from "antd";
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  EditOutlined,
-  DeleteOutlined,
   PlusOutlined,
   SearchOutlined,
   ReloadOutlined,
-  EyeOutlined,
-  DashboardOutlined,
-  HomeOutlined,
-  CalendarOutlined,
-  ToolOutlined,
-  TeamOutlined,
-  SettingOutlined,
   UserAddOutlined,
   CheckOutlined,
+  AppstoreOutlined,
+  UnorderedListOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { http } from "../../api/http";
 import { getUserRole } from "../../api/authUtils";
 import AnalyticsDashboard from "./AnalyticsDashboard";
+import SemesterScheduleModal from "./SemesterScheduleModal";
+import SemesterScheduleView from "./SemesterScheduleView";
 import type { Room } from "../../types/room";
 import type { Booking, BookingStatus } from "../../types/booking";
 import dayjs from "dayjs";
-import { getOfficialRooms } from "../../utils/roomUtils";
+import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking } from "../../utils/bookingStatusUtils";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -84,35 +79,65 @@ export interface EquipmentItem {
   issueNotes?: string;
 }
 
-interface AccountItem {
+export interface AccountItem {
+  id?: string | number;
   email: string;
   department: string;
-  role: string;
+  role: "Admin" | "Faculty" | "Staff" | "User" | string;
   fullName?: string;
+  phoneNumber?: string;
   phone?: string;
+  userCode?: string;
+  isProfileComplete?: boolean;
+  isLocked?: boolean;
+  password?: string;
 }
 
 export default function AdminPage() {
+  const { message } = App.useApp();
   const activeUserRole = getUserRole();
   const isAdmin = activeUserRole === "admin";
+  const isApprover = activeUserRole === "approver";
+  const canAccess = isAdmin || isApprover;
+  const canManageSchedule = isAdmin || isApprover;
+  const currentUserEmail = localStorage.getItem("userEmail") || (isAdmin ? "admin@tbd.edu.vn" : "quanly@tbd.edu.vn");
+  const currentUserName = isAdmin ? "Quản trị viên (Admin)" : "Quản lý Đào tạo & CSVC";
   const queryClient = useQueryClient();
 
   // Active Tab
   const [activeTab, setActiveTab] = useState("analytics");
+  const [isSemesterScheduleModalOpen, setIsSemesterScheduleModalOpen] = useState(false);
+
+  // Safeguard: non-admin users cannot access user management or configuration
+  useEffect(() => {
+    if (!isAdmin && (activeTab.startsWith("users") || activeTab.startsWith("settings"))) {
+      setActiveTab("analytics");
+    }
+  }, [isAdmin, activeTab]);
 
   // Search & Filters state
   const [roomSearch, setRoomSearch] = useState("");
   const [roomBuildingFilter, setRoomBuildingFilter] = useState("all");
+  const [roomTypeFilter, setRoomTypeFilter] = useState("all");
+  const [roomViewMode, setRoomViewMode] = useState<"table" | "grid">("grid");
+
   const [bookingSearch, setBookingSearch] = useState("");
   const [bookingStatusFilter, setBookingStatusFilter] = useState("all");
+
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("all");
-  const [equipmentSearch, setEquipmentSearch] = useState("");
 
-  // Modals state
+  const [equipmentSearch, setEquipmentSearch] = useState("");
+  const [issueStatusFilter, setIssueStatusFilter] = useState("all");
+  const [issueSeverityFilter, setIssueSeverityFilter] = useState("all");
+
+  // Modals & Drawers state
   const [isRoomModalVisible, setIsRoomModalVisible] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [roomForm] = Form.useForm();
+
+  const [isRoomEquipmentDrawerVisible, setIsRoomEquipmentDrawerVisible] = useState(false);
+  const [selectedRoomForEquip, setSelectedRoomForEquip] = useState<Room | null>(null);
 
   const [isBookingDetailModalVisible, setIsBookingDetailModalVisible] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -132,196 +157,153 @@ export default function AdminPage() {
   const [isUserModalVisible, setIsUserModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<AccountItem | null>(null);
   const [userForm] = Form.useForm();
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
 
-  // Config State
-  const [systemConfig, setSystemConfig] = useState({
-    maxAdvanceDays: 14,
-    maxHoursPerBooking: 4,
-    autoApproveClassroom: false,
-    requireSpecialJustification: true,
-    operatingHours: "07:00 - 21:00",
+  // System Config State
+  const [systemConfig, setSystemConfig] = useState(() => {
+    const localStr = localStorage.getItem("tbd_system_config");
+    if (localStr) {
+      try {
+        return JSON.parse(localStr);
+      } catch {
+        // fallback
+      }
+    }
+    return {
+      maxAdvanceDays: 14,
+      maxHoursPerBooking: 4,
+      cancelBeforeHours: 2,
+      autoApproveClassroom: false,
+      requireSpecialJustification: true,
+      operatingHours: "07:00 - 21:00",
+    };
   });
 
-  // Queries
+  // Clean up legacy mock/seed localStorage keys
+  useEffect(() => {
+    const legacyKeys = [
+      "tbd_accounts",
+      "tbd_equipments",
+      "tbd_admin_equipment_issues",
+      "tbd_admin_rooms",
+    ];
+    legacyKeys.forEach((key) => {
+      localStorage.removeItem(key);
+    });
+  }, []);
+
+  // Queries - 100% Real API Data from Database
   const roomsQuery = useQuery({
     queryKey: ["rooms"],
     queryFn: async () => {
-      try {
-        const res = await http.get<Room[]>("/api/rooms");
-        return getOfficialRooms(res.data);
-      } catch {
-        const localStr = localStorage.getItem("tbd_admin_rooms");
-        return getOfficialRooms(localStr ? JSON.parse(localStr) : []);
+      const res = await http.get<Room[]>("/api/rooms");
+      if (Array.isArray(res.data)) {
+        return res.data;
       }
+      if (res.data && Array.isArray((res.data as any).data)) {
+        return (res.data as any).data;
+      }
+      return [];
     },
   });
 
   const bookingsQuery = useQuery({
     queryKey: ["bookings"],
     queryFn: async () => {
+      let list: Booking[] = [];
       try {
         const res = await http.get<Booking[]>("/api/bookings");
-        return res.data;
-      } catch {
-        const localStr = localStorage.getItem("tbd_admin_bookings");
-        return localStr ? JSON.parse(localStr) : [];
+        if (Array.isArray(res.data)) {
+          list = res.data;
+        } else if (res.data && Array.isArray((res.data as any).data)) {
+          list = (res.data as any).data;
+        }
+      } catch (e) {
+        console.warn("Could not fetch API bookings:", e);
       }
+
+      const localStr = localStorage.getItem("tbd_admin_bookings");
+      if (localStr) {
+        try {
+          const localList: Booking[] = JSON.parse(localStr);
+          localList.forEach((local) => {
+            const idx = list.findIndex((b) => b.id === local.id);
+            if (idx > -1) {
+              list[idx] = { ...list[idx], ...local };
+            } else {
+              list.push(local);
+            }
+          });
+        } catch {}
+      }
+
+      return list;
     },
+  });
+
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications", "admin"],
+    queryFn: async () => {
+      try {
+        const res = await http.get("/api/notifications");
+        if (Array.isArray(res.data)) return res.data;
+        if (res.data && Array.isArray(res.data.data)) return res.data.data;
+        if (res.data && Array.isArray(res.data.items)) return res.data.items;
+      } catch {
+        // fallback
+      }
+      return [];
+    },
+    refetchInterval: 15000,
   });
 
   const issuesQuery = useQuery({
     queryKey: ["equipment-issues"],
     queryFn: async () => {
-      const localStr = localStorage.getItem("tbd_admin_equipment_issues");
-      if (localStr) {
-        try {
-          return JSON.parse(localStr) as EquipmentIssue[];
-        } catch {
-          // fallback
-        }
+      const res = await http.get<EquipmentIssue[]>("/api/issues");
+      if (Array.isArray(res.data)) {
+        return res.data;
       }
-      // Demo initial issues if empty
-      return [
-        {
-          id: 101,
-          roomId: 1,
-          roomName: "A.101 - Phòng máy tính",
-          equipmentId: 1,
-          equipmentName: "Máy chiếu Panasonic",
-          userEmail: "gv_nguyenvana@tbd.edu.vn",
-          description: "Máy chiếu bị mờ hình và nhấp nháy liên tục khi bật",
-          imageUrl: null,
-          severity: "Medium",
-          status: "Pending",
-          assignedTo: null,
-          repairNotes: null,
-          createdAt: dayjs().subtract(1, "day").toISOString(),
-          updatedAt: dayjs().subtract(1, "day").toISOString(),
-        },
-        {
-          id: 102,
-          roomId: 2,
-          roomName: "B.202 - Phòng học Lý thuyết",
-          equipmentId: 2,
-          equipmentName: "Điều hòa Daikin",
-          userEmail: "sv_tranvanb@tbd.edu.vn",
-          description: "Điều hòa chảy nước và không có hơi lạnh",
-          imageUrl: null,
-          severity: "High",
-          status: "Fixing",
-          assignedTo: "Kỹ thuật viên Nguyễn Văn Bình",
-          repairNotes: "Đang thay thế block lạnh",
-          createdAt: dayjs().subtract(2, "days").toISOString(),
-          updatedAt: dayjs().subtract(1, "hour").toISOString(),
-        },
-      ] as EquipmentIssue[];
+      if (res.data && Array.isArray((res.data as any).data)) {
+        return (res.data as any).data;
+      }
+      return [];
     },
   });
 
   const equipmentsQuery = useQuery({
     queryKey: ["equipments"],
     queryFn: async () => {
-      const localStr = localStorage.getItem("tbd_equipments");
-      if (localStr) {
-        try {
-          return JSON.parse(localStr) as EquipmentItem[];
-        } catch {
-          // fallback
-        }
+      const res = await http.get<EquipmentItem[]>("/api/equipments");
+      if (Array.isArray(res.data)) {
+        return res.data;
       }
-      return [
-        {
-          id: 1,
-          code: "EQ-PJ-001",
-          name: "Máy chiếu Panasonic PT-LB386",
-          type: "Projector",
-          roomId: 1,
-          roomName: "A.101",
-          quantity: 2,
-          status: "Active",
-          purchaseDate: "2023-05-10",
-        },
-        {
-          id: 2,
-          code: "EQ-AC-002",
-          name: "Điều hòa Daikin Inverter 2.5 HP",
-          type: "Air Conditioner",
-          roomId: 2,
-          roomName: "B.202",
-          quantity: 2,
-          status: "Maintenance",
-          issueNotes: "Đang kiểm tra rò rỉ gas",
-        },
-        {
-          id: 3,
-          code: "EQ-SP-003",
-          name: "Hệ thống âm thanh không dây JBL",
-          type: "Sound System",
-          roomId: null,
-          roomName: "Kho thiết bị dùng chung",
-          quantity: 5,
-          status: "Active",
-          purchaseDate: "2024-01-15",
-        },
-        {
-          id: 4,
-          code: "EQ-MC-004",
-          name: "Micro không dây Shure SVX288",
-          type: "Microphone",
-          roomId: null,
-          roomName: "Kho thiết bị dùng chung",
-          quantity: 8,
-          status: "Active",
-        },
-      ] as EquipmentItem[];
+      if (res.data && Array.isArray((res.data as any).data)) {
+        return (res.data as any).data;
+      }
+      return [];
     },
   });
 
   const accountsQuery = useQuery({
     queryKey: ["accounts"],
     queryFn: async () => {
-      const localStr = localStorage.getItem("tbd_accounts");
-      if (localStr) {
-        try {
-          return JSON.parse(localStr) as AccountItem[];
-        } catch {
-          // fallback
-        }
+      const res = await http.get<AccountItem[]>("/api/auth/users");
+      if (Array.isArray(res.data)) {
+        return res.data;
       }
-      return [
-        {
-          email: "admin@tbd.edu.vn",
-          department: "Ban BQL & Quản trị hệ thống",
-          role: "admin",
-          fullName: "Quản trị viên Hệ thống",
-          phone: "0258 3727 147",
-        },
-        {
-          email: "pheduyet@tbd.edu.vn",
-          department: "Ban Quản lý Phòng học & Đào tạo",
-          role: "approver",
-          fullName: "Cán bộ Phê duyệt Đào tạo",
-          phone: "0905 123 456",
-        },
-        {
-          email: "gv_nguyenvana@tbd.edu.vn",
-          department: "Khoa Công nghệ Thông tin",
-          role: "lecturer",
-          fullName: "TS. Nguyễn Văn A",
-          phone: "0912 345 678",
-        },
-        {
-          email: "sv_tranvanb@tbd.edu.vn",
-          department: "Khoa Du lịch & Khách sạn",
-          role: "student",
-          fullName: "Trần Văn B (MSSV: 2200101)",
-          phone: "0987 654 321",
-        },
-      ] as AccountItem[];
+      if (res.data && Array.isArray((res.data as any).data)) {
+        return (res.data as any).data;
+      }
+      if (res.data && Array.isArray((res.data as any).items)) {
+        return (res.data as any).items;
+      }
+      return [];
     },
+    enabled: isAdmin,
   });
 
-  // Booking Mutations
+  // Booking Status Mutation
   const updateBookingStatus = async ({
     id,
     status,
@@ -331,199 +313,297 @@ export default function AdminPage() {
     status: BookingStatus;
     notes?: string;
   }) => {
-    try {
-      await http.put(`/api/bookings/${id}/${String(status).toLowerCase()}`, {
-        notes,
-        rejectReason: notes,
+    const action = String(status).toLowerCase() === "approved" || status === "Approved" ? "approve" : "reject";
+    if (action === "approve") {
+      await http.put(`/api/bookings/${id}/approve`, {
+        notes: notes || "Ban Quản lý đồng ý",
       });
-    } catch {
-      const localBookings = bookingsQuery.data || [];
-      const updated = localBookings.map((b: Booking) =>
-        b.id === id ? { ...b, status, adminNotes: notes || b.adminNotes } : b
-      );
-      localStorage.setItem("tbd_admin_bookings", JSON.stringify(updated));
+    } else {
+      await http.put(`/api/bookings/${id}/reject`, {
+        reason: notes || "Ban Quản lý từ chối yêu cầu đặt phòng",
+      });
     }
   };
 
   const bookingMutation = useMutation({
     mutationFn: updateBookingStatus,
-    onSuccess: () => {
-      message.success("Đã cập nhật trạng thái đặt phòng thành công");
+    onSuccess: (_, variables) => {
+      if (variables.status === "Approved") {
+        message.success("Phê duyệt đơn đặt phòng thành công!");
+      } else {
+        message.success("Đã từ chối đơn đặt phòng.");
+      }
       setIsRejectModalVisible(false);
       rejectReasonForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi xử lý đơn đặt phòng.");
     },
   });
 
   // Room Mutations
   const saveRoomMutation = useMutation({
     mutationFn: async (values: Partial<Room>) => {
-      const localRooms = roomsQuery.data || [];
       if (editingRoom) {
-        try {
-          await http.put(`/api/rooms/${editingRoom.id}`, values);
-        } catch {
-          const updated = localRooms.map((r) =>
-            r.id === editingRoom.id ? { ...r, ...values } : r
-          );
-          localStorage.setItem("tbd_admin_rooms", JSON.stringify(updated));
-        }
+        await http.put(`/api/rooms/${editingRoom.id}`, values);
       } else {
-        try {
-          await http.post("/api/rooms", values);
-        } catch {
-          const newRoom = { ...values, id: Date.now(), isActive: true } as Room;
-          localStorage.setItem("tbd_admin_rooms", JSON.stringify([...localRooms, newRoom]));
-        }
+        await http.post("/api/rooms", values);
       }
     },
     onSuccess: () => {
-      message.success(editingRoom ? "Đã cập nhật thông tin phòng" : "Đã thêm phòng học mới");
+      message.success(
+        editingRoom ? "Đã cập nhật thông tin phòng thành công" : "Đã thêm phòng học mới thành công"
+      );
       setIsRoomModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi lưu thông tin phòng.");
     },
   });
 
   const deleteRoomMutation = useMutation({
     mutationFn: async (id: number) => {
-      try {
-        await http.delete(`/api/rooms/${id}`);
-      } catch {
-        const localRooms = roomsQuery.data || [];
-        localStorage.setItem(
-          "tbd_admin_rooms",
-          JSON.stringify(localRooms.filter((r) => r.id !== id))
-        );
-      }
+      await http.delete(`/api/rooms/${id}`);
     },
     onSuccess: () => {
       message.success("Đã xóa phòng học khỏi hệ thống");
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi xóa phòng học.");
     },
   });
 
   // Equipment Mutations
   const saveEquipmentMutation = useMutation({
     mutationFn: async (values: Partial<EquipmentItem>) => {
-      const list = equipmentsQuery.data || [];
       if (editingEquipment) {
-        const updated = list.map((e) => (e.id === editingEquipment.id ? { ...e, ...values } : e));
-        localStorage.setItem("tbd_equipments", JSON.stringify(updated));
+        await http.put(`/api/equipments/${editingEquipment.id}`, values);
       } else {
-        const newItem = { ...values, id: Date.now() } as EquipmentItem;
-        localStorage.setItem("tbd_equipments", JSON.stringify([...list, newItem]));
+        await http.post("/api/equipments", values);
       }
     },
     onSuccess: () => {
-      message.success(editingEquipment ? "Đã cập nhật thiết bị" : "Đã thêm thiết bị mới");
+      message.success(
+        editingEquipment ? "Đã cập nhật thiết bị thành công" : "Đã thêm thiết bị mới thành công"
+      );
       setIsEquipmentModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["equipments"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi lưu thiết bị.");
     },
   });
 
   const deleteEquipmentMutation = useMutation({
     mutationFn: async (id: number) => {
-      const list = equipmentsQuery.data || [];
-      const filtered = list.filter((e) => e.id !== id);
-      localStorage.setItem("tbd_equipments", JSON.stringify(filtered));
+      await http.delete(`/api/equipments/${id}`);
     },
     onSuccess: () => {
-      message.success("Đã xóa thiết bị");
+      message.success("Đã xóa thiết bị khỏi hệ thống");
       queryClient.invalidateQueries({ queryKey: ["equipments"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi xóa thiết bị.");
     },
   });
 
   // Issue Resolution Mutation
   const saveIssueMutation = useMutation({
     mutationFn: async (values: Partial<EquipmentIssue>) => {
-      const list = issuesQuery.data || [];
       if (editingIssue) {
-        const updated = list.map((i) =>
-          i.id === editingIssue.id
-            ? { ...i, ...values, updatedAt: new Date().toISOString() }
-            : i
-        );
-        localStorage.setItem("tbd_admin_equipment_issues", JSON.stringify(updated));
+        await http.put(`/api/issues/${editingIssue.id}`, values);
       }
     },
     onSuccess: () => {
-      message.success("Đã cập nhật xử lý sự cố thiết bị");
+      message.success("Đã cập nhật xử lý sự cố thiết bị thành công");
       setIsIssueResolveModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["equipment-issues"] });
     },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi cập nhật sự cố.");
+    },
   });
 
-  // Account Mutation
+  // User Accounts Mutations
   const saveUserMutation = useMutation({
-    mutationFn: async (values: AccountItem) => {
-      const list = accountsQuery.data || [];
-      const existsIndex = list.findIndex((a) => a.email === values.email);
-      let updatedList = [...list];
-      if (existsIndex >= 0) {
-        updatedList[existsIndex] = { ...list[existsIndex], ...values };
+    mutationFn: async (values: AccountItem & { password?: string }) => {
+      if (editingUser) {
+        await http.put(`/api/auth/users/${encodeURIComponent(editingUser.email)}`, values);
       } else {
-        updatedList.push(values);
+        await http.post("/api/auth/users", {
+          ...values,
+          password: values.password || "Tbd@123456",
+        });
       }
-      localStorage.setItem("tbd_accounts", JSON.stringify(updatedList));
     },
     onSuccess: () => {
-      message.success("Đã lưu thông tin tài khoản");
+      message.success(
+        editingUser
+          ? "Đã cập nhật thông tin tài khoản thành công"
+          : "Đã tạo tài khoản người dùng mới thành công"
+      );
       setIsUserModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi lưu tài khoản người dùng.");
     },
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: async (email: string) => {
-      const list = accountsQuery.data || [];
-      const filtered = list.filter((a) => a.email !== email);
-      localStorage.setItem("tbd_accounts", JSON.stringify(filtered));
+      await http.delete(`/api/auth/users/${encodeURIComponent(email)}`);
     },
     onSuccess: () => {
-      message.success("Đã xóa tài khoản");
+      message.success("Đã xóa tài khoản khỏi hệ thống");
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi xóa tài khoản.");
     },
   });
 
-  if (!isAdmin) {
+  if (!canAccess) {
     return (
       <div style={{ padding: 60, textAlign: "center" }}>
-        <Title level={3} style={{ color: "#ef4444" }}>
-          Truy Cập Bị Từ Chối
-        </Title>
-        <Paragraph style={{ color: "#64748b" }}>
-          Trang này chỉ dành cho tài khoản có quyền Quản trị viên (Admin).
-        </Paragraph>
+        <h3>Truy Cập Bị Từ Chối</h3>
+        <p>Trang này chỉ dành cho tài khoản có quyền Quản trị viên (Admin) hoặc Quản lý ĐT & CSVC.</p>
       </div>
     );
   }
 
   // Filtered lists
   const roomsData = (roomsQuery.data || []).filter((r: Room) => {
+    let matchBuildingFilter = true;
+    if (activeTab === "rooms-building-a") {
+      matchBuildingFilter = r.building === "Khu A";
+    } else if (activeTab === "rooms-building-b") {
+      matchBuildingFilter = r.building === "Khu B";
+    } else if (roomBuildingFilter !== "all") {
+      matchBuildingFilter = r.building === roomBuildingFilter;
+    }
+
     const matchSearch =
       r.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
       (r.building && r.building.toLowerCase().includes(roomSearch.toLowerCase()));
-    const matchBuilding = roomBuildingFilter === "all" || r.building === roomBuildingFilter;
-    return matchSearch && matchBuilding;
+    const matchType =
+      roomTypeFilter === "all" || String(r.roomType) === roomTypeFilter;
+
+    return matchSearch && matchBuildingFilter && matchType;
   });
 
-  const bookingsData = (bookingsQuery.data || []).filter((b: Booking) => {
-    const matchSearch =
-      b.roomName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      (b.userEmail && b.userEmail.toLowerCase().includes(bookingSearch.toLowerCase())) ||
-      (b.purpose && b.purpose.toLowerCase().includes(bookingSearch.toLowerCase()));
-    const matchStatus =
-      bookingStatusFilter === "all" || String(b.status) === bookingStatusFilter;
-    return matchSearch && matchStatus;
-  });
+  const effectiveBookings = useMemo(() => {
+    return (bookingsQuery.data || []).map((b: Booking) => getEffectiveBooking(b));
+  }, [bookingsQuery.data]);
+
+  const pendingBookings = useMemo(() => {
+    return effectiveBookings.filter((b: Booking) =>
+      isPendingBooking(b.status) && !isBookingExpired(b)
+    );
+  }, [effectiveBookings]);
+
+  const pendingBookingsCount = pendingBookings.length;
+
+  const urgentBookings = useMemo(() => {
+    return pendingBookings.filter((b: Booking) => isBookingUrgent(b));
+  }, [pendingBookings]);
+
+  // Alert toast for urgent bookings in AdminPage
+  useEffect(() => {
+    if (urgentBookings.length > 0) {
+      const first = urgentBookings[0];
+      message.warning({
+        content: `Đơn đặt phòng #${first.id} tại ${first.roomName} chỉ còn dưới 2 tiếng nữa sẽ diễn ra, cần phê duyệt gấp!`,
+        duration: 7,
+        key: 'admin-page-urgent-warning'
+      });
+    }
+  }, [urgentBookings.length]);
+
+  const bookingsData = useMemo(() => {
+    return effectiveBookings.filter((b: Booking) => {
+      let matchStatusFilter = true;
+      const reason = (b.rejectReason || b.rejectionReason || b.adminNotes || '').toLowerCase();
+      const isExp = b.status === "Expired" || String(b.status) === "3" || isBookingExpired(b) || reason.includes('hết hạn');
+
+      if (activeTab === "bookings-pending") {
+        matchStatusFilter = isPendingBooking(b.status) && !isExp;
+      } else if (bookingStatusFilter !== "all") {
+        if (bookingStatusFilter === "Pending") {
+          matchStatusFilter = isPendingBooking(b.status) && !isExp;
+        } else if (bookingStatusFilter === "PendingSpecial") {
+          matchStatusFilter = String(b.status) === "PendingSpecial" && !isExp;
+        } else if (bookingStatusFilter === "Approved") {
+          matchStatusFilter = !isExp && (String(b.status) === "Approved" || String(b.status) === "1");
+        } else if (bookingStatusFilter === "Rejected") {
+          matchStatusFilter = !isExp && (String(b.status) === "Rejected" || String(b.status) === "2");
+        } else if (bookingStatusFilter === "Cancelled") {
+          matchStatusFilter = !isExp && (String(b.status) === "Cancelled" || String(b.status) === "-1");
+        } else if (bookingStatusFilter === "Expired") {
+          matchStatusFilter = isExp;
+        } else {
+          matchStatusFilter = String(b.status) === bookingStatusFilter;
+        }
+      }
+
+      const matchSearch =
+        (b.roomName && b.roomName.toLowerCase().includes(bookingSearch.toLowerCase())) ||
+        (b.userEmail && b.userEmail.toLowerCase().includes(bookingSearch.toLowerCase())) ||
+        (b.purpose && b.purpose.toLowerCase().includes(bookingSearch.toLowerCase())) ||
+        String(b.id).includes(bookingSearch) ||
+        `#tbd-${b.id}`.toLowerCase().includes(bookingSearch.toLowerCase());
+
+      return matchSearch && matchStatusFilter;
+    }).sort((a: Booking, b: Booking) => {
+      // Prioritize urgent bookings (< 2h) to the top in pending views
+      if (activeTab === "bookings-pending" || bookingStatusFilter === "Pending") {
+        const aUrgent = isBookingUrgent(a);
+        const bUrgent = isBookingUrgent(b);
+        if (aUrgent && !bUrgent) return -1;
+        if (!aUrgent && bUrgent) return 1;
+        if (aUrgent && bUrgent) {
+          return dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf();
+        }
+      }
+      return dayjs(b.startTime).valueOf() - dayjs(a.startTime).valueOf();
+    });
+  }, [effectiveBookings, activeTab, bookingStatusFilter, bookingSearch]);
 
   const accountsData = (accountsQuery.data || []).filter((a: AccountItem) => {
+    let matchRoleFilter = true;
+    const r = (a.role || "").toLowerCase();
+    if (activeTab === "users-students") {
+      matchRoleFilter = r === "user" || r === "student";
+    } else if (activeTab === "users-lecturers") {
+      matchRoleFilter = r === "faculty" || r === "lecturer";
+    } else if (userRoleFilter !== "all") {
+      if (userRoleFilter === "Approver") {
+        matchRoleFilter =
+          r === "approver" ||
+          r === "manager" ||
+          r === "quanly" ||
+          r === "staff" ||
+          r.includes("quản lý") ||
+          r.includes("đào tạo") ||
+          r.includes("daotao");
+      } else {
+        matchRoleFilter = a.role === userRoleFilter || r === userRoleFilter.toLowerCase();
+      }
+    }
+
     const matchSearch =
-      a.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+      (a.email && a.email.toLowerCase().includes(userSearch.toLowerCase())) ||
       (a.department && a.department.toLowerCase().includes(userSearch.toLowerCase())) ||
-      (a.fullName && a.fullName.toLowerCase().includes(userSearch.toLowerCase()));
-    const matchRole = userRoleFilter === "all" || a.role === userRoleFilter;
-    return matchSearch && matchRole;
+      (a.fullName && a.fullName.toLowerCase().includes(userSearch.toLowerCase())) ||
+      (a.userCode && a.userCode.toLowerCase().includes(userSearch.toLowerCase())) ||
+      (a.phoneNumber && a.phoneNumber.includes(userSearch)) ||
+      (a.phone && a.phone.includes(userSearch));
+
+    return matchSearch && matchRoleFilter;
   });
 
   const equipmentsData = (equipmentsQuery.data || []).filter((e: EquipmentItem) => {
@@ -534,23 +614,326 @@ export default function AdminPage() {
     );
   });
 
-  const pendingBookingsCount = (bookingsQuery.data || []).filter(
-    (b: Booking) => b.status === "Pending" || b.status === "PendingSpecial"
-  ).length;
+  const issuesData = (issuesQuery.data || []).filter((i: EquipmentIssue) => {
+    const matchSearch =
+      i.equipmentName.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
+      i.roomName.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
+      i.description.toLowerCase().includes(equipmentSearch.toLowerCase());
+
+    const matchStatus =
+      issueStatusFilter === "all" || i.status === issueStatusFilter;
+
+    const matchSeverity =
+      issueSeverityFilter === "all" || i.severity === issueSeverityFilter;
+
+    return matchSearch && matchStatus && matchSeverity;
+  });
 
   const pendingIssuesCount = (issuesQuery.data || []).filter(
     (i: EquipmentIssue) => i.status === "Pending" || i.status === "Assigned" || i.status === "Fixing"
   ).length;
 
-  // Table Columns
+  // Academic dot status renderers
+  const renderAcademicBookingStatus = (statusStr: any, record?: Booking) => {
+    const reason = (record?.rejectReason || record?.rejectionReason || record?.adminNotes || '').toLowerCase();
+    const isExpired = statusStr === "Expired" || String(statusStr) === "3" || (record && isBookingExpired(record)) || reason.includes('hết hạn');
+    if (isExpired) {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: "#f1f5f9",
+            color: "#475569",
+            padding: "3px 8px",
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 500,
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "#64748b",
+              display: "inline-block",
+            }}
+          />
+          Hết hạn
+        </span>
+      );
+    }
+
+    const urgent = record && isBookingUrgent(record);
+
+    if (isPendingBooking(statusStr)) {
+      const tag = (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: "#fffbeb",
+            color: "#b45309",
+            padding: "3px 8px",
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 500,
+            border: "1px solid #fef3c7",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "#f59e0b",
+              display: "inline-block",
+            }}
+          />
+          {String(statusStr) === "PendingSpecial" ? "Chờ duyệt đặc biệt" : "Chờ phê duyệt"}
+        </span>
+      );
+
+      if (urgent) {
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+            {tag}
+            <span
+              style={{
+                display: "inline-block",
+                color: "#dc2626",
+                fontSize: 11.5,
+                fontWeight: 600,
+                border: "1px solid #fca5a5",
+                borderRadius: 4,
+                padding: "1px 6px",
+                backgroundColor: "#fff1f2",
+                whiteSpace: "nowrap",
+              }}
+            >
+              [Cần duyệt gấp &lt; 2h]
+            </span>
+          </div>
+        );
+      }
+      return tag;
+    }
+    const s = String(statusStr);
+    if (s === "Approved" || s === "1") {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: "#ecfdf5",
+            color: "#047857",
+            padding: "3px 8px",
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 500,
+            border: "1px solid #d1fae5",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "#10b981",
+              display: "inline-block",
+            }}
+          />
+          Đã phê duyệt
+        </span>
+      );
+    }
+    if (s === "Rejected" || s === "2") {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: "#fef2f2",
+            color: "#b91c1c",
+            padding: "3px 8px",
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: 500,
+            border: "1px solid #fee2e2",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "#ef4444",
+              display: "inline-block",
+            }}
+          />
+          Từ chối
+        </span>
+      );
+    }
+    switch (s) {
+      case "Using":
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "#f0f9ff",
+              color: "#0369a1",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: "1px solid #e0f2fe",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                backgroundColor: "#0284c7",
+                display: "inline-block",
+              }}
+            />
+            Đang sử dụng
+          </span>
+        );
+      case "Completed":
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "#f0fdfa",
+              color: "#0f766e",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: "1px solid #ccfbf1",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                backgroundColor: "#14b8a6",
+                display: "inline-block",
+              }}
+            />
+            Hoàn thành
+          </span>
+        );
+      case "Cancelled":
+      case "-1":
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "#f8fafc",
+              color: "#475569",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                backgroundColor: "#64748b",
+                display: "inline-block",
+              }}
+            />
+            Đã hủy
+          </span>
+        );
+      default:
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "#f8fafc",
+              color: "#475569",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                backgroundColor: "#94a3b8",
+                display: "inline-block",
+              }}
+            />
+            {s}
+          </span>
+        );
+    }
+  };
+
+  const renderAcademicRoomStatus = (status: any) => {
+    const statusStr = String(status || "");
+    if (statusStr === "Active" || statusStr === "0" || statusStr === "") {
+      return (
+        <span className="status-dot-wrapper">
+          <span className="academic-status-dot green" />
+          <span>Đang hoạt động</span>
+        </span>
+      );
+    }
+    if (statusStr === "Maintenance" || statusStr === "1") {
+      return (
+        <span className="status-dot-wrapper">
+          <span className="academic-status-dot amber" />
+          <span>Đang bảo trì</span>
+        </span>
+      );
+    }
+    return (
+      <span className="status-dot-wrapper">
+        <span className="academic-status-dot red" />
+        <span>Đóng cửa</span>
+      </span>
+    );
+  };
+
+  // Columns for Room Table
   const roomColumns = [
     {
-      title: "Mã / Tên phòng",
+      title: "Mã & Tên phòng",
       dataIndex: "name",
       key: "name",
+      sorter: (a: Room, b: Room) => a.name.localeCompare(b.name),
       render: (text: string, record: Room) => (
         <div>
-          <Text strong style={{ color: "#0d2e5c", fontSize: 15 }}>
+          <Text strong style={{ color: "#0f172a", fontSize: 13.5 }}>
             {text}
           </Text>
           {record.floor && (
@@ -560,881 +943,1759 @@ export default function AdminPage() {
           )}
         </div>
       ),
-      sorter: (a: Room, b: Room) => a.name.localeCompare(b.name),
     },
     {
       title: "Khu vực",
       dataIndex: "building",
       key: "building",
-      render: (val: string) => <Tag color="cyan">{val || "Khu A"}</Tag>,
+      render: (val: string) => <Text style={{ color: "#475569" }}>{val || "Khu A"}</Text>,
     },
     {
       title: "Sức chứa",
       dataIndex: "capacity",
       key: "capacity",
-      render: (val: number) => <Text>{val} chỗ ngồi</Text>,
       sorter: (a: Room, b: Room) => a.capacity - b.capacity,
+      render: (val: number) => <Text strong>{val} chỗ</Text>,
     },
     {
       title: "Loại phòng",
       key: "roomType",
-      render: (_: any, record: any) => {
-        const label = record._displayType || record.roomType || "Phòng học";
-        return (
-          <Tag color="blue" style={{ borderRadius: 4 }}>
-            {label}
-          </Tag>
-        );
+      render: (_: any, record: Room) => {
+        const label = (record as any)._displayType || record.roomType || "Phòng học";
+        return <Text style={{ color: "#64748b" }}>{String(label)}</Text>;
       },
     },
     {
       title: "Trạng thái",
       dataIndex: "status",
       key: "status",
-      render: (status: string) => {
-        let color = "success";
-        let text = "Đang hoạt động";
-        if (status === "Maintenance") {
-          color = "warning";
-          text = "Đang bảo trì";
-        } else if (status === "Closed") {
-          color = "error";
-          text = "Tạm đóng cửa";
-        }
-        return <Badge status={color as any} text={text} />;
-      },
+      render: (status: string) => renderAcademicRoomStatus(status),
     },
     {
       title: "Thao tác",
       key: "action",
-      width: 120,
+      width: 190,
       render: (_: any, record: Room) => (
-        <Space size="small">
-          <Tooltip title="Chỉnh sửa phòng">
-            <Button
-              type="text"
-              icon={<EditOutlined style={{ color: "#2563eb" }} />}
-              onClick={() => {
-                setEditingRoom(record);
-                roomForm.setFieldsValue(record);
-                setIsRoomModalVisible(true);
-              }}
-            />
-          </Tooltip>
+        <Space size="middle">
+          <button
+            type="button"
+            className="academic-action-btn"
+            onClick={() => {
+              setSelectedRoomForEquip(record);
+              setIsRoomEquipmentDrawerVisible(true);
+            }}
+          >
+            Chi tiết
+          </button>
+          <button
+            type="button"
+            className="academic-action-btn"
+            onClick={() => {
+              setEditingRoom(record);
+              roomForm.setFieldsValue(record);
+              setIsRoomModalVisible(true);
+            }}
+          >
+            Chỉnh sửa
+          </button>
           <Popconfirm
             title="Xóa phòng học"
             description="Bạn có chắc chắn muốn xóa phòng học này?"
+            onConfirm={() => deleteRoomMutation.mutate(record.id)}
             okText="Xóa"
             cancelText="Hủy"
-            onConfirm={() => deleteRoomMutation.mutate(record.id)}
+            okButtonProps={{ danger: true }}
           >
-            <Button type="text" danger icon={<DeleteOutlined />} />
+            <button type="button" className="academic-action-btn danger">
+              Xóa
+            </button>
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
+  // Columns for Booking Table
   const bookingColumns = [
     {
-      title: "Mã & Phòng",
-      key: "room",
-      render: (_: any, record: Booking) => (
-        <div>
-          <Tag color="geekblue">#{record.id}</Tag>
-          <Text strong style={{ display: "block", marginTop: 2, color: "#0d2e5c" }}>
-            {record.roomName}
-          </Text>
-        </div>
+      title: "Mã Đơn",
+      dataIndex: "id",
+      key: "id",
+      width: 100,
+      render: (id: number) => (
+        <Text code style={{ fontWeight: 600, color: "#0d2e5c" }}>
+          #TBD-{id}
+        </Text>
       ),
     },
     {
-      title: "Người đăng ký",
-      key: "requester",
-      render: (_: any, record: Booking) => (
+      title: "Phòng Đăng Ký",
+      dataIndex: "roomName",
+      key: "roomName",
+      sorter: (a: Booking, b: Booking) => (a.roomName || "").localeCompare(b.roomName || ""),
+      render: (text: string, record: Booking) => (
         <div>
-          <Text strong style={{ fontSize: 13 }}>
-            {record.userEmail || "Người dùng"}
+          <Text strong style={{ color: "#0d2e5c", fontSize: 14 }}>
+            {text}
           </Text>
-          {record.department && (
-            <div style={{ fontSize: 12, color: "#64748b" }}>
-              {record.department}
+          {record.isSpecialRequest && (
+            <div style={{ fontSize: 11, color: "#d97706" }}>
+              • Sự kiện đặc biệt
             </div>
           )}
         </div>
       ),
     },
     {
-      title: "Thời gian sử dụng",
+      title: "Người Đăng Ký",
+      dataIndex: "userEmail",
+      key: "userEmail",
+      render: (email: string, record: Booking) => (
+        <div>
+          <Text style={{ fontSize: 13, color: "#1e293b", fontWeight: 500 }}>
+            {email || "N/A"}
+          </Text>
+          {record.department && (
+            <div style={{ fontSize: 11, color: "#64748b" }}>{record.department}</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "Thời Gian Đặt",
       key: "time",
+      sorter: (a: Booking, b: Booking) =>
+        dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf(),
       render: (_: any, record: Booking) => (
         <div>
-          <div style={{ fontWeight: 600 }}>
+          <Text style={{ fontSize: 13, fontWeight: 500 }}>
             {dayjs(record.startTime).format("DD/MM/YYYY")}
-          </div>
-          <div style={{ fontSize: 12, color: "#2563eb" }}>
-            {dayjs(record.startTime).format("HH:mm")} -{" "}
-            {dayjs(record.endTime).format("HH:mm")}
+          </Text>
+          <div style={{ fontSize: 12, color: "#64748b" }}>
+            {dayjs(record.startTime).format("HH:mm")} - {dayjs(record.endTime).format("HH:mm")}
           </div>
         </div>
       ),
-      sorter: (a: Booking, b: Booking) =>
-        dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf(),
     },
     {
-      title: "Mục đích",
+      title: "Mục Đích",
       dataIndex: "purpose",
       key: "purpose",
       ellipsis: true,
-      render: (val: string) => val || <em>Chưa nhập</em>,
+      render: (text: string) => (
+        <span style={{ color: "#334155" }}>{text || "--"}</span>
+      ),
     },
     {
-      title: "Trạng thái",
+      title: "Trạng Thái",
+      dataIndex: "status",
       key: "status",
-      render: (_: any, record: Booking) => {
-        let color = "blue";
-        let text = String(record.status);
-        if (text === "Pending" || text === "PendingSpecial") {
-          color = "gold";
-          text = "Chờ duyệt";
-        } else if (text === "Approved") {
-          color = "green";
-          text = "Đã duyệt";
-        } else if (text === "Using") {
-          color = "purple";
-          text = "Đang sử dụng";
-        } else if (text === "Completed") {
-          color = "cyan";
-          text = "Đã hoàn thành";
-        } else if (text === "Rejected") {
-          color = "red";
-          text = "Từ chối";
-        } else if (text === "Cancelled") {
-          color = "default";
-          text = "Đã hủy";
-        }
-        return <Tag color={color}>{text}</Tag>;
-      },
+      render: (status: any, record: Booking) => renderAcademicBookingStatus(status, record),
     },
     {
-      title: "Thao tác",
-      key: "action",
-      width: 180,
-      render: (_: any, record: Booking) => (
-        <Space size="small">
-          <Tooltip title="Xem chi tiết đơn đăng ký">
-            <Button
-              type="text"
-              icon={<EyeOutlined style={{ color: "#0d2e5c" }} />}
+      title: "Thao Tác",
+      key: "actions",
+      width: 220,
+      render: (_: any, record: Booking) => {
+        const isExpired = record.status === "Expired" || isBookingExpired(record);
+        const isPending = !isExpired && isPendingBooking(record.status);
+
+        return (
+          <Space size="small">
+            <button
+              type="button"
+              className="academic-action-btn"
               onClick={() => {
                 setSelectedBooking(record);
                 setIsBookingDetailModalVisible(true);
               }}
-            />
-          </Tooltip>
-          {String(record.status) === "Pending" || String(record.status) === "PendingSpecial" ? (
-            <>
-              <Popconfirm
-                title="Phê duyệt yêu cầu"
-                description="Bạn có chắc chắn muốn phê duyệt lượt đặt phòng này?"
-                okText="Duyệt"
-                cancelText="Hủy"
-                onConfirm={() =>
-                  bookingMutation.mutate({ id: record.id, status: "Approved" })
-                }
-              >
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<CheckCircleOutlined />}
-                  style={{ background: "#10b981", borderColor: "#10b981" }}
+            >
+              Chi tiết
+            </button>
+
+            {isExpired && (
+              <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic", padding: "0 4px" }}>
+                Quá giờ duyệt
+              </span>
+            )}
+
+            {isPending && (
+              <>
+                <Popconfirm
+                  title="Duyệt đơn đặt phòng"
+                  description="Bạn muốn chấp thuận đơn đăng ký đặt phòng này?"
+                  onConfirm={() =>
+                    bookingMutation.mutate({
+                      id: record.id,
+                      status: "Approved",
+                      notes: "Ban Quản lý đồng ý",
+                    })
+                  }
+                  okText="Duyệt"
+                  cancelText="Hủy"
                 >
-                  Duyệt
+                  <Button
+                    type="primary"
+                    size="small"
+                    style={{
+                      backgroundColor: "#059669",
+                      borderColor: "#059669",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: "0 10px",
+                    }}
+                    loading={
+                      bookingMutation.isPending &&
+                      bookingMutation.variables?.id === record.id &&
+                      bookingMutation.variables?.status === "Approved"
+                    }
+                  >
+                    Duyệt
+                  </Button>
+                </Popconfirm>
+
+                <Button
+                  danger
+                  size="small"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: "0 10px",
+                  }}
+                  onClick={() => {
+                    setRejectBookingId(record.id);
+                    rejectReasonForm.resetFields();
+                    setIsRejectModalVisible(true);
+                  }}
+                  loading={
+                    bookingMutation.isPending &&
+                    bookingMutation.variables?.id === record.id &&
+                    bookingMutation.variables?.status === "Rejected"
+                  }
+                >
+                  Từ chối
                 </Button>
-              </Popconfirm>
-              <Button
-                danger
-                size="small"
-                icon={<CloseCircleOutlined />}
-                onClick={() => {
-                  setRejectBookingId(record.id);
-                  setIsRejectModalVisible(true);
-                }}
-              >
-                Từ chối
-              </Button>
-            </>
-          ) : null}
-        </Space>
-      ),
+              </>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
+  // Columns for Equipment Issues
   const issueColumns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60 },
     {
-      title: "Vị trí & Thiết bị",
-      key: "location",
+      title: "Mã Sự Cố",
+      dataIndex: "id",
+      key: "id",
+      width: 90,
+      render: (id: number) => <Text code>#{id}</Text>,
+    },
+    {
+      title: "Thiết Bị / Phòng Học",
+      key: "equip",
       render: (_: any, record: EquipmentIssue) => (
         <div>
-          <Text strong style={{ color: "#0d2e5c" }}>
-            {record.roomName}
-          </Text>
-          <div style={{ fontSize: 12, color: "#64748b" }}>
+          <Text strong style={{ color: "#0f172a" }}>
             {record.equipmentName}
-          </div>
+          </Text>
+          <div style={{ fontSize: 12, color: "#64748b" }}>{record.roomName}</div>
         </div>
       ),
     },
     {
-      title: "Người báo sự cố",
-      dataIndex: "userEmail",
-      key: "userEmail",
-      ellipsis: true,
+      title: "Mức Độ Sự Cố",
+      dataIndex: "severity",
+      key: "severity",
+      render: (severity: string) => {
+        let dotClass = "green";
+        if (severity === "Medium") dotClass = "amber";
+        if (severity === "High" || severity === "Critical") dotClass = "red";
+        return (
+          <span className="status-dot-wrapper">
+            <span className={`academic-status-dot ${dotClass}`} />
+            <span>{severity}</span>
+          </span>
+        );
+      },
     },
     {
-      title: "Mô tả sự cố",
+      title: "Nội Dung Báo Hỏng",
       dataIndex: "description",
       key: "description",
       ellipsis: true,
     },
     {
-      title: "Mức độ",
-      dataIndex: "severity",
-      key: "severity",
-      render: (val: string) => {
-        const colors: Record<string, string> = {
-          Low: "blue",
-          Medium: "gold",
-          High: "orange",
-          Critical: "red",
-        };
-        return <Tag color={colors[val] || "default"}>{val}</Tag>;
-      },
+      title: "Người Báo",
+      dataIndex: "userEmail",
+      key: "userEmail",
+      render: (email: string) => <Text style={{ fontSize: 12 }}>{email}</Text>,
     },
     {
-      title: "Trạng thái",
+      title: "Trạng Thái Xử Lý",
       dataIndex: "status",
       key: "status",
-      render: (val: string) => {
-        const map: Record<string, { label: string; color: string }> = {
-          Pending: { label: "Chờ xử lý", color: "warning" },
-          Assigned: { label: "Đã phân công", color: "processing" },
-          Fixing: { label: "Đang sửa chữa", color: "purple" },
-          Resolved: { label: "Đã khắc phục", color: "success" },
-          Rejected: { label: "Không xử lý", color: "default" },
-        };
-        const item = map[val] || { label: val, color: "default" };
-        return <Tag color={item.color}>{item.label}</Tag>;
+      render: (status: string, record: EquipmentIssue) => {
+        let dotClass = "amber";
+        let label = "Chờ tiếp nhận";
+        if (status === "Assigned") {
+          dotClass = "blue";
+          label = "Đã phân công";
+        } else if (status === "Fixing") {
+          dotClass = "purple";
+          label = "Đang sửa chữa";
+        } else if (status === "Resolved") {
+          dotClass = "green";
+          label = "Đã hoàn tất";
+        } else if (status === "Rejected") {
+          dotClass = "red";
+          label = "Từ chối";
+        }
+
+        return (
+          <div>
+            <span className="status-dot-wrapper">
+              <span className={`academic-status-dot ${dotClass}`} />
+              <span>{label}</span>
+            </span>
+            {record.assignedTo && (
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                KTV: {record.assignedTo}
+              </div>
+            )}
+          </div>
+        );
       },
     },
     {
-      title: "Thao tác",
+      title: "Thao Tác",
       key: "action",
+      width: 110,
       render: (_: any, record: EquipmentIssue) => (
-        <Button
-          type="primary"
-          ghost
-          size="small"
-          icon={<EditOutlined />}
+        <button
+          type="button"
+          className="academic-action-btn"
           onClick={() => {
             setEditingIssue(record);
-            issueResolveForm.setFieldsValue(record);
+            issueResolveForm.setFieldsValue({
+              status: record.status,
+              assignedTo: record.assignedTo,
+              repairNotes: record.repairNotes,
+            });
             setIsIssueResolveModalVisible(true);
           }}
         >
           Cập nhật
-        </Button>
+        </button>
       ),
     },
   ];
 
-  const equipmentColumns = [
-    { title: "Mã TB", dataIndex: "code", key: "code", render: (text: string) => <Tag color="geekblue">{text}</Tag> },
-    { title: "Tên thiết bị", dataIndex: "name", key: "name", render: (text: string) => <Text strong>{text}</Text> },
-    { title: "Phòng/Kho", dataIndex: "roomName", key: "roomName", render: (val: string) => val || "Kho dùng chung" },
-    { title: "Số lượng", dataIndex: "quantity", key: "quantity", sorter: (a: EquipmentItem, b: EquipmentItem) => a.quantity - b.quantity },
+  // Columns for Equipment Inventory
+  const equipmentInventoryColumns = [
     {
-      title: "Trạng thái",
+      title: "Mã Thiết Bị",
+      dataIndex: "code",
+      key: "code",
+      render: (text: string) => <Text code>{text}</Text>,
+    },
+    {
+      title: "Tên Thiết Bị",
+      dataIndex: "name",
+      key: "name",
+      render: (text: string) => <Text strong>{text}</Text>,
+    },
+    {
+      title: "Vị Trí Vận Hành",
+      dataIndex: "roomName",
+      key: "roomName",
+      render: (text: string) => text || "Kho dùng chung",
+    },
+    {
+      title: "Số Lượng",
+      dataIndex: "quantity",
+      key: "quantity",
+      render: (val: number) => <Text>{val} cái</Text>,
+    },
+    {
+      title: "Trạng Thái",
       dataIndex: "status",
       key: "status",
       render: (status: string) => {
-        const map: Record<string, { label: string; color: string }> = {
-          Active: { label: "Sử dụng tốt", color: "success" },
-          InUse: { label: "Đang cho mượn", color: "processing" },
-          Broken: { label: "Đang hỏng", color: "error" },
-          Maintenance: { label: "Đang bảo trì", color: "warning" },
-          Disposed: { label: "Đã thanh lý", color: "default" },
-        };
-        const item = map[status] || { label: status, color: "default" };
-        return <Tag color={item.color}>{item.label}</Tag>;
+        let dot = "green";
+        let label = "Sử dụng tốt";
+        if (status === "Maintenance") {
+          dot = "amber";
+          label = "Bảo trì";
+        } else if (status === "Broken") {
+          dot = "red";
+          label = "Hỏng";
+        }
+        return (
+          <span className="status-dot-wrapper">
+            <span className={`academic-status-dot ${dot}`} />
+            <span>{label}</span>
+          </span>
+        );
       },
     },
     {
-      title: "Thao tác",
+      title: "Thao Tác",
       key: "action",
+      width: 140,
       render: (_: any, record: EquipmentItem) => (
-        <Space size="small">
-          <Button
-            type="text"
-            icon={<EditOutlined style={{ color: "#2563eb" }} />}
+        <Space size="middle">
+          <button
+            type="button"
+            className="academic-action-btn"
             onClick={() => {
               setEditingEquipment(record);
               equipmentForm.setFieldsValue(record);
               setIsEquipmentModalVisible(true);
             }}
-          />
+          >
+            Chỉnh sửa
+          </button>
+
           <Popconfirm
             title="Xóa thiết bị"
-            description="Bạn chắc chắn muốn xóa thiết bị này?"
+            description="Bạn muốn xóa thiết bị này khỏi danh mục?"
             onConfirm={() => deleteEquipmentMutation.mutate(record.id)}
+            okText="Xóa"
+            cancelText="Hủy"
+            okButtonProps={{ danger: true }}
           >
-            <Button type="text" danger icon={<DeleteOutlined />} />
+            <button type="button" className="academic-action-btn danger">
+              Xóa
+            </button>
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
+  // Columns for Users Table
   const userColumns = [
     {
-      title: "Họ tên & Email",
-      key: "user",
-      render: (_: any, record: AccountItem) => (
+      title: "Mã định danh",
+      dataIndex: "userCode",
+      key: "userCode",
+      width: 140,
+      render: (code: string) => (
+        <Text code style={{ fontWeight: 600, color: "#0d2e5c" }}>
+          {code || "--"}
+        </Text>
+      ),
+    },
+    {
+      title: "Tài Khoản / Email",
+      dataIndex: "email",
+      key: "email",
+      render: (email: string, record: AccountItem) => (
         <div>
-          <Text strong style={{ color: "#0d2e5c", fontSize: 14 }}>
-            {record.fullName || "Tài khoản hệ thống"}
+          <Text strong style={{ color: "#0f172a" }}>
+            {record.fullName || email}
           </Text>
-          <div style={{ color: "#64748b", fontSize: 13 }}>{record.email}</div>
+          <div style={{ fontSize: 12, color: "#64748b" }}>{email}</div>
         </div>
       ),
     },
     {
-      title: "Đơn vị / Khoa",
+      title: "Khoa / Đơn Vị",
       dataIndex: "department",
       key: "department",
-      render: (val: string) => val || <em>Chưa cập nhật</em>,
+      render: (dept: string) => dept || "Chưa phân bổ",
     },
     {
-      title: "Vai trò",
+      title: "Số Điện Thoại",
+      key: "phoneNumber",
+      render: (_: any, record: AccountItem) => record.phoneNumber || record.phone || "--",
+    },
+    {
+      title: "Vai Trò Phân Quyền",
       dataIndex: "role",
       key: "role",
-      render: (role: string) => {
-        let color = "blue";
-        let label = role;
-        if (role === "admin") {
-          color = "gold";
-          label = "Quản trị viên (Admin)";
-        } else if (role === "approver") {
-          color = "purple";
-          label = "Cán bộ Phê duyệt";
-        } else if (role === "lecturer") {
-          color = "cyan";
-          label = "Giảng viên";
-        } else if (role === "student") {
-          color = "green";
-          label = "Sinh viên";
-        }
-        return <Tag color={color}>{label}</Tag>;
+      render: (role: string, record: AccountItem) => {
+        let currentRole = "User";
+        const r = (role || "").toLowerCase();
+        if (r === "admin") currentRole = "Admin";
+        else if (
+          r === "approver" ||
+          r === "manager" ||
+          r === "quanly" ||
+          r === "staff" ||
+          r.includes("quản lý") ||
+          r.includes("đào tạo") ||
+          r.includes("daotao")
+        ) currentRole = "Approver";
+        else if (r === "faculty" || r === "lecturer") currentRole = "Faculty";
+        else if (r === "user" || r === "student") currentRole = "User";
+
+        const getRoleTag = (roleKey: string) => {
+          switch (roleKey) {
+            case "Admin":
+              return <Tag color="blue">Quản trị viên</Tag>;
+            case "Approver":
+              return <Tag color="volcano">Quản lý ĐT & CSVC (Manager)</Tag>;
+            case "Faculty":
+              return <Tag color="cyan">Giảng viên</Tag>;
+            case "User":
+            default:
+              return <Tag color="default">Sinh viên</Tag>;
+          }
+        };
+
+        return (
+          <Space orientation="vertical" size={4}>
+            <div>{getRoleTag(currentRole)}</div>
+            <Select
+              size="small"
+              value={currentRole}
+              style={{ width: 220 }}
+              onChange={(newRole) =>
+                saveUserMutation.mutate({ ...record, role: newRole })
+              }
+              options={[
+                { value: "Admin", label: "Quản trị viên (Admin)" },
+                { value: "Approver", label: "Quản lý ĐT & CSVC (Manager)" },
+                { value: "Faculty", label: "Giảng viên (Faculty)" },
+                { value: "User", label: "Sinh viên (User)" },
+              ]}
+            />
+          </Space>
+        );
       },
     },
     {
-      title: "Số điện thoại",
-      dataIndex: "phone",
-      key: "phone",
-      render: (val: string) => val || "--",
+      title: "Hồ Sơ",
+      key: "isProfileComplete",
+      render: (_: any, record: AccountItem) => {
+        const isComplete = record.isProfileComplete !== false;
+        return (
+          <span className="status-dot-wrapper">
+            <span className={`academic-status-dot ${isComplete ? "green" : "amber"}`} />
+            <span>{isComplete ? "Đã hoàn thiện" : "Chưa hoàn thiện"}</span>
+          </span>
+        );
+      },
     },
     {
-      title: "Thao tác",
+      title: "Thao Tác",
       key: "action",
-      render: (_: any, record: AccountItem) => (
-        <Space size="small">
-          <Button
-            type="text"
-            icon={<EditOutlined style={{ color: "#2563eb" }} />}
-            onClick={() => {
-              setEditingUser(record);
-              userForm.setFieldsValue(record);
-              setIsUserModalVisible(true);
-            }}
-          />
-          <Popconfirm
-            title="Xóa tài khoản"
-            description="Bạn có chắc muốn xóa tài khoản này?"
-            onConfirm={() => deleteUserMutation.mutate(record.email)}
-          >
-            <Button type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      width: 150,
+      render: (_: any, record: AccountItem) => {
+        const isProtectedAdmin = record.email === "admin@tbd.edu.vn";
+        return (
+          <Space size="middle">
+            <button
+              type="button"
+              className="academic-action-btn"
+              onClick={() => {
+                setEditingUser(record);
+                userForm.setFieldsValue({
+                  ...record,
+                  phoneNumber: record.phoneNumber || record.phone,
+                  role:
+                    record.role?.toLowerCase() === "admin"
+                      ? "Admin"
+                      : record.role?.toLowerCase() === "faculty" || record.role?.toLowerCase() === "lecturer"
+                      ? "Faculty"
+                      : record.role?.toLowerCase() === "staff" || record.role?.toLowerCase() === "approver"
+                      ? "Staff"
+                      : "User",
+                });
+                setIsUserModalVisible(true);
+              }}
+            >
+              Chỉnh sửa
+            </button>
+
+            {!isProtectedAdmin && (
+              <Popconfirm
+                title="Xóa tài khoản"
+                description={`Bạn có chắc muốn xóa tài khoản ${record.email} khỏi cơ sở dữ liệu?`}
+                onConfirm={() => deleteUserMutation.mutate(record.email)}
+                okText="Xóa"
+                cancelText="Hủy"
+                okButtonProps={{ danger: true }}
+              >
+                <button type="button" className="academic-action-btn danger">
+                  Xóa
+                </button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
-  const isLoading = roomsQuery.isLoading || bookingsQuery.isLoading;
+  // Helper for Exporting Excel / PDF
+  const handleExport = (type: "excel" | "pdf") => {
+    message.loading({ content: `Đang kết xuất dữ liệu sang ${type.toUpperCase()}...`, key: "export" });
+    setTimeout(() => {
+      let csvContent = "";
+      if (activeTab.startsWith("rooms")) {
+        csvContent = "data:text/csv;charset=utf-8," + ["Tên phòng,Khu vực,Tầng,Sức chứa,Trạng thái"].concat(
+          roomsData.map((r: Room) => `"${r.name}","${r.building || ''}","${r.floor || ''}",${r.capacity},"${r.status}"`)
+        ).join("\n");
+      } else if (activeTab.startsWith("bookings")) {
+        csvContent = "data:text/csv;charset=utf-8," + ["Mã đơn,Phòng,Người đặt,Bắt đầu,Kết thúc,Trạng thái"].concat(
+          bookingsData.map((b: Booking) => `"#${b.id}","${b.roomName}","${b.userEmail}","${b.startTime}","${b.endTime}","${b.status}"`)
+        ).join("\n");
+      } else {
+        csvContent = "data:text/csv;charset=utf-8," + ["Email,Họ tên,Mã định danh,Khoa/Phòng ban,Vai trò,Hồ sơ"].concat(
+          accountsData.map((a: AccountItem) => `"${a.email}","${a.fullName || ''}","${a.userCode || ''}","${a.department}","${a.role}","${a.isProfileComplete !== false ? 'Đã hoàn thiện' : 'Chưa hoàn thiện'}"`)
+        ).join("\n");
+      }
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `tbd_${activeTab}_${dayjs().format("YYYYMMDD")}.${type === "excel" ? "csv" : "txt"}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      message.success({ content: `Xuất tệp ${type.toUpperCase()} thành công!`, key: "export" });
+    }, 400);
+  };
 
-  const tabItems = [
-    {
-      key: "analytics",
-      label: (
-        <span>
-          <DashboardOutlined /> Tổng quan & Báo cáo
-        </span>
-      ),
-      children: isLoading ? (
-        <Spin style={{ display: "block", margin: "40px auto" }} />
-      ) : (
-        <AnalyticsDashboard
-          rooms={roomsQuery.data ?? []}
-          bookings={bookingsQuery.data ?? []}
-          issues={issuesQuery.data ?? []}
-          accounts={accountsQuery.data ?? []}
-        />
-      ),
-    },
-    {
-      key: "bookings",
-      label: (
-        <span>
-          <CalendarOutlined /> Quản lý Đặt phòng{" "}
-          {pendingBookingsCount > 0 && (
-            <Badge count={pendingBookingsCount} style={{ marginLeft: 6 }} />
+  // Breadcrumb and Page Title resolution
+  const getBreadcrumbAndTitle = () => {
+    const rootName = isAdmin ? "Quản trị" : "Quản lý ĐT & CSVC";
+    switch (activeTab) {
+      case "analytics":
+        return {
+          breadcrumb: [rootName, "Tổng quan", "Báo cáo vận hành"],
+          title: isAdmin ? "Trung Tâm Quản Trị Hệ Thống" : "Trung Tâm Quản Lý Đào Tạo & Cơ Sở Vật Chất",
+        };
+      case "bookings-pending":
+        return {
+          breadcrumb: [rootName, "Quản lý đặt phòng", "Chờ phê duyệt"],
+          title: "Danh Sách Đơn Đặt Phòng Chờ Phê Duyệt",
+        };
+      case "bookings":
+        return {
+          breadcrumb: [rootName, "Quản lý đặt phòng", "Danh sách đơn đặt phòng"],
+          title: "Quản Lý Đơn Đặt Phòng",
+        };
+      case "bookings-schedule":
+        return {
+          breadcrumb: [rootName, "Quản lý đặt phòng", "Lịch biểu theo tuần"],
+          title: "Lịch Biểu Đặt Phòng Theo Tuần",
+        };
+      case "academic-schedule":
+        return {
+          breadcrumb: [rootName, "Quản lý đặt phòng", "Thời khóa biểu & Lịch học"],
+          title: "Thời Khóa Biểu & Lịch Học Định Kỳ Theo Học Kỳ (TBD)",
+        };
+      case "rooms-building-a":
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Phòng học / Khu A"],
+          title: "Quản Lý Phòng Học - Khu A (Tòa nhà 5 tầng)",
+        };
+      case "rooms-building-b":
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Phòng học / Khu B"],
+          title: "Quản Lý Phòng Học - Khu B (Tòa nhà 2 tầng)",
+        };
+      case "rooms":
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Danh sách phòng học"],
+          title: "Quản Lý Phòng Học",
+        };
+      case "equipment-inventory":
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Thiết bị mượn thêm"],
+          title: "Danh Mục Thiết Bị Dùng Chung",
+        };
+      case "equipment-issues":
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Báo cáo sự cố"],
+          title: "Báo Cáo Sự Cố & Hỏng Hóc Thiết Bị",
+        };
+      case "users-students":
+        return {
+          breadcrumb: ["Quản trị", "Người dùng", "Sinh viên"],
+          title: "Quản Lý Tài Khoản Sinh Viên",
+        };
+      case "users-lecturers":
+        return {
+          breadcrumb: ["Quản trị", "Người dùng", "Giảng viên & Cán bộ"],
+          title: "Quản Lý Giảng Viên & Cán Bộ",
+        };
+      case "users":
+        return {
+          breadcrumb: ["Quản trị", "Người dùng", "Phân quyền quản trị"],
+          title: "Quản Lý Người Dùng & Phân Quyền",
+        };
+      case "settings":
+        return {
+          breadcrumb: ["Quản trị", "Cấu hình", "Quy định đặt phòng"],
+          title: "Quy Định Đặt Phòng & Tham Số Vận Hành",
+        };
+      case "settings-shifts":
+        return {
+          breadcrumb: ["Quản trị", "Cấu hình", "Khung giờ tiết học"],
+          title: "Khung Giờ Tiết Học & Ca Giảng Dạy",
+        };
+      default:
+        return {
+          breadcrumb: [rootName, "Cơ sở vật chất", "Danh sách phòng học"],
+          title: "Quản Lý Phòng Học",
+        };
+    }
+  };
+
+  const currentHeaderInfo = getBreadcrumbAndTitle();
+
+  // Top action button renderer
+  const renderTopActionButton = () => {
+    if (activeTab.startsWith("rooms")) {
+      return (
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setEditingRoom(null);
+            roomForm.resetFields();
+            setIsRoomModalVisible(true);
+          }}
+          style={{ background: "#0284c7", borderColor: "#0284c7" }}
+        >
+          Thêm phòng mới
+        </Button>
+      );
+    }
+    if (activeTab === "equipment-inventory") {
+      return (
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setEditingEquipment(null);
+            equipmentForm.resetFields();
+            setIsEquipmentModalVisible(true);
+          }}
+          style={{ background: "#0284c7", borderColor: "#0284c7" }}
+        >
+          Thêm thiết bị mới
+        </Button>
+      );
+    }
+    if (activeTab.startsWith("users")) {
+      return (
+        <Button
+          type="primary"
+          icon={<UserAddOutlined />}
+          onClick={() => {
+            setEditingUser(null);
+            userForm.resetFields();
+            setIsUserModalVisible(true);
+          }}
+          style={{ background: "#0284c7", borderColor: "#0284c7" }}
+        >
+          Thêm tài khoản mới
+        </Button>
+      );
+    }
+    if (activeTab === "academic-schedule") {
+      return (
+        <Button
+          type="primary"
+          icon={<CalendarOutlined />}
+          onClick={() => setIsSemesterScheduleModalOpen(true)}
+          style={{ background: "#0284c7", borderColor: "#0284c7" }}
+        >
+          Nhập Thời Khóa Biểu Học Kỳ
+        </Button>
+      );
+    }
+    if (activeTab.startsWith("bookings")) {
+      return (
+        <Space size="small">
+          {canManageSchedule && (
+            <Button
+              type="primary"
+              icon={<CalendarOutlined />}
+              onClick={() => setIsSemesterScheduleModalOpen(true)}
+              style={{ background: "#0284c7", borderColor: "#0284c7" }}
+            >
+              Nhập TKB Học Kỳ
+            </Button>
           )}
-        </span>
-      ),
-      children: (
-        <div style={{ padding: "16px 0" }}>
-          {/* Controls Bar */}
-          <Card
-            size="small"
-            style={{ marginBottom: 16, borderRadius: 8, background: "#f8fafc" }}
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["bookings"] })}
           >
-            <Row gutter={[16, 16]} align="middle" justify="space-between">
-              <Col xs={24} md={16}>
-                <Space wrap style={{ width: "100%" }}>
+            Làm mới
+          </Button>
+        </Space>
+      );
+    }
+    if (activeTab.startsWith("analytics")) {
+      return (
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => {
+            queryClient.invalidateQueries();
+            message.success("Đã cập nhật số liệu thống kê mới nhất!");
+          }}
+        >
+          Làm mới số liệu
+        </Button>
+      );
+    }
+    return null;
+  };
+
+  // Main Content Panes
+  const renderMainContent = () => {
+    if (activeTab === "analytics") {
+      return (
+        <AnalyticsDashboard
+          rooms={roomsQuery.data || []}
+          bookings={bookingsQuery.data || []}
+          issues={issuesQuery.data || []}
+          accounts={accountsQuery.data || []}
+        />
+      );
+    }
+
+    if (activeTab === "academic-schedule") {
+      return (
+        <SemesterScheduleView
+          bookings={bookingsData}
+          rooms={roomsData}
+          onOpenCreateModal={() => setIsSemesterScheduleModalOpen(true)}
+          canManageSchedule={canManageSchedule}
+        />
+      );
+    }
+
+    if (activeTab.startsWith("bookings")) {
+      if (activeTab === "bookings-schedule") {
+        return (
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <Text strong style={{ fontSize: 15, color: "#0f172a" }}>Lịch Biểu Đặt Phòng Tuần Hiện Tại</Text>
+              <Select defaultValue="all" style={{ width: 180 }}>
+                <Select.Option value="all">Tất cả phòng học</Select.Option>
+                <Select.Option value="A201">A201 - Lý thuyết</Select.Option>
+                <Select.Option value="A304">A304 - Phòng Lab</Select.Option>
+                <Select.Option value="B101">B101 - Phòng học</Select.Option>
+              </Select>
+            </div>
+            <Table
+              className="academic-table"
+              columns={bookingColumns}
+              dataSource={bookingsData}
+              rowKey="id"
+              pagination={{ pageSize: 8 }}
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: <Empty description="Chưa có lịch đăng ký trong tuần" /> }}
+            />
+          </div>
+        );
+      }
+
+      return (
+        <div>
+          {/* Cảnh báo Admin khẩn cấp trước 2 tiếng (< 2h Urgent Warning) */}
+          {urgentBookings.length > 0 && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: "#fff1f0",
+                border: "1px solid #ffccc7",
+                borderRadius: 8,
+                padding: "12px 16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                boxShadow: "0 2px 6px rgba(239, 68, 68, 0.06)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 260 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: "#cf1322", fontSize: 14 }}>
+                    Cảnh báo Admin: Có {urgentBookings.length} đơn đặt phòng cần duyệt gấp (&lt; 2 tiếng nữa sẽ bắt đầu)!
+                  </div>
+                  <div style={{ fontSize: 13, color: "#820014", marginTop: 2 }}>
+                    {urgentBookings.slice(0, 2).map((b: Booking) => (
+                      <span key={b.id} style={{ marginRight: 12 }}>
+                        • Đơn đặt phòng <strong>#{b.id}</strong> tại <strong>{b.roomName}</strong> chỉ còn dưới 2 tiếng nữa sẽ diễn ra ({dayjs(b.startTime).format("HH:mm DD/MM")}), cần phê duyệt gấp!
+                      </span>
+                    ))}
+                    {urgentBookings.length > 2 && <span>và {urgentBookings.length - 2} đơn khác...</span>}
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="primary"
+                danger
+                size="small"
+                onClick={() => {
+                  setActiveTab("bookings-pending");
+                  setBookingStatusFilter("Pending");
+                }}
+                style={{ fontWeight: 600, borderRadius: 6 }}
+              >
+                Xem đơn cần duyệt ({urgentBookings.length})
+              </Button>
+            </div>
+          )}
+
+          {/* Flat Toolbar */}
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+            <Row gutter={[12, 12]} align="middle" justify="space-between">
+              <Col xs={24} lg={16}>
+                <Space wrap size="middle">
                   <Input
-                    placeholder="Tìm phòng, email, mục đích..."
+                    placeholder="Tìm kiếm theo tên phòng, mã đơn, email..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
                     value={bookingSearch}
                     onChange={(e) => setBookingSearch(e.target.value)}
-                    style={{ width: 260 }}
+                    style={{ width: 300 }}
                     allowClear
                   />
+
                   <Select
                     value={bookingStatusFilter}
                     onChange={setBookingStatusFilter}
                     style={{ width: 170 }}
                   >
                     <Select.Option value="all">Tất cả trạng thái</Select.Option>
-                    <Select.Option value="Pending">Chờ duyệt</Select.Option>
+                    <Select.Option value="Pending">Chờ duyệt (Thường)</Select.Option>
+                    <Select.Option value="PendingSpecial">Chờ duyệt (Sự kiện)</Select.Option>
                     <Select.Option value="Approved">Đã duyệt</Select.Option>
                     <Select.Option value="Using">Đang sử dụng</Select.Option>
                     <Select.Option value="Completed">Đã hoàn thành</Select.Option>
                     <Select.Option value="Rejected">Từ chối</Select.Option>
                     <Select.Option value="Cancelled">Đã hủy</Select.Option>
+                    <Select.Option value="Expired">Hết hạn</Select.Option>
                   </Select>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={() => queryClient.invalidateQueries({ queryKey: ["bookings"] })}
-                  >
-                    Tải lại
-                  </Button>
                 </Space>
               </Col>
-              <Col xs={24} md={8} style={{ textAlign: "right" }}>
-                <Text type="secondary">
-                  Hiển thị {bookingsData.length} / {bookingsQuery.data?.length || 0} yêu cầu
-                </Text>
+              <Col xs={24} lg={8} style={{ textAlign: "right" }}>
+                <Space size="small">
+                  <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                  <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
+                </Space>
               </Col>
             </Row>
-          </Card>
+          </div>
 
-          <Table
-            columns={bookingColumns}
-            dataSource={bookingsData}
-            rowKey="id"
-            loading={bookingsQuery.isLoading}
-            pagination={{ pageSize: 10, showSizeChanger: true }}
-            scroll={{ x: 900 }}
-          />
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            {bookingsQuery.isLoading ? (
+              <div style={{ padding: 24 }}>
+                <Skeleton active paragraph={{ rows: 6 }} />
+              </div>
+            ) : (
+              <Table
+                className="academic-table"
+                columns={bookingColumns}
+                dataSource={bookingsData}
+                rowKey="id"
+                pagination={{ pageSize: 10, showSizeChanger: true }}
+                scroll={{ x: 'max-content' }}
+                locale={{ emptyText: <Empty description="Không tìm thấy đơn đặt phòng nào" /> }}
+              />
+            )}
+          </div>
         </div>
-      ),
-    },
-    {
-      key: "rooms",
-      label: (
-        <span>
-          <HomeOutlined /> Quản lý Phòng học
-        </span>
-      ),
-      children: (
-        <div style={{ padding: "16px 0" }}>
-          <Card
-            size="small"
-            style={{ marginBottom: 16, borderRadius: 8, background: "#f8fafc" }}
-          >
-            <Row gutter={[16, 16]} align="middle" justify="space-between">
-              <Col xs={24} md={16}>
-                <Space wrap>
+      );
+    }
+
+    if (activeTab.startsWith("rooms")) {
+      return (
+        <div>
+          {/* Flat Toolbar */}
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+            <Row gutter={[12, 12]} align="middle" justify="space-between">
+              <Col xs={24} lg={16}>
+                <Space wrap size="middle">
                   <Input
-                    placeholder="Tìm theo tên phòng hoặc khu vực..."
+                    placeholder="Tìm kiếm theo tên phòng, mã đơn, email..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
                     value={roomSearch}
                     onChange={(e) => setRoomSearch(e.target.value)}
                     style={{ width: 280 }}
                     allowClear
                   />
+
                   <Select
                     value={roomBuildingFilter}
                     onChange={setRoomBuildingFilter}
-                    style={{ width: 150 }}
+                    style={{ width: 140 }}
                   >
-                    <Select.Option value="all">Tất cả Khu vực</Select.Option>
+                    <Select.Option value="all">Tất cả Tòa/Khu</Select.Option>
                     <Select.Option value="Khu A">Khu A</Select.Option>
                     <Select.Option value="Khu B">Khu B</Select.Option>
-                    <Select.Option value="Khu E">Khu E</Select.Option>
+                  </Select>
+
+                  <Select
+                    value={roomTypeFilter}
+                    onChange={setRoomTypeFilter}
+                    style={{ width: 160 }}
+                  >
+                    <Select.Option value="all">Tất cả Loại phòng</Select.Option>
+                    <Select.Option value="Classroom">Phòng Lý thuyết</Select.Option>
+                    <Select.Option value="MeetingRoom">Phòng Họp</Select.Option>
+                    <Select.Option value="ComputerLab">Phòng Máy tính</Select.Option>
+                    <Select.Option value="LectureHall">Hội trường</Select.Option>
                   </Select>
                 </Space>
               </Col>
-              <Col xs={24} md={8} style={{ textAlign: "right" }}>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setEditingRoom(null);
-                    roomForm.resetFields();
-                    setIsRoomModalVisible(true);
-                  }}
-                  style={{ background: "#0d2e5c" }}
-                >
-                  Thêm phòng mới
-                </Button>
+
+              <Col xs={24} lg={8} style={{ textAlign: "right" }}>
+                <Space size="small">
+                  <Segmented
+                    value={roomViewMode}
+                    onChange={(val) => setRoomViewMode(val as "table" | "grid")}
+                    options={[
+                      { value: "table", icon: <UnorderedListOutlined /> },
+                      { value: "grid", icon: <AppstoreOutlined /> },
+                    ]}
+                  />
+                  <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                  <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
+                </Space>
               </Col>
             </Row>
-          </Card>
+          </div>
 
-          <Table
-            columns={roomColumns}
-            dataSource={roomsData}
-            rowKey="id"
-            loading={roomsQuery.isLoading}
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 800 }}
-          />
-        </div>
-      ),
-    },
-    {
-      key: "equipments",
-      label: (
-        <span>
-          <ToolOutlined /> Thiết bị & Sự cố{" "}
-          {pendingIssuesCount > 0 && (
-            <Badge count={pendingIssuesCount} style={{ marginLeft: 6 }} />
-          )}
-        </span>
-      ),
-      children: (
-        <div style={{ padding: "16px 0" }}>
-          <Tabs
-            type="card"
-            items={[
-              {
-                key: "issues_sub",
-                label: `Sự cố báo hỏng (${pendingIssuesCount} cần xử lý)`,
-                children: (
-                  <div>
-                    <Table
-                      columns={issueColumns}
-                      dataSource={issuesQuery.data || []}
-                      rowKey="id"
-                      loading={issuesQuery.isLoading}
-                      pagination={{ pageSize: 8 }}
-                      scroll={{ x: 800 }}
-                    />
-                  </div>
-                ),
-              },
-              {
-                key: "equip_sub",
-                label: "Danh mục Thiết bị",
-                children: (
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-                      <Input
-                        placeholder="Tìm kiếm thiết bị..."
-                        prefix={<SearchOutlined />}
-                        value={equipmentSearch}
-                        onChange={(e) => setEquipmentSearch(e.target.value)}
-                        style={{ width: 280 }}
-                        allowClear
-                      />
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => {
-                          setEditingEquipment(null);
-                          equipmentForm.resetFields();
-                          setIsEquipmentModalVisible(true);
+          {roomsQuery.isLoading ? (
+            <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 }}>
+              <Skeleton active paragraph={{ rows: 6 }} />
+            </div>
+          ) : roomViewMode === "table" ? (
+            <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+              <Table
+                className="academic-table"
+                columns={roomColumns}
+                dataSource={roomsData}
+                rowKey="id"
+                pagination={{ pageSize: 10, showSizeChanger: true }}
+                scroll={{ x: 'max-content' }}
+                locale={{ emptyText: <Empty description="Không tìm thấy phòng học" /> }}
+              />
+            </div>
+          ) : (
+            <Row gutter={[16, 16]}>
+              {roomsData.map((room: Room) => (
+                <Col xs={24} sm={12} md={8} lg={6} key={room.id}>
+                  <Card
+                    hoverable
+                    cover={
+                      <div
+                        style={{
+                          height: 120,
+                          background: room.imageUrl
+                            ? `url(${room.imageUrl}) center/cover`
+                            : "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                          display: "flex",
+                          alignItems: "flex-end",
+                          padding: 10,
+                          color: "#fff",
                         }}
-                        style={{ marginLeft: "auto", background: "#0d2e5c" }}
                       >
-                        Thêm thiết bị
-                      </Button>
-                    </div>
-                    <Table
-                      columns={equipmentColumns}
-                      dataSource={equipmentsData}
-                      rowKey="id"
-                      loading={equipmentsQuery.isLoading}
-                      pagination={{ pageSize: 8 }}
-                      scroll={{ x: 800 }}
+                        <Tag color="blue">{room.building || "Khu A"}</Tag>
+                      </div>
+                    }
+                    style={{ borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden" }}
+                    actions={[
+                      <button
+                        key="edit"
+                        type="button"
+                        className="academic-action-btn"
+                        onClick={() => {
+                          setEditingRoom(room);
+                          roomForm.setFieldsValue(room);
+                          setIsRoomModalVisible(true);
+                        }}
+                      >
+                        Chỉnh sửa
+                      </button>,
+                      <button
+                        key="equip"
+                        type="button"
+                        className="academic-action-btn"
+                        onClick={() => {
+                          setSelectedRoomForEquip(room);
+                          setIsRoomEquipmentDrawerVisible(true);
+                        }}
+                      >
+                        Chi tiết
+                      </button>,
+                      <Popconfirm
+                        key="delete"
+                        title="Xóa phòng học"
+                        onConfirm={() => deleteRoomMutation.mutate(room.id)}
+                        okText="Xóa"
+                        cancelText="Hủy"
+                      >
+                        <button type="button" className="academic-action-btn danger">
+                          Xóa
+                        </button>
+                      </Popconfirm>,
+                    ]}
+                  >
+                    <Card.Meta
+                      title={
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                          <span>{room.name}</span>
+                          <span style={{ fontSize: 12, color: "#64748b" }}>{room.capacity} chỗ</span>
+                        </div>
+                      }
+                      description={
+                        <div style={{ fontSize: 12, marginTop: 4, color: "#64748b" }}>
+                          <div>Tầng: {room.floor || "1"}</div>
+                          <div>{renderAcademicRoomStatus(room.status || "Active")}</div>
+                        </div>
+                      }
                     />
-                  </div>
-                ),
-              },
-            ]}
-          />
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+          )}
         </div>
-      ),
-    },
-    {
-      key: "users",
-      label: (
-        <span>
-          <TeamOutlined /> Quản lý Người dùng
-        </span>
-      ),
-      children: (
-        <div style={{ padding: "16px 0" }}>
-          <Card
-            size="small"
-            style={{ marginBottom: 16, borderRadius: 8, background: "#f8fafc" }}
-          >
-            <Row gutter={[16, 16]} align="middle" justify="space-between">
-              <Col xs={24} md={16}>
-                <Space wrap>
+      );
+    }
+
+    if (activeTab === "equipment-inventory") {
+      return (
+        <div>
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+            <Row gutter={[12, 12]} align="middle" justify="space-between">
+              <Col xs={24} lg={16}>
+                <Input
+                  placeholder="Tìm kiếm theo tên thiết bị, mã thiết bị, vị trí..."
+                  prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                  value={equipmentSearch}
+                  onChange={(e) => setEquipmentSearch(e.target.value)}
+                  style={{ width: 320 }}
+                  allowClear
+                />
+              </Col>
+              <Col xs={24} lg={8} style={{ textAlign: "right" }}>
+                <Space size="small">
+                  <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                  <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
+                </Space>
+              </Col>
+            </Row>
+          </div>
+
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <Table
+              className="academic-table"
+              columns={equipmentInventoryColumns}
+              dataSource={equipmentsData}
+              rowKey="id"
+              loading={equipmentsQuery.isLoading}
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: <Empty description="Danh mục thiết bị rỗng" /> }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "equipment-issues") {
+      return (
+        <div>
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+            <Row gutter={[12, 12]} align="middle" justify="space-between">
+              <Col xs={24} lg={18}>
+                <Space wrap size="middle">
+                  <Input
+                    placeholder="Tìm tên thiết bị, phòng học..."
+                    prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                    value={equipmentSearch}
+                    onChange={(e) => setEquipmentSearch(e.target.value)}
+                    style={{ width: 260 }}
+                    allowClear
+                  />
+
+                  <Select
+                    value={issueStatusFilter}
+                    onChange={setIssueStatusFilter}
+                    style={{ width: 160 }}
+                  >
+                    <Select.Option value="all">Tất cả trạng thái</Select.Option>
+                    <Select.Option value="Pending">Chờ tiếp nhận</Select.Option>
+                    <Select.Option value="Assigned">Đã phân công</Select.Option>
+                    <Select.Option value="Fixing">Đang sửa chữa</Select.Option>
+                    <Select.Option value="Resolved">Đã hoàn thành</Select.Option>
+                  </Select>
+
+                  <Select
+                    value={issueSeverityFilter}
+                    onChange={setIssueSeverityFilter}
+                    style={{ width: 150 }}
+                  >
+                    <Select.Option value="all">Tất cả mức độ</Select.Option>
+                    <Select.Option value="Low">Mức thấp</Select.Option>
+                    <Select.Option value="Medium">Trung bình</Select.Option>
+                    <Select.Option value="High">Nghiêm trọng</Select.Option>
+                    <Select.Option value="Critical">Khẩn cấp</Select.Option>
+                  </Select>
+                </Space>
+              </Col>
+              <Col xs={24} lg={6} style={{ textAlign: "right" }}>
+                <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+              </Col>
+            </Row>
+          </div>
+
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <Table
+              className="academic-table"
+              columns={issueColumns}
+              dataSource={issuesData}
+              rowKey="id"
+              loading={issuesQuery.isLoading}
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: <Empty description="Không có sự cố thiết bị nào cần xử lý" /> }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (!isAdmin && (activeTab.startsWith("users") || activeTab.startsWith("settings"))) {
+      return (
+        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 32, textAlign: "center" }}>
+          <Empty
+            description={
+              <div>
+                <Text strong style={{ fontSize: 16, color: "#c2410c", display: "block", marginBottom: 8 }}>
+                  Quyền truy cập hạn chế
+                </Text>
+                <Text type="secondary">
+                  Mục này chỉ dành riêng cho Quản trị viên hệ thống (Admin). Cán bộ Quản lý ĐT & CSVC không có quyền thao tác dữ liệu này.
+                </Text>
+              </div>
+            }
+          />
+          <Button type="primary" onClick={() => setActiveTab("analytics")} style={{ marginTop: 16, background: "#0d2e5c" }}>
+            Quay lại Báo cáo vận hành
+          </Button>
+        </div>
+      );
+    }
+
+    if (activeTab.startsWith("users")) {
+      return (
+        <div>
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+            <Row gutter={[12, 12]} align="middle" justify="space-between">
+              <Col xs={24} lg={16}>
+                <Space wrap size="middle">
                   <Input
                     placeholder="Tìm email, họ tên, đơn vị..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    style={{ width: 260 }}
+                    style={{ width: 280 }}
                     allowClear
                   />
+
                   <Select
                     value={userRoleFilter}
                     onChange={setUserRoleFilter}
-                    style={{ width: 170 }}
+                    style={{ width: 220 }}
                   >
                     <Select.Option value="all">Tất cả vai trò</Select.Option>
-                    <Select.Option value="admin">Quản trị viên</Select.Option>
-                    <Select.Option value="approver">Cán bộ Duyệt</Select.Option>
-                    <Select.Option value="lecturer">Giảng viên</Select.Option>
-                    <Select.Option value="student">Sinh viên</Select.Option>
+                    <Select.Option value="Admin">Quản trị viên (Admin)</Select.Option>
+                    <Select.Option value="Approver">Quản lý ĐT & CSVC (Manager)</Select.Option>
+                    <Select.Option value="Faculty">Giảng viên (Faculty)</Select.Option>
+                    <Select.Option value="User">Sinh viên (User)</Select.Option>
                   </Select>
                 </Space>
               </Col>
-              <Col xs={24} md={8} style={{ textAlign: "right" }}>
-                <Button
-                  type="primary"
-                  icon={<UserAddOutlined />}
-                  onClick={() => {
-                    setEditingUser(null);
-                    userForm.resetFields();
-                    setIsUserModalVisible(true);
-                  }}
-                  style={{ background: "#0d2e5c" }}
-                >
-                  Thêm tài khoản
-                </Button>
+              <Col xs={24} lg={8} style={{ textAlign: "right" }}>
+                <Space size="small">
+                  <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                  <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
+                </Space>
               </Col>
             </Row>
-          </Card>
+          </div>
 
-          <Table
-            columns={userColumns}
-            dataSource={accountsData}
-            rowKey="email"
-            loading={accountsQuery.isLoading}
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 800 }}
-          />
+          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <Table
+              className="academic-table"
+              columns={userColumns}
+              dataSource={accountsData}
+              rowKey="email"
+              loading={accountsQuery.isLoading}
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: <Empty description="Không tìm thấy tài khoản" /> }}
+            />
+          </div>
         </div>
-      ),
-    },
-    {
-      key: "settings",
-      label: (
-        <span>
-          <SettingOutlined /> Cấu hình Quy định
-        </span>
-      ),
-      children: (
-        <div style={{ padding: "16px 0", maxWidth: 800 }}>
-          <Card
-            title="Quy định Đặt phòng & Vận hành"
-            style={{ borderRadius: 12, border: "1px solid #e2e8f0" }}
-          >
-            <Form
-              layout="vertical"
-              initialValues={systemConfig}
-              onFinish={(values) => {
-                setSystemConfig(values);
-                localStorage.setItem("tbd_system_config", JSON.stringify(values));
-                message.success("Đã cập nhật cấu hình quy định hệ thống thành công!");
-              }}
-            >
-              <Form.Item
-                name="maxAdvanceDays"
-                label="Số ngày được phép đăng ký trước tối đa"
-                tooltip="Hệ thống sẽ không cho phép đặt phòng vượt quá số ngày này."
-              >
-                <InputNumber min={1} max={90} suffix="ngày" style={{ width: "100%" }} />
-              </Form.Item>
+      );
+    }
 
-              <Form.Item
-                name="maxHoursPerBooking"
-                label="Thời lượng đặt tối đa trong 1 lượt"
-                tooltip="Mỗi buổi học/sự kiện không vượt quá số giờ quy định."
+    if (activeTab === "settings" || activeTab === "settings-shifts") {
+      return (
+        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24, maxWidth: 840 }}>
+          {activeTab === "settings" ? (
+            <div>
+              <Title level={4} style={{ color: "#0f172a", marginBottom: 20 }}>
+                Tham Số Vận Hành & Quy Định Đặt Phòng
+              </Title>
+              <Form
+                layout="vertical"
+                initialValues={systemConfig}
+                onFinish={(values) => {
+                  setSystemConfig(values);
+                  localStorage.setItem("tbd_system_config", JSON.stringify(values));
+                  message.success("Đã lưu cấu hình quy định hệ thống thành công!");
+                }}
               >
-                <InputNumber min={1} max={12} suffix="giờ" style={{ width: "100%" }} />
-              </Form.Item>
+                <Form.Item
+                  name="maxAdvanceDays"
+                  label="Số ngày được phép đăng ký trước tối đa"
+                  tooltip="Hệ thống sẽ hạn chế người dùng đặt phòng vượt quá mốc ngày này."
+                >
+                  <InputNumber min={1} max={90} suffix="ngày" style={{ width: "100%" }} />
+                </Form.Item>
 
-              <Form.Item
-                name="operatingHours"
-                label="Khung giờ hoạt động chuẩn của các khu phòng"
-              >
-                <Input placeholder="VD: 07:00 - 21:00" />
-              </Form.Item>
+                <Form.Item
+                  name="maxHoursPerBooking"
+                  label="Thời lượng đặt phòng tối đa trong 1 lượt"
+                  tooltip="Thời lượng tối đa cho 1 buổi học hoặc sự kiện."
+                >
+                  <InputNumber min={1} max={12} suffix="giờ" style={{ width: "100%" }} />
+                </Form.Item>
 
-              <Form.Item
-                name="autoApproveClassroom"
-                valuePropName="checked"
-                label="Tự động duyệt lượt đặt phòng học thông thường đối với Giảng viên"
-              >
-                <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
-              </Form.Item>
+                <Form.Item
+                  name="cancelBeforeHours"
+                  label="Thời hạn tối thiểu cho phép hủy phòng trước giờ sử dụng"
+                  tooltip="Hạn chế việc hủy lịch sát giờ ảnh hưởng đến công tác sắp xếp phòng học."
+                >
+                  <InputNumber min={1} max={24} suffix="giờ" style={{ width: "100%" }} />
+                </Form.Item>
 
-              <Form.Item
-                name="requireSpecialJustification"
-                valuePropName="checked"
-                label="Bắt buộc nhập lý do & minh chứng khi đặt phòng ngoài giờ hoặc sự kiện đặc biệt"
-              >
-                <Switch checkedChildren="Bắt buộc" unCheckedChildren="Không" />
-              </Form.Item>
+                <Form.Item
+                  name="operatingHours"
+                  label="Khung giờ hoạt động chuẩn của các khu phòng"
+                >
+                  <Input placeholder="VD: 07:00 - 21:00" />
+                </Form.Item>
 
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<CheckOutlined />}
-                style={{ background: "#0d2e5c", marginTop: 8 }}
-              >
-                Lưu cấu hình hệ thống
-              </Button>
-            </Form>
-          </Card>
+                <Form.Item
+                  name="autoApproveClassroom"
+                  valuePropName="checked"
+                  label="Tự động phê duyệt đối với Giảng viên đăng ký phòng học thông thường"
+                >
+                  <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
+                </Form.Item>
+
+                <Form.Item
+                  name="requireSpecialJustification"
+                  valuePropName="checked"
+                  label="Bắt buộc minh chứng & lý do đối với sự kiện đặc biệt / ngoài giờ"
+                >
+                  <Switch checkedChildren="Bắt buộc" unCheckedChildren="Không" />
+                </Form.Item>
+
+                <Divider style={{ margin: "16px 0" }} />
+
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  icon={<CheckOutlined />}
+                  style={{ background: "#0284c7", borderColor: "#0284c7" }}
+                >
+                  Lưu cấu hình quy định
+                </Button>
+              </Form>
+            </div>
+          ) : (
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <Title level={4} style={{ color: "#0f172a", marginBottom: 6 }}>
+                  Khung Giờ Tiết Học & Ca Giảng Dạy
+                </Title>
+                <Paragraph style={{ color: "#64748b", marginBottom: 16 }}>
+                  Quy định khung giờ chuẩn (50 phút/tiết) áp dụng chính thức cho toàn bộ giảng đường và phòng học tại Trường Đại học Thái Bình Dương (TBD).
+                </Paragraph>
+
+                {/* Building Info & Shift Rules Notice */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: 16,
+                    marginBottom: 20,
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "#f0f9ff",
+                      border: "1px solid #bae6fd",
+                      borderRadius: 8,
+                      padding: "14px 16px",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: "#0369a1", fontSize: 13.5, marginBottom: 6 }}>
+                      🏫 Thông tin Ký hiệu Tòa nhà
+                    </div>
+                    <div style={{ fontSize: 13, color: "#0c4a6e", lineHeight: 1.6 }}>
+                      • <strong>Khu A</strong>: Tòa nhà 5 tầng (Giảng đường lý thuyết, phòng máy tính, phòng đa năng)<br />
+                      • <strong>Khu B</strong>: Tòa nhà 2 tầng (Khu thực hành, xưởng, phòng học chuyên đề)
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 8,
+                      padding: "14px 16px",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: "#1e293b", fontSize: 13.5, marginBottom: 6 }}>
+                      ⏱️ Quy tắc Phân Bổ Thời Gian
+                    </div>
+                    <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                      • Mỗi tiết học kéo dài đúng <strong>50 phút</strong><br />
+                      • <strong>Ca Sáng (Tiết 1 – 6)</strong>: 07:00 – 12:15 (Giải lao 15p sau Tiết 3, nghỉ trưa 60p)<br />
+                      • <strong>Ca Chiều (Tiết 7 – 12)</strong>: 13:15 – 18:30 (Giải lao 15p sau Tiết 9)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Table
+                className="academic-table"
+                size="small"
+                pagination={false}
+                scroll={{ x: 'max-content' }}
+                columns={[
+                  {
+                    title: "TIẾT",
+                    dataIndex: "period",
+                    key: "period",
+                    width: 110,
+                    render: (text: string) => (
+                      <Text strong style={{ color: "#0d2e5c" }}>
+                        {text}
+                      </Text>
+                    ),
+                  },
+                  {
+                    title: "BUỔI",
+                    dataIndex: "session",
+                    key: "session",
+                    width: 100,
+                    render: (val: string) => (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          backgroundColor: val === "Sáng" ? "#e0f2fe" : "#fef3c7",
+                          color: val === "Sáng" ? "#0369a1" : "#b45309",
+                        }}
+                      >
+                        {val}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: "GIỜ BẮT ĐẦU",
+                    dataIndex: "start",
+                    key: "start",
+                    width: 130,
+                    render: (val: string) => (
+                      <Text code style={{ fontWeight: 600, color: "#0f172a" }}>
+                        {val}
+                      </Text>
+                    ),
+                  },
+                  {
+                    title: "GIỜ KẾT THÚC",
+                    dataIndex: "end",
+                    key: "end",
+                    width: 130,
+                    render: (val: string) => (
+                      <Text code style={{ fontWeight: 600, color: "#0f172a" }}>
+                        {val}
+                      </Text>
+                    ),
+                  },
+                  {
+                    title: "GHI CHÚ",
+                    dataIndex: "notes",
+                    key: "notes",
+                    render: (val: string) => {
+                      const isSpecial = val.includes("Giải lao") || val.includes("Nghỉ trưa") || val.includes("Kết thúc");
+                      return (
+                        <span
+                          style={{
+                            color: isSpecial ? "#b45309" : "#64748b",
+                            fontWeight: isSpecial ? 600 : 400,
+                          }}
+                        >
+                          {val}
+                        </span>
+                      );
+                    },
+                  },
+                ]}
+                dataSource={[
+                  { key: 1, period: "Tiết 1", session: "Sáng", start: "07:00", end: "07:50", notes: "Ca sáng" },
+                  { key: 2, period: "Tiết 2", session: "Sáng", start: "07:50", end: "08:40", notes: "Ca sáng" },
+                  { key: 3, period: "Tiết 3", session: "Sáng", start: "08:40", end: "09:30", notes: "Giải lao sau tiết 3: 09:30 – 09:45 (15 phút)" },
+                  { key: 4, period: "Tiết 4", session: "Sáng", start: "09:45", end: "10:35", notes: "Ca sáng" },
+                  { key: 5, period: "Tiết 5", session: "Sáng", start: "10:35", end: "11:25", notes: "Ca sáng" },
+                  { key: 6, period: "Tiết 6", session: "Sáng", start: "11:25", end: "12:15", notes: "Nghỉ trưa: 12:15 – 13:15 (60 phút)" },
+                  { key: 7, period: "Tiết 7", session: "Chiều", start: "13:15", end: "14:05", notes: "Ca chiều" },
+                  { key: 8, period: "Tiết 8", session: "Chiều", start: "14:05", end: "14:55", notes: "Ca chiều" },
+                  { key: 9, period: "Tiết 9", session: "Chiều", start: "14:55", end: "15:45", notes: "Giải lao sau tiết 9: 15:45 – 16:00 (15 phút)" },
+                  { key: 10, period: "Tiết 10", session: "Chiều", start: "16:00", end: "16:50", notes: "Ca chiều" },
+                  { key: 11, period: "Tiết 11", session: "Chiều", start: "16:50", end: "17:40", notes: "Ca chiều" },
+                  { key: 12, period: "Tiết 12", session: "Chiều", start: "17:40", end: "18:30", notes: "Kết thúc ca chiều" },
+                ]}
+              />
+            </div>
+          )}
         </div>
-      ),
-    },
-  ];
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div
       style={{
         padding: "24px 24px",
-        maxWidth: 1400,
+        maxWidth: 1440,
         margin: "0 auto",
         width: "100%",
         minHeight: "85vh",
       }}
     >
-      {/* Page Header */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #0d2e5c 0%, #1e40af 100%)",
-          padding: "28px 32px",
-          borderRadius: 16,
-          color: "#fff",
-          marginBottom: 24,
-          boxShadow: "0 10px 25px -5px rgba(13, 46, 92, 0.2)",
-        }}
-      >
-        <Row gutter={[24, 24]} align="middle" justify="space-between">
-          <Col xs={24} md={14}>
-            <Title level={2} style={{ color: "#fff", margin: 0 }}>
-              Trung Tâm Quản Trị Hệ Thống
-            </Title>
-            <Paragraph style={{ color: "#e2e8f0", marginTop: 8, fontSize: 14, marginBottom: 0 }}>
-              Quản lý tổng thể phòng học, phê duyệt lượt đặt phòng, giám sát thiết bị và cấu hình vận hành Trường Đại học Thái Bình Dương.
-            </Paragraph>
-          </Col>
-          <Col xs={24} md={10}>
-            <Row gutter={12}>
-              <Col span={8}>
-                <Card
-                  size="small"
+      {/* Breadcrumb, Page Title & Main Action Button */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 13, color: "#64748b" }}>
+            {currentHeaderInfo.breadcrumb.map((item, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span style={{ margin: "0 6px", color: "#cbd5e1" }}>/</span>}
+                <span
                   style={{
-                    background: "rgba(255,255,255,0.12)",
-                    border: "none",
-                    textAlign: "center",
+                    color:
+                      idx === currentHeaderInfo.breadcrumb.length - 1
+                        ? "#0f172a"
+                        : "#64748b",
+                    fontWeight:
+                      idx === currentHeaderInfo.breadcrumb.length - 1 ? 600 : 400,
                   }}
                 >
-                  <Statistic
-                    title={<span style={{ color: "#cbd5e1", fontSize: 12 }}>Chờ duyệt</span>}
-                    value={pendingBookingsCount}
-                    styles={{ content: { color: "#fde047", fontWeight: "bold" } }}
-                  />
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card
-                  size="small"
-                  style={{
-                    background: "rgba(255,255,255,0.12)",
-                    border: "none",
-                    textAlign: "center",
-                  }}
-                >
-                  <Statistic
-                    title={<span style={{ color: "#cbd5e1", fontSize: 12 }}>Tổng phòng</span>}
-                    value={roomsQuery.data?.length || 0}
-                    styles={{ content: { color: "#fff", fontWeight: "bold" } }}
-                  />
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card
-                  size="small"
-                  style={{
-                    background: "rgba(255,255,255,0.12)",
-                    border: "none",
-                    textAlign: "center",
-                  }}
-                >
-                  <Statistic
-                    title={<span style={{ color: "#cbd5e1", fontSize: 12 }}>Sự cố cần sửa</span>}
-                    value={pendingIssuesCount}
-                    styles={{ content: { color: "#f87171", fontWeight: "bold" } }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
+                  {item}
+                </span>
+              </span>
+            ))}
+          </div>
+          <div>
+            <Tag color={isAdmin ? "blue" : "volcano"} style={{ fontWeight: 600, margin: 0, fontSize: 12, padding: "2px 8px" }}>
+              {isAdmin ? "Vai trò: Quản trị viên (Admin)" : "Vai trò: Quản lý ĐT & CSVC (Manager)"}
+            </Tag>
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, color: isAdmin ? "#0d2e5c" : "#c2410c", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 3 }}>
+              {isAdmin ? "Trung Tâm Quản Trị Hệ Thống" : "Trung Tâm Quản Lý Đào Tạo & Cơ Sở Vật Chất"}
+            </div>
+            <h1
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: "#0f172a",
+                margin: 0,
+                letterSpacing: "-0.4px",
+              }}
+            >
+              {currentHeaderInfo.title}
+            </h1>
+            {!isAdmin && (
+              <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                Quản lý phòng học, thời khóa biểu, phê duyệt lượt đặt phòng, giám sát thiết bị và xử lý sự cố
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {renderTopActionButton()}
+          </div>
+        </div>
       </div>
 
-      {/* Main Tabs */}
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        type="card"
-        size="large"
-        items={tabItems}
-      />
+      {/* Main 2-Column Academic Layout */}
+      <div className="admin-page-layout">
+        {/* Left Sidebar Menu Tree */}
+        <div className="academic-sidebar" style={{ width: 250, minWidth: 250, flexShrink: 0 }}>
+          {/* TỔNG QUAN */}
+          <div className="academic-menu-section-title">TỔNG QUAN</div>
+          <div
+            className={`academic-nav-item ${activeTab === "analytics" ? "active" : ""}`}
+            onClick={() => setActiveTab("analytics")}
+          >
+            <span>Báo cáo vận hành</span>
+          </div>
+
+          {/* QUẢN LÝ ĐẶT PHÒNG */}
+          <div className="academic-menu-section-title">QUẢN LÝ ĐẶT PHÒNG</div>
+          <div
+            className={`academic-nav-item ${activeTab === "bookings-pending" ? "active" : ""}`}
+            onClick={() => setActiveTab("bookings-pending")}
+          >
+            <span>Chờ phê duyệt</span>
+            {pendingBookingsCount > 0 && (
+              <span className="academic-badge-count warn">
+                {pendingBookingsCount}
+              </span>
+            )}
+          </div>
+          <div
+            className={`academic-nav-item ${activeTab === "bookings" ? "active" : ""}`}
+            onClick={() => setActiveTab("bookings")}
+          >
+            <span>Danh sách đơn đặt phòng</span>
+          </div>
+          <div
+            className={`academic-nav-item ${activeTab === "bookings-schedule" ? "active" : ""}`}
+            onClick={() => setActiveTab("bookings-schedule")}
+          >
+            <span>Lịch biểu theo tuần</span>
+          </div>
+          <div
+            className={`academic-nav-item ${activeTab === "academic-schedule" ? "active" : ""}`}
+            onClick={() => setActiveTab("academic-schedule")}
+          >
+            <span>Thời khóa biểu & Lịch học</span>
+          </div>
+
+          {/* CƠ SỞ VẬT CHẤT */}
+          <div className="academic-menu-section-title">CƠ SỞ VẬT CHẤT</div>
+          <div
+            className={`academic-nav-item ${activeTab === "rooms" ? "active" : ""}`}
+            onClick={() => setActiveTab("rooms")}
+          >
+            <span>Phòng học</span>
+          </div>
+          <div
+            className={`academic-nav-item academic-nav-item-sub ${
+              activeTab === "rooms-building-a" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("rooms-building-a")}
+          >
+            <span>Khu A (Tòa nhà 5 tầng)</span>
+          </div>
+          <div
+            className={`academic-nav-item academic-nav-item-sub ${
+              activeTab === "rooms-building-b" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("rooms-building-b")}
+          >
+            <span>Khu B (Tòa nhà 2 tầng)</span>
+          </div>
+          <div
+            className={`academic-nav-item ${
+              activeTab === "equipment-inventory" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("equipment-inventory")}
+          >
+            <span>Thiết bị mượn thêm</span>
+          </div>
+          <div
+            className={`academic-nav-item ${
+              activeTab === "equipment-issues" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("equipment-issues")}
+          >
+            <span>Báo cáo sự cố</span>
+            {pendingIssuesCount > 0 && (
+              <span className="academic-badge-count danger">
+                {pendingIssuesCount}
+              </span>
+            )}
+          </div>
+
+          {/* NGƯỜI DÙNG & CẤU HÌNH: CHỈ HIỂN THỊ KHI LÀ ADMIN */}
+          {isAdmin && (
+            <>
+              {/* NGƯỜI DÙNG */}
+              <div className="academic-menu-section-title">NGƯỜI DÙNG</div>
+              <div
+                className={`academic-nav-item ${activeTab === "users-students" ? "active" : ""}`}
+                onClick={() => setActiveTab("users-students")}
+              >
+                <span>Sinh viên</span>
+              </div>
+              <div
+                className={`academic-nav-item ${activeTab === "users-lecturers" ? "active" : ""}`}
+                onClick={() => setActiveTab("users-lecturers")}
+              >
+                <span>Giảng viên & Cán bộ</span>
+              </div>
+              <div
+                className={`academic-nav-item ${activeTab === "users" ? "active" : ""}`}
+                onClick={() => setActiveTab("users")}
+              >
+                <span>Phân quyền quản trị</span>
+              </div>
+
+              {/* CẤU HÌNH */}
+              <div className="academic-menu-section-title">CẤU HÌNH</div>
+              <div
+                className={`academic-nav-item ${activeTab === "settings" ? "active" : ""}`}
+                onClick={() => setActiveTab("settings")}
+              >
+                <span>Quy định đặt phòng</span>
+              </div>
+              <div
+                className={`academic-nav-item ${activeTab === "settings-shifts" ? "active" : ""}`}
+                onClick={() => setActiveTab("settings-shifts")}
+              >
+                <span>Khung giờ tiết học</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Right Main Content Pane */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {renderMainContent()}
+        </div>
+      </div>
 
       {/* MODAL: Add/Edit Room */}
       <Modal
-        title={editingRoom ? "Cập nhật phòng học" : "Thêm phòng học mới"}
+        title={editingRoom ? "Cập Nhật Thông Tin Phòng Học" : "Thêm Phòng Học Mới"}
         open={isRoomModalVisible}
         onCancel={() => setIsRoomModalVisible(false)}
         onOk={() => roomForm.submit()}
@@ -1448,7 +2709,7 @@ export default function AdminPage() {
           <Form.Item
             name="name"
             label="Mã & Tên phòng"
-            rules={[{ required: true, message: "Vui lòng nhập tên phòng!" }]}
+            rules={[{ required: true, message: "Vui lòng nhập tên phòng học!" }]}
           >
             <Input placeholder="VD: A.101 - Phòng học lý thuyết" />
           </Form.Item>
@@ -1465,7 +2726,6 @@ export default function AdminPage() {
                   options={[
                     { value: "Khu A", label: "Khu A" },
                     { value: "Khu B", label: "Khu B" },
-                    { value: "Khu E", label: "Khu E" },
                   ]}
                 />
               </Form.Item>
@@ -1506,8 +2766,8 @@ export default function AdminPage() {
               options={[
                 { value: "Classroom", label: "Phòng học lý thuyết" },
                 { value: "MeetingRoom", label: "Phòng họp" },
-                { value: "Lab", label: "Phòng Lab / Thí nghiệm" },
-                { value: "ComputerLab", label: "Phòng máy tính" },
+                { value: "Lab", label: "Phòng Thí nghiệm" },
+                { value: "ComputerLab", label: "Phòng Máy tính" },
                 { value: "LectureHall", label: "Hội trường" },
               ]}
             />
@@ -1518,10 +2778,71 @@ export default function AdminPage() {
           </Form.Item>
 
           <Form.Item name="description" label="Ghi chú & Trang thiết bị có sẵn">
-            <Input.TextArea rows={3} placeholder="VD: Trang bị sẵn máy chiếu, 2 điều hòa, micro không dây..." />
+            <Input.TextArea
+              rows={3}
+              placeholder="VD: Trang bị sẵn máy chiếu, 2 điều hòa, hệ thống loa..."
+            />
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* DRAWER: Room Equipment Inspector */}
+      <Drawer
+        title={
+          selectedRoomForEquip
+            ? `Danh Mục Thiết Bị Bên Trong Phòng ${selectedRoomForEquip.name}`
+            : "Trang Thiết Bị Phòng"
+        }
+        placement="right"
+        size="large"
+        onClose={() => setIsRoomEquipmentDrawerVisible(false)}
+        open={isRoomEquipmentDrawerVisible}
+      >
+        {selectedRoomForEquip && (
+          <div>
+            <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="Khu vực">{selectedRoomForEquip.building}</Descriptions.Item>
+              <Descriptions.Item label="Sức chứa">{selectedRoomForEquip.capacity} chỗ</Descriptions.Item>
+              <Descriptions.Item label="Mô tả thiết bị">{selectedRoomForEquip.description || "Máy chiếu, Điều hòa, Bàn ghế chuẩn"}</Descriptions.Item>
+            </Descriptions>
+
+            <Title level={5}>Trang Thiết Bị Ghi Nhận</Title>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {(equipmentsQuery.data || [])
+                .filter((e: EquipmentItem) => e.roomId === selectedRoomForEquip.id || e.roomName?.includes(selectedRoomForEquip.name))
+                .map((eq: EquipmentItem) => (
+                  <Card key={eq.id} size="small" style={{ borderRadius: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <Text strong>{eq.name}</Text>
+                      <Tag color={eq.status === "Active" ? "green" : "warning"}>{eq.status}</Tag>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                      Mã: {eq.code} | Số lượng: {eq.quantity}
+                    </div>
+                  </Card>
+                ))}
+            </div>
+
+            <Button
+              type="dashed"
+              block
+              icon={<PlusOutlined />}
+              style={{ marginTop: 16 }}
+              onClick={() => {
+                setEditingEquipment(null);
+                equipmentForm.resetFields();
+                equipmentForm.setFieldsValue({
+                  roomId: selectedRoomForEquip.id,
+                  roomName: selectedRoomForEquip.name,
+                });
+                setIsEquipmentModalVisible(true);
+              }}
+            >
+              Thêm thiết bị vào phòng này
+            </Button>
+          </div>
+        )}
+      </Drawer>
 
       {/* MODAL: Booking Detail */}
       <Modal
@@ -1551,11 +2872,12 @@ export default function AdminPage() {
             <Descriptions.Item label="Sức chứa tham gia">
               {selectedBooking.participantCount || "--"} người
             </Descriptions.Item>
-            <Descriptions.Item label="Mục đích">
+            <Descriptions.Item label="Mục đích sử dụng">
               {selectedBooking.purpose || "Chưa nhập"}
             </Descriptions.Item>
             <Descriptions.Item label="Thiết bị mượn kèm">
-              {selectedBooking.requestedEquipments && selectedBooking.requestedEquipments.length > 0 ? (
+              {selectedBooking.requestedEquipments &&
+              selectedBooking.requestedEquipments.length > 0 ? (
                 <div>
                   {selectedBooking.requestedEquipments.map((eq, idx) => (
                     <Tag color="blue" key={idx} style={{ marginBottom: 4 }}>
@@ -1564,17 +2886,26 @@ export default function AdminPage() {
                   ))}
                 </div>
               ) : (
-                <em>Không đăng ký mượn thiết bị</em>
+                <em>Không đăng ký mượn thiết bị thêm</em>
               )}
             </Descriptions.Item>
             <Descriptions.Item label="Sự kiện đặc biệt">
               {selectedBooking.isSpecialRequest ? (
-                <Tag color="volcano">Sự kiện ngoài giờ / Cần duyệt BQL</Tag>
+                <Tag color="volcano">Sự kiện ngoài giờ / Cần BQL phê duyệt</Tag>
               ) : (
-                <Tag color="green">Thông thường</Tag>
+                <Tag color="green">Sử dụng lớp học thông thường</Tag>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="Ghi chú BQL">{selectedBooking.adminNotes || "Chưa có"}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái">
+              {renderAcademicBookingStatus(selectedBooking.status, selectedBooking)}
+            </Descriptions.Item>
+            {(selectedBooking.adminNotes || selectedBooking.rejectReason || selectedBooking.rejectionReason) && (
+              <Descriptions.Item label="Ghi chú / Lý do xử lý">
+                <span style={{ color: "#b91c1c", fontWeight: 500 }}>
+                  {selectedBooking.adminNotes || selectedBooking.rejectReason || selectedBooking.rejectionReason}
+                </span>
+              </Descriptions.Item>
+            )}
           </Descriptions>
         )}
       </Modal>
@@ -1606,7 +2937,7 @@ export default function AdminPage() {
           >
             <Input.TextArea
               rows={3}
-              placeholder="VD: Phòng đã trùng lịch thi học kỳ / Đang trong lịch bảo trì đột xuất..."
+              placeholder="VD: Phòng đã trùng lịch thi học kỳ / Đang bảo trì đột xuất / Thiếu minh chứng kèm theo..."
             />
           </Form.Item>
         </Form>
@@ -1614,7 +2945,7 @@ export default function AdminPage() {
 
       {/* MODAL: Equipment Add/Edit */}
       <Modal
-        title={editingEquipment ? "Chỉnh sửa thiết bị" : "Thêm thiết bị mới"}
+        title={editingEquipment ? "Chỉnh Sửa Thiết Bị" : "Thêm Thiết Bị Mới"}
         open={isEquipmentModalVisible}
         onCancel={() => setIsEquipmentModalVisible(false)}
         onOk={() => equipmentForm.submit()}
@@ -1634,7 +2965,12 @@ export default function AdminPage() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="quantity" label="Số lượng" rules={[{ required: true }]} initialValue={1}>
+              <Form.Item
+                name="quantity"
+                label="Số lượng"
+                rules={[{ required: true }]}
+                initialValue={1}
+              >
                 <InputNumber min={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
@@ -1652,7 +2988,7 @@ export default function AdminPage() {
           </Row>
 
           <Form.Item name="roomName" label="Vị trí đặt thiết bị">
-            <Input placeholder="Kho thiết bị dùng chung hoặc mã phòng" />
+            <Input placeholder="Kho thiết bị dùng chung hoặc tên phòng học" />
           </Form.Item>
         </Form>
       </Modal>
@@ -1673,8 +3009,8 @@ export default function AdminPage() {
             <Select
               options={[
                 { value: "Pending", label: "Chờ tiếp nhận" },
-                { value: "Assigned", label: "Đã phân công kỹ thuật" },
-                { value: "Fixing", label: "Đang tiến hành sửa chữa" },
+                { value: "Assigned", label: "Đã phân công kỹ thuật viên" },
+                { value: "Fixing", label: "Đang sửa chữa" },
                 { value: "Resolved", label: "Đã khắc phục hoàn tất" },
                 { value: "Rejected", label: "Không đủ điều kiện xử lý" },
               ]}
@@ -1685,18 +3021,22 @@ export default function AdminPage() {
             <Input placeholder="VD: Kỹ thuật viên Nguyễn Văn Bình" />
           </Form.Item>
 
-          <Form.Item name="repairNotes" label="Ghi chú kết quả sửa chữa / Phản hồi">
-            <Input.TextArea rows={3} placeholder="VD: Đã thay bóng đèn máy chiếu mới, thiết bị hoạt động bình thường..." />
+          <Form.Item name="repairNotes" label="Ghi chú kết quả / Tiến độ sửa chữa">
+            <Input.TextArea
+              rows={3}
+              placeholder="VD: Đã thay thế linh kiện bóng đèn mới, đã kiểm tra vận hành tốt..."
+            />
           </Form.Item>
         </Form>
       </Modal>
 
       {/* MODAL: User Add/Edit */}
       <Modal
-        title={editingUser ? "Cập nhật thông tin tài khoản" : "Thêm tài khoản mới"}
+        title={editingUser ? "Cập Nhật Thông Tin Tài Khoản" : "Thêm Tài Khoản Mới"}
         open={isUserModalVisible}
         onCancel={() => setIsUserModalVisible(false)}
         onOk={() => userForm.submit()}
+        confirmLoading={saveUserMutation.isPending}
       >
         <Form
           form={userForm}
@@ -1706,35 +3046,117 @@ export default function AdminPage() {
           <Form.Item
             name="email"
             label="Địa chỉ Email (TBD)"
-            rules={[{ required: true, type: "email" }]}
+            rules={[{ required: true, type: "email", message: "Vui lòng nhập email hợp lệ!" }]}
           >
             <Input placeholder="email@tbd.edu.vn" disabled={!!editingUser} />
           </Form.Item>
 
-          <Form.Item name="fullName" label="Họ và Tên">
-            <Input placeholder="VD: Nguyễn Văn A" />
+          {!editingUser && (
+            <Form.Item
+              name="password"
+              label="Mật khẩu khởi tạo"
+              initialValue="Tbd@123456"
+              extra="Mặc định nếu để trống là: Tbd@123456"
+            >
+              <Input.Password placeholder="Tbd@123456" />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            name="fullName"
+            label="Họ và Tên"
+            rules={[{ required: true, message: "Vui lòng nhập họ và tên!" }]}
+          >
+            <Input placeholder="VD: TS. Nguyễn Văn A / Trần Văn B" />
+          </Form.Item>
+
+          <Form.Item
+            name="userCode"
+            label="Mã định danh (MSSV / Mã Cán bộ)"
+            tooltip="Mã số sinh viên (đối với Sinh viên) hoặc Mã định danh cán bộ giảng viên."
+          >
+            <Input placeholder="VD: 2200101 / CB-CNTT-01" />
           </Form.Item>
 
           <Form.Item name="department" label="Khoa / Phòng ban">
-            <Input placeholder="VD: Khoa Công nghệ Thông tin" />
+            <Input placeholder="VD: Khoa Công nghệ Thông tin & AI" />
           </Form.Item>
 
-          <Form.Item name="role" label="Vai trò phân quyền" rules={[{ required: true }]} initialValue="lecturer">
+          <Form.Item
+            name="role"
+            label="Vai trò phân quyền"
+            rules={[{ required: true, message: "Vui lòng chọn vai trò!" }]}
+            initialValue="User"
+          >
             <Select
               options={[
-                { value: "admin", label: "Quản trị viên (Admin)" },
-                { value: "approver", label: "Cán bộ Phê duyệt (Ban QL)" },
-                { value: "lecturer", label: "Giảng viên" },
-                { value: "student", label: "Sinh viên" },
+                { value: "Admin", label: "Quản trị viên (Admin)" },
+                { value: "Approver", label: "Quản lý ĐT & CSVC (Manager)" },
+                { value: "Faculty", label: "Giảng viên (Faculty)" },
+                { value: "User", label: "Sinh viên (User)" },
               ]}
             />
           </Form.Item>
 
-          <Form.Item name="phone" label="Số điện thoại liên hệ">
-            <Input placeholder="0905..." />
+          <Form.Item name="phoneNumber" label="Số điện thoại liên hệ">
+            <Input placeholder="VD: 0905 123 456" />
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* Notifications Drawer */}
+      <Drawer
+        title="Thông Báo Hệ Thống"
+        open={isNotificationDrawerOpen}
+        onClose={() => setIsNotificationDrawerOpen(false)}
+        size="default"
+      >
+        {notificationsQuery.isLoading ? (
+          <div style={{ textAlign: "center", padding: "30px 0" }}>
+            <Spin tip="Đang tải thông báo..." />
+          </div>
+        ) : Array.isArray(notificationsQuery.data) && notificationsQuery.data.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {notificationsQuery.data.map((item: any, idx: number) => (
+              <div
+                key={item.id || idx}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 6,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fafc",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                  {item.title || item.subject || "Thông báo hệ thống"}
+                </div>
+                <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>
+                  {item.message || item.content || item.description || "Nội dung thông báo"}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, textAlign: "right" }}>
+                  {item.createdAt ? dayjs(item.createdAt).format("DD/MM/YYYY HH:mm") : "Hôm nay"}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty description="Không có thông báo mới" />
+        )}
+      </Drawer>
+
+      {/* MODAL: Nhập Thời Khóa Biểu & Lịch Học Định Kỳ Theo Học Kỳ */}
+      <SemesterScheduleModal
+        open={isSemesterScheduleModalOpen}
+        onClose={() => setIsSemesterScheduleModalOpen(false)}
+        rooms={roomsData}
+        allBookings={bookingsData}
+        currentUserRole={activeUserRole}
+        currentUserEmail={currentUserEmail}
+        currentUserName={currentUserName}
+        onScheduleCreated={() => {
+          setActiveTab("academic-schedule");
+        }}
+      />
     </div>
   );
 }

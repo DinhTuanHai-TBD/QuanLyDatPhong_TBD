@@ -1,26 +1,19 @@
-import { getUserEmail } from "./api/authUtils";
+import { getUserEmail, getUserRole } from "./api/authUtils";
 import {
-  CheckCircleOutlined,
-  CalendarOutlined,
   CloseOutlined,
   EnvironmentOutlined,
   FacebookFilled,
   GlobalOutlined,
-  HistoryOutlined,
   LoginOutlined,
   LogoutOutlined,
   MailOutlined,
   MenuOutlined,
   PhoneOutlined,
-  SettingOutlined,
-  TeamOutlined,
   UserOutlined,
-  ToolOutlined,
   YoutubeFilled,
-  FormOutlined,
-  DownOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Layout, Tooltip, Dropdown } from "antd";
+import { Button, Drawer, Layout, Tooltip, Tag } from "antd";
 import NotificationBell from "./features/notifications/NotificationBell";
 import { useEffect, useState } from "react";
 import {
@@ -31,6 +24,10 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { http } from "./api/http";
+import { fetchUserProfile, type UserProfileData } from "./api/userProfile";
+import UserProfileModal from "./components/UserProfileModal";
 import BookingPage from "./features/bookings/BookingPage";
 import BookingHistoryPage from "./features/bookings/BookingHistoryPage";
 import HomePage from "./features/home/HomePage";
@@ -40,7 +37,7 @@ import AdminPage from "./features/admin/AdminPage";
 import ApprovalsPage from "./features/approvals/ApprovalsPage";
 import CalendarPage from "./features/calendar/CalendarPage";
 import ReportIssuePage from "./features/issues/ReportIssuePage";
-import { getUserRole } from "./api/authUtils";
+import NotificationsPage from "./features/notifications/NotificationsPage";
 
 const { Content } = Layout;
 
@@ -128,6 +125,20 @@ function SiteFooter() {
   );
 }
 
+function ScrollToTop() {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "instant",
+    });
+  }, [pathname, search]);
+
+  return null;
+}
+
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -137,30 +148,81 @@ function App() {
   const isLoginPage = location.pathname === "/login";
   const isHomePage = location.pathname === "/";
 
+  // 1. Trích xuất thông tin người dùng thực tế từ API GET /api/auth/me
+  const { data: userProfile } = useQuery<UserProfileData>({
+    queryKey: ['user-profile'],
+    queryFn: async () => {
+      try {
+        const res = await http.get('/api/auth/me');
+        if (res.data) {
+          const email = getUserEmail();
+          const hasFullInfo = Boolean(
+            res.data.fullName?.trim() &&
+            res.data.phoneNumber?.trim() &&
+            res.data.department?.trim()
+          );
+          const merged = { ...res.data, isProfileComplete: hasFullInfo };
+          localStorage.setItem(`tbd_user_profile_${(email || 'default').toLowerCase().trim()}`, JSON.stringify(merged));
+          return merged;
+        }
+      } catch (err) {
+        console.warn('API /api/auth/me chưa phản hồi, sử dụng bộ nhớ cache', err);
+      }
+      return fetchUserProfile();
+    },
+    enabled: isLoggedIn,
+  });
+
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Kiểm tra xem hồ sơ có thiếu thông tin không:
+  // Nếu tài khoản đã có đầy đủ Họ và tên, Khoa / Phòng ban, và Số điện thoại thì KHÔNG tự động bật Modal
+  const isProfileIncomplete = Boolean(
+    isLoggedIn &&
+    userProfile &&
+    (!userProfile.fullName?.trim() ||
+      !userProfile.phoneNumber?.trim() ||
+      !userProfile.department?.trim())
+  );
+
+  // 2. Tự động hiển thị Modal "Hoàn thiện Hồ sơ" khi tài khoản mới tạo và còn thiếu một trong các thông tin trên
+  useEffect(() => {
+    if (isLoggedIn && userProfile && !isLoginPage) {
+      if (isProfileIncomplete) {
+        setProfileModalOpen(true);
+      }
+    }
+  }, [isLoggedIn, userProfile, isLoginPage, isProfileIncomplete]);
+
   const userRole = getUserRole();
-  const isAdmin = isLoggedIn && userRole === "admin";
-  const isApprover = isLoggedIn && userRole === "approver";
+  const isAdmin = isLoggedIn && (userRole === "admin" || userProfile?.role === "Admin" || String(userProfile?.role).toLowerCase() === "admin");
+  const isApprover = isLoggedIn && (
+    userRole === "approver" ||
+    userProfile?.role === "Approver" ||
+    String(userProfile?.role).toLowerCase() === "approver" ||
+    String(userProfile?.role).toLowerCase() === "manager" ||
+    String(userProfile?.role).toLowerCase() === "quanly" ||
+    String(userProfile?.role).toLowerCase() === "staff"
+  );
   const canAccessAdminPage = isAdmin || isApprover;
 
   const activeNavigationItems = [
-    { to: "/", label: "Trang chủ", icon: <GlobalOutlined /> },
-    { to: "/calendar", label: "Lịch phòng", icon: <CalendarOutlined /> },
-    { to: "/bookings", label: "Đặt phòng", icon: <FormOutlined /> },
-    { to: "/rooms", label: "Thông tin phòng", icon: <TeamOutlined /> },
+    { to: "/", label: "Trang chủ" },
+    { to: "/calendar", label: "Lịch phòng" },
+    { to: "/bookings", label: "Đặt phòng" },
+    { to: "/rooms", label: "Thông tin phòng" },
     {
       to: "/booking-history",
       label: "Lịch sử đặt phòng",
-      icon: <HistoryOutlined />,
     },
-    { to: "/report-issue", label: "Báo cáo sự cố", icon: <ToolOutlined /> },
+    { to: "/report-issue", label: "Báo cáo sự cố" },
     ...(canAccessAdminPage
       ? [
           {
             to: "/approvals",
             label: "Duyệt yêu cầu",
-            icon: <CheckCircleOutlined />,
           },
-          { to: "/admin", label: "Quản trị", icon: <SettingOutlined /> },
+          { to: "/admin", label: isAdmin ? "Quản trị" : "Quản lý ĐT & CSVC" },
         ]
       : []),
   ];
@@ -181,11 +243,17 @@ function App() {
   const activePath = location.pathname;
 
   if (isLoginPage) {
-    return <LoginPage />;
+    return (
+      <>
+        <ScrollToTop />
+        <LoginPage />
+      </>
+    );
   }
 
   return (
     <Layout className="app-shell">
+      <ScrollToTop />
       <header
         className={`tbd-navbar ${isHomePage && !scrolled ? "tbd-navbar--overlay" : "tbd-navbar--solid"}`}
       >
@@ -202,90 +270,58 @@ function App() {
         </Link>
 
         <nav className="desktop-nav" aria-label="Điều hướng chính">
-          {activeNavigationItems.map((item, index) => (
+          {activeNavigationItems.map((item) => (
             <Link
-              className={`nav-item ${activePath === item.to.split("?")[0] && !(item.to.includes("?") && !location.search.includes("history")) ? "active" : ""} ${index >= 4 ? "nav-item-more" : ""}`}
+              className={`nav-item ${activePath === item.to.split("?")[0] && !(item.to.includes("?") && !location.search.includes("history")) ? "active" : ""}`}
               key={item.to}
               to={item.to}
             >
               {item.label}
             </Link>
           ))}
-          {activeNavigationItems.length > 4 && (
-            <Dropdown
-              menu={{
-                items: activeNavigationItems.slice(4).map((item) => ({
-                  key: item.to,
-                  label: (
-                    <Link
-                      to={item.to}
-                      style={{ display: "flex", gap: 8, alignItems: "center" }}
-                    >
-                      {item.icon} {item.label}
-                    </Link>
-                  ),
-                })),
-              }}
-              placement="bottomRight"
-            >
-              <a
-                className="nav-item nav-more-dropdown"
-                onClick={(e) => e.preventDefault()}
-                style={{ cursor: "pointer" }}
-              >
-                Thêm <DownOutlined style={{ fontSize: 12, marginLeft: 2 }} />
-              </a>
-            </Dropdown>
-          )}
         </nav>
 
-        <div
-          className="nav-actions"
-          style={{ display: "flex", alignItems: "center", gap: 12 }}
-        >
+        <div className="nav-actions">
           {isLoggedIn && <NotificationBell />}
 
           {isLoggedIn ? (
-            <>
-              <Tooltip title={getUserEmail()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Tooltip title="Xem và cập nhật Hồ sơ cá nhân">
                 <Button
                   type="text"
                   className="nav-user-button nav-user-button-desktop"
-                  icon={<LogoutOutlined />}
-                  onClick={logout}
+                  icon={<UserOutlined style={{ color: isProfileIncomplete ? '#eab308' : '#38bdf8' }} />}
+                  onClick={() => setProfileModalOpen(true)}
+                  style={{ display: 'flex', alignItems: 'center' }}
                 >
-                  <span className="user-email-text">
-                    {getUserEmail() || "Đăng xuất"}
+                  <span className="user-email-text" style={{ maxWidth: 160, textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    {userProfile?.fullName || getUserEmail() || "Hồ sơ cá nhân"}
                   </span>
+                  {isProfileIncomplete && (
+                    <span 
+                      style={{ 
+                        width: 8, 
+                        height: 8, 
+                        borderRadius: '50%', 
+                        backgroundColor: '#ef4444', 
+                        marginLeft: 4,
+                        display: 'inline-block' 
+                      }} 
+                      title="Hồ sơ chưa hoàn thiện"
+                    />
+                  )}
                 </Button>
               </Tooltip>
-              <Dropdown
-                menu={{
-                  items: [
-                    {
-                      key: "email",
-                      label: <strong>{getUserEmail()}</strong>,
-                      disabled: true,
-                    },
-                    { type: "divider" },
-                    {
-                      key: "logout",
-                      label: "Đăng xuất",
-                      icon: <LogoutOutlined />,
-                      onClick: logout,
-                    },
-                  ],
-                }}
-                placement="bottomRight"
-                trigger={["click"]}
-              >
+              <Tooltip title="Đăng xuất">
                 <Button
                   type="text"
-                  className="nav-user-button user-dropdown-trigger"
-                  icon={<UserOutlined />}
+                  icon={<LogoutOutlined />}
+                  onClick={logout}
+                  aria-label="Đăng xuất"
+                  style={{ color: '#ef4444', minWidth: 36, padding: '0 8px' }}
                 />
-              </Dropdown>
-            </>
+              </Tooltip>
+            </div>
           ) : (
             <Button
               type="text"
@@ -316,21 +352,43 @@ function App() {
       >
         <nav className="mobile-nav" aria-label="Điều hướng trên điện thoại">
           {isLoggedIn && (
-            <div style={{ padding: '12px', marginBottom: '16px', background: '#f8fafc', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div 
+              onClick={() => {
+                setMenuOpen(false);
+                setProfileModalOpen(true);
+              }}
+              style={{ 
+                padding: '12px', 
+                marginBottom: '16px', 
+                background: '#f8fafc', 
+                borderRadius: '8px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                cursor: 'pointer',
+                border: '1px solid #e2e8f0'
+              }}
+            >
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <UserOutlined style={{ fontSize: '20px', color: '#64748b' }} />
+                <UserOutlined style={{ fontSize: '20px', color: '#0d2e5c' }} />
               </div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
-                <div style={{ fontSize: '13px', color: '#64748b' }}>Tài khoản</div>
+                <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>Hồ sơ người dùng</span>
+                  {isProfileIncomplete && <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>Chưa hoàn tất</Tag>}
+                </div>
                 <div style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {getUserEmail()}
+                  {userProfile?.fullName || getUserEmail()}
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#0284c7', marginTop: 2 }}>
+                  <EditOutlined /> Cập nhật thông tin ›
                 </div>
               </div>
             </div>
           )}
           {activeNavigationItems.map((item) => (
             <Link key={item.to} to={item.to} onClick={() => setMenuOpen(false)}>
-              {item.icon} {item.label}
+              {item.label}
             </Link>
           ))}
           <Button
@@ -406,10 +464,27 @@ function App() {
               )
             }
           />
+          <Route
+            path="/notifications"
+            element={
+              isLoggedIn ? (
+                <NotificationsPage />
+              ) : (
+                <Navigate to="/login?redirect=/notifications" replace />
+              )
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Content>
       <SiteFooter />
+
+      <UserProfileModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        userProfile={userProfile}
+        isMandatory={isProfileIncomplete}
+      />
     </Layout>
   );
 }

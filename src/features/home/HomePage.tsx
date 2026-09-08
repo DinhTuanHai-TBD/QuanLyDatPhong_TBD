@@ -4,11 +4,92 @@ import { LeftOutlined, RightOutlined, CalendarOutlined,
   HistoryOutlined,
   ToolOutlined,
   EditOutlined,
-  TeamOutlined
+  TeamOutlined,
+  ReadOutlined,
+  DesktopOutlined,
+  ThunderboltOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons'
 import {  Button, Carousel, Col, Row, Typography } from 'antd'
-import {  useEffect } from 'react'
+import {  useEffect, useRef, useState } from 'react'
 import {  Link, useNavigate } from 'react-router-dom'
+
+interface StatCounterProps {
+  value: number
+  prefix?: string
+  suffix?: string
+  label: string
+  icon: React.ReactNode
+  delay?: number
+}
+
+function StatCounter({ value, prefix = '', suffix = '', label, icon, delay = 0 }: StatCounterProps) {
+  const [count, setCount] = useState(0)
+  const [hasStarted, setHasStarted] = useState(false)
+  const counterRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = counterRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !hasStarted) {
+          setHasStarted(true)
+        }
+      },
+      { threshold: 0.15 }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasStarted])
+
+  useEffect(() => {
+    if (!hasStarted) return
+
+    let startTime: number | null = null
+    let animationFrameId: number
+    const duration = 1500 // 1.5 seconds
+
+    const animate = (currentTime: number) => {
+      if (!startTime) startTime = currentTime
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / duration, 1)
+
+      // easeOutCubic curve for smooth natural acceleration and deceleration
+      const easeOut = 1 - Math.pow(1 - progress, 3)
+      const currentVal = Math.round(easeOut * value)
+
+      setCount(currentVal)
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate)
+      }
+    }
+
+    const timer = setTimeout(() => {
+      animationFrameId = requestAnimationFrame(animate)
+    }, delay)
+
+    return () => {
+      clearTimeout(timer)
+      cancelAnimationFrame(animationFrameId)
+    }
+  }, [hasStarted, value, delay])
+
+  return (
+    <div ref={counterRef} className="stat-card" data-reveal="up" style={{ transitionDelay: `${delay}ms` }}>
+      <div className="stat-icon-wrap">{icon}</div>
+      <div className="stat-number">
+        <span className="stat-prefix">{prefix}</span>
+        <span className="stat-digit">{count}</span>
+        <span className="stat-suffix">{suffix}</span>
+      </div>
+      <div className="stat-label">{label}</div>
+    </div>
+  )
+}
 
 
 
@@ -30,10 +111,41 @@ const CustomNextArrow = (props: any) => {
   );
 };
 
+const HERO_PHRASES = [
+  'Học tập và làm việc hiệu quả',
+  'Tra cứu phòng trống tức thì',
+  'Trang thiết bị hiện đại sẵn sàng',
+];
+
+function RotatingHeroPhrase() {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((prev) => (prev + 1) % HERO_PHRASES.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span className="hero-rotating-wrapper">
+      <span key={index} className="hero-rotating-phrase">
+        {HERO_PHRASES[index]}
+      </span>
+    </span>
+  );
+}
+
 const slides = [
   {
     image: '/images/hinh1.png',
-    title: <><span className="hero-line">Đặt phòng nhanh chóng</span><br /><span className="hero-line">Học tập và làm việc hiệu quả</span></>,
+    title: (
+      <>
+        <span className="hero-line">Đặt phòng nhanh chóng</span>
+        <br />
+        <RotatingHeroPhrase />
+      </>
+    ),
     desc: 'Tìm kiếm phòng phù hợp, kiểm tra lịch trống và gửi yêu cầu đặt phòng trực tuyến chỉ trong vài bước.',
     actions: [
       { label: 'Đặt phòng ngay', path: '/bookings', type: 'primary' },
@@ -62,6 +174,20 @@ const slides = [
 function HomePage() {
   const navigate = useNavigate()
   const isLoggedIn = Boolean(localStorage.getItem('accessToken'))
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 40) {
+        setScrolled(true)
+      } else {
+        setScrolled(false)
+      }
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>('[data-reveal]')
@@ -81,13 +207,22 @@ function HomePage() {
     }
   }
 
+  const getCardStyle = (delayMs: number) => ({
+    opacity: scrolled ? 1 : 0,
+    transform: scrolled ? 'translateY(0)' : 'translateY(50px)',
+    transition: `opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms`,
+    pointerEvents: (scrolled ? 'auto' : 'none') as any,
+    height: '100%'
+  });
+
   return (
     <>
       <section className="home-hero" aria-label="Giới thiệu Đại học Thái Bình Dương" style={{ position: 'relative' }}>
         <Carousel autoplay autoplaySpeed={6000} effect="fade" arrows prevArrow={<CustomPrevArrow />} nextArrow={<CustomNextArrow />} pauseOnHover={true}>
           {slides.map((slide, index) => (
             <div key={index}>
-              <div className="hero-slide" style={{ backgroundImage: `url(${slide.image})`, borderRadius: 0 }}>
+              <div className="hero-slide" style={{ borderRadius: 0 }}>
+                <div className="hero-bg" style={{ backgroundImage: `url(${slide.image})` }} />
                 <div className="hero-overlay" />
                 <div className="hero-copy">
                   <Typography.Title className="hero-title">{slide.title}</Typography.Title>
@@ -141,7 +276,7 @@ function HomePage() {
       }}>
         <div className="content-container">
           <Row gutter={[24, 24]} justify="center">
-            <Col xs={24} md={12} xl={6}>
+            <Col xs={24} md={12} xl={6} style={getCardStyle(0)}>
               <div className="feature-card" onClick={() => navigate('/rooms')}>
                 <div className="feature-icon-wrapper">
                   <SearchOutlined className="feature-icon" />
@@ -150,7 +285,7 @@ function HomePage() {
                 <p className="feature-desc">Tìm phòng theo loại, sức chứa, khu vực và thiết bị.</p>
               </div>
             </Col>
-            <Col xs={24} md={12} xl={6}>
+            <Col xs={24} md={12} xl={6} style={getCardStyle(100)}>
               <div className="feature-card" onClick={() => navigate('/calendar')}>
                 <div className="feature-icon-wrapper">
                   <CalendarOutlined className="feature-icon" />
@@ -159,7 +294,7 @@ function HomePage() {
                 <p className="feature-desc">Kiểm tra lịch sử dụng và những khung giờ còn trống.</p>
               </div>
             </Col>
-            <Col xs={24} md={12} xl={6}>
+            <Col xs={24} md={12} xl={6} style={getCardStyle(200)}>
               <div className="feature-card" onClick={() => handleNavigate('/bookings', true)}>
                 <div className="feature-icon-wrapper">
                   <FormOutlined className="feature-icon" />
@@ -168,7 +303,7 @@ function HomePage() {
                 <p className="feature-desc">Gửi yêu cầu đặt phòng trực tuyến nhanh chóng.</p>
               </div>
             </Col>
-            <Col xs={24} md={12} xl={6}>
+            <Col xs={24} md={12} xl={6} style={getCardStyle(300)}>
               <div className="feature-card" onClick={() => handleNavigate('/report-issue', true)}>
                 <div className="feature-icon-wrapper">
                   <ToolOutlined className="feature-icon" />
@@ -196,6 +331,53 @@ function HomePage() {
               <Typography.Paragraph>Chúng tôi cam kết tạo ra môi trường học tập hiện đại, sáng tạo và đầy cảm hứng bên bờ biển Nha Trang.</Typography.Paragraph>
             </Col>
           </Row>
+        </div>
+      </section>
+
+      {/* Statistics Counter Section */}
+      <section className="stats-section" aria-label="Thống kê hệ thống Đặt phòng TBD">
+        <div className="content-container">
+          <div className="tbd-wave-bg stats-banner-card">
+            <Row gutter={[24, 32]} align="middle" justify="center">
+              <Col xs={12} sm={12} lg={6}>
+                <StatCounter
+                  icon={<ReadOutlined />}
+                  value={24}
+                  suffix="+"
+                  label="Phòng học & Hội trường"
+                  delay={0}
+                />
+              </Col>
+              <Col xs={12} sm={12} lg={6}>
+                <StatCounter
+                  icon={<DesktopOutlined />}
+                  value={12}
+                  suffix="+"
+                  label="Danh mục Thiết bị mượn thêm"
+                  delay={100}
+                />
+              </Col>
+              <Col xs={12} sm={12} lg={6}>
+                <StatCounter
+                  icon={<ThunderboltOutlined />}
+                  value={100}
+                  suffix="%"
+                  label="Đặt phòng trực tuyến"
+                  delay={200}
+                />
+              </Col>
+              <Col xs={12} sm={12} lg={6}>
+                <StatCounter
+                  icon={<ClockCircleOutlined />}
+                  prefix="< "
+                  value={5}
+                  suffix=" phút"
+                  label="Phê duyệt nhanh chóng"
+                  delay={300}
+                />
+              </Col>
+            </Row>
+          </div>
         </div>
       </section>
 

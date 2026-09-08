@@ -3,11 +3,11 @@ export interface IssueReport {
   roomId: number;
   roomName?: string;
   issueType: string;
-  priority: 'Normal' | 'Urgent';
+  priority: 'Low' | 'Medium' | 'High' | 'Critical' | 'Normal' | 'Urgent' | string;
   description: string;
   imageUrl?: string;
   bookingId?: number;
-  status: 'Pending' | 'Received' | 'InProgress' | 'Resolved' | 'Closed';
+  status: 'Pending' | 'Received' | 'InProgress' | 'Resolved' | 'Closed' | string;
   adminNotes?: string;
   createdAt: string;
   updatedAt: string;
@@ -16,7 +16,7 @@ export interface IssueReport {
 export interface CreateIssuePayload {
   roomId: number;
   issueType: string;
-  priority: 'Normal' | 'Urgent';
+  priority: 'Low' | 'Medium' | 'High' | 'Critical' | 'Normal' | 'Urgent' | string;
   description: string;
   imageUrl?: string;
   bookingId?: number;

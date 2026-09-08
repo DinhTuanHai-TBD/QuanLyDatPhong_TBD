@@ -1,4 +1,4 @@
-export type BookingStatus = 'Pending' | 'PendingSpecial' | 'Approved' | 'Using' | 'Completed' | 'Rejected' | 'Cancelled' | number
+export type BookingStatus = 'Pending' | 'PendingSpecial' | 'Approved' | 'Using' | 'Completed' | 'Rejected' | 'Cancelled' | 'Expired' | number
 
 export interface Booking {
   actualStartTime?: string | null
@@ -12,6 +12,7 @@ export interface Booking {
   purpose?: string | null
   status: BookingStatus
   rejectReason?: string | null
+  rejectionReason?: string | null
   
   // Richer booking details for academic usage
   participantCount?: number
@@ -28,6 +29,17 @@ export interface Booking {
   approvedBy?: string | null
   approvedAt?: string | null
   adminNotes?: string | null
+
+  // School timetable and override metadata
+  isSchoolOverride?: boolean
+  IsSchoolOverride?: boolean
+  semester?: string
+  academicYear?: string
+  subjectCode?: string
+  subjectName?: string
+  classCode?: string
+  lecturerName?: string
+  periodInfo?: string
 }
 
 export interface CreateBookingPayload {
@@ -46,4 +58,14 @@ export interface CreateBookingPayload {
   status?: BookingStatus
   approvedBy?: string | null
   approvedAt?: string | null
+  adminNotes?: string | null
+  isSchoolOverride?: boolean
+  IsSchoolOverride?: boolean
+  semester?: string
+  academicYear?: string
+  subjectCode?: string
+  subjectName?: string
+  classCode?: string
+  lecturerName?: string
+  periodInfo?: string
 }

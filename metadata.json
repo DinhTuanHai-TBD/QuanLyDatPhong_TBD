@@ -1,0 +1,8 @@
+{
+  "name": "Hệ thống Đặt phòng Thông minh TBD",
+  "description": "Hệ thống quản lý và đặt phòng học, hội trường thông minh trường Đại học Thái Bình Dương (TBD)",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
