@@ -471,7 +471,7 @@ export default function NotificationBell() {
       >
         {isLoading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-            <Spin size="medium" />
+            <Spin size="default" />
           </div>
         ) : apiError ? (
           <div style={{ padding: '24px 16px' }}>

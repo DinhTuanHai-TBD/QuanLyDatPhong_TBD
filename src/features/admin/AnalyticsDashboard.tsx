@@ -514,7 +514,7 @@ export default function AnalyticsDashboard({
             justifyContent: "space-between",
           }}
         >
-          <Space wrap align="center" size="middle">
+          <Space wrap size={[8, 8]} align="center">
             <Tag
               color="blue"
               style={{
@@ -534,7 +534,7 @@ export default function AnalyticsDashboard({
             <Select
               value={departmentFilter}
               onChange={setDepartmentFilter}
-              style={{ width: 230 }}
+              style={{ minWidth: 180, width: 185 }}
             >
               <Select.Option value="all">Tất cả Khoa / Đơn vị</Select.Option>
               {academicDepartments.map((d) => (
@@ -548,7 +548,7 @@ export default function AnalyticsDashboard({
             <Select
               value={buildingFilter}
               onChange={setBuildingFilter}
-              style={{ width: 140 }}
+              style={{ minWidth: 145, width: 150 }}
             >
               <Select.Option value="all">Tất cả Tòa nhà</Select.Option>
               {buildings.map((b) => (
@@ -556,6 +556,35 @@ export default function AnalyticsDashboard({
                   {b}
                 </Select.Option>
               ))}
+            </Select>
+
+            {/* Loại phòng & Trạng thái filter */}
+            <Select
+              value={roomTypeFilter}
+              onChange={setRoomTypeFilter}
+              style={{ minWidth: 165, width: 165 }}
+            >
+              <Select.Option value="all">Tất cả Loại phòng</Select.Option>
+              {roomTypes.map((t) => (
+                <Select.Option key={t as string} value={t ?? ""}>
+                  {String(t)}
+                </Select.Option>
+              ))}
+            </Select>
+
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              style={{ minWidth: 160, width: 160 }}
+            >
+              <Select.Option value="all">Tất cả Trạng thái</Select.Option>
+              <Select.Option value="Pending">Chờ duyệt</Select.Option>
+              <Select.Option value="Approved">Đã duyệt</Select.Option>
+              <Select.Option value="Using">Đang sử dụng</Select.Option>
+              <Select.Option value="Completed">Đã hoàn thành</Select.Option>
+              <Select.Option value="Rejected">Từ chối</Select.Option>
+              <Select.Option value="Cancelled">Đã hủy</Select.Option>
+              <Select.Option value="Expired">Hết hạn</Select.Option>
             </Select>
 
             {/* Khoảng thời gian RangePicker */}
@@ -604,38 +633,9 @@ export default function AnalyticsDashboard({
                 </Button>
               )}
             </Space>
-
-            {/* Loại phòng & Trạng thái filter */}
-            <Select
-              value={roomTypeFilter}
-              onChange={setRoomTypeFilter}
-              style={{ width: 145 }}
-            >
-              <Select.Option value="all">Tất cả Loại phòng</Select.Option>
-              {roomTypes.map((t) => (
-                <Select.Option key={t as string} value={t ?? ""}>
-                  {String(t)}
-                </Select.Option>
-              ))}
-            </Select>
-
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              style={{ width: 140 }}
-            >
-              <Select.Option value="all">Tất cả Trạng thái</Select.Option>
-              <Select.Option value="Pending">Chờ duyệt</Select.Option>
-              <Select.Option value="Approved">Đã duyệt</Select.Option>
-              <Select.Option value="Using">Đang sử dụng</Select.Option>
-              <Select.Option value="Completed">Đã hoàn thành</Select.Option>
-              <Select.Option value="Rejected">Từ chối</Select.Option>
-              <Select.Option value="Cancelled">Đã hủy</Select.Option>
-              <Select.Option value="Expired">Hết hạn</Select.Option>
-            </Select>
           </Space>
 
-          <Space wrap>
+          <Space wrap size={[8, 8]} align="center">
             <Button
               icon={<FileExcelOutlined style={{ color: "#10b981" }} />}
               onClick={handleExportExcel}

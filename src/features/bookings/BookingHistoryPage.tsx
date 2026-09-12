@@ -379,7 +379,7 @@ function BookingCard({
           >
             <div style={{ flex: 1 }}>
               <strong style={{ color: '#334155' }}>Thông báo hết hạn:</strong>{' '}
-              <span>Đơn đặt phòng tự động hết hạn do đã quá thời gian bắt đầu sử dụng mà chưa được phê duyệt.</span>
+              <span>Đơn đặt phòng đã hết hạn xử lý do đã quá thời gian bắt đầu sử dụng.</span>
             </div>
           </div>
         )}
@@ -1256,7 +1256,7 @@ function BookingHistoryPage() {
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: 8, color: '#475569', fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <strong style={{ color: '#334155' }}>Thông báo hết hạn:</strong>{' '}
-                  <span>Đơn đặt phòng tự động hết hạn do đã quá thời gian bắt đầu sử dụng mà chưa được phê duyệt.</span>
+                  <span>Đơn đặt phòng đã hết hạn xử lý do đã quá thời gian bắt đầu sử dụng.</span>
                 </div>
               </div>
             )}

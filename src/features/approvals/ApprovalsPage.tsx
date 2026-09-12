@@ -800,7 +800,7 @@ export default function ApprovalsPage() {
             {(processingBooking.status === 'Expired' || isBookingExpired(processingBooking)) && (
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 12, borderRadius: 8, color: '#64748b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <InfoCircleOutlined style={{ fontSize: 16, color: '#64748b' }} />
-                <span>Đơn đặt phòng đã tự động hết hạn do đã quá giờ bắt đầu sử dụng mà chưa được phê duyệt. Không thể thao tác duyệt đơn quá giờ.</span>
+                <span>Đơn đặt phòng đã hết hạn xử lý do đã quá thời gian bắt đầu sử dụng. Không thể thao tác duyệt đơn quá giờ.</span>
               </div>
             )}
 

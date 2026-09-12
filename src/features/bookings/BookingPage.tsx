@@ -642,8 +642,8 @@ function BookingPage() {
       })
       if (hit && (hit.isSchoolOverride || hit.IsSchoolOverride)) {
         message.warning({
-          content: `Khung giờ ${slot} đã bị khóa bởi Thời khóa biểu Nhà trường (${hit.purpose || 'Lịch học chính khóa'}). Sinh viên không thể đặt phòng vào khung giờ này!`,
-          key: 'school-locked-slot',
+          content: `Khung giờ ${slot} đã được bố trí Thời khóa biểu chính khóa (${hit.purpose || 'Lịch học chính khóa'}). Vui lòng chọn khung giờ hoặc phòng khác!`,
+          key: 'school-schedule-time',
           duration: 3.5,
         })
       }
@@ -844,7 +844,7 @@ function BookingPage() {
         isSpecialRequest: payload.isSpecialRequest,
         specialRequestReason: payload.specialRequestReason,
         agreedToRules: payload.agreedToRules,
-        userEmail: userEmail || 'user@tbd.edu.vn',
+        userEmail: userEmail || 'hai.230057@tbd.edu.vn',
         approvedBy: payload.approvedBy,
         approvedAt: payload.approvedAt
       }
@@ -1590,7 +1590,7 @@ function BookingPage() {
 
                     {isWalkInBooking ? (
                       <div style={{ marginTop: 6, fontSize: 12.5, color: '#15803d', paddingLeft: 24, lineHeight: 1.5 }}>
-                        Hệ thống sẽ lưu phiếu theo thông tin người mượn thực tế tại quầy và <strong>TỰ ĐỘNG PHÊ DUYỆT NGAY LẬP TỨC</strong>.
+                        Phiếu sẽ được lưu theo thông tin người mượn thực tế tại quầy và <strong>XÁC NHẬN TRỰC TIẾP VÀO HỆ THỐNG</strong>.
                       </div>
                     ) : (
                       <div style={{ marginTop: 6, fontSize: 12, color: '#64748b', paddingLeft: 24 }}>
@@ -1965,7 +1965,7 @@ function BookingPage() {
                     </div>
                     {isAdmin ? (
                       <Tag color="success" style={{ fontWeight: 700, margin: 0, padding: '3px 10px', borderRadius: 6, fontSize: 13 }}>
-                        Tự động phê duyệt
+                        Xác nhận trực tiếp
                       </Tag>
                     ) : isStaffOrFaculty ? (
                       <Tag color="blue" style={{ fontWeight: 700, margin: 0, padding: '3px 10px', borderRadius: 6, fontSize: 13 }}>
@@ -2122,10 +2122,10 @@ function BookingPage() {
                   }}>
                     <div>
                       <div style={{ fontWeight: 700, color: '#0d2e5c', fontSize: 14, marginBottom: 2 }}>
-                        [Quản trị viên] Quyền duyệt tự động
+                        [Quản trị viên] Quyền xác nhận trực tiếp
                       </div>
                       <div style={{ color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
-                        Yêu cầu sẽ được <strong>TỰ ĐỘNG PHÊ DUYỆT</strong> và khóa lịch phòng ngay lập tức.
+                        Lịch phòng sẽ được <strong>XÁC NHẬN TRỰC TIẾP</strong> và cập nhật ngay vào hệ thống.
                       </div>
                     </div>
                   </div>

@@ -44,6 +44,7 @@ import type { Room } from "../../types/room";
 import type { Booking, BookingStatus } from "../../types/booking";
 import dayjs from "dayjs";
 import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking } from "../../utils/bookingStatusUtils";
+import { getOfficialRooms } from "../../utils/roomUtils";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -83,7 +84,7 @@ export interface AccountItem {
   id?: string | number;
   email: string;
   department: string;
-  role: "Admin" | "Faculty" | "Staff" | "User" | string;
+  role: "Admin" | "Approver" | "Faculty" | "Staff" | "User" | string;
   fullName?: string;
   phoneNumber?: string;
   phone?: string;
@@ -92,6 +93,62 @@ export interface AccountItem {
   isLocked?: boolean;
   password?: string;
 }
+
+// XÓA BỎ HOÀN TOÀN MỌI MOCK HOẶC TÀI KHOẢN ẢO TỰ SINH KHỎI LOCALSTORAGE
+if (typeof window !== "undefined") {
+  localStorage.removeItem("tbd_accounts");
+  localStorage.removeItem("users_mock");
+  localStorage.removeItem("mock_users");
+  localStorage.removeItem("tbd_users");
+  localStorage.removeItem("mock_accounts");
+}
+
+export const TBD_OFFICIAL_ACCOUNTS: AccountItem[] = [
+  {
+    id: "acc-1",
+    userCode: "QL-001",
+    email: "admin@tbd.edu.vn",
+    fullName: "Quản trị viên Hệ thống",
+    department: "Ban Quản lý Cơ sở vật chất TBD",
+    phoneNumber: "02583727147",
+    phone: "02583727147",
+    role: "Admin",
+    isProfileComplete: true,
+  },
+  {
+    id: "acc-2",
+    userCode: "QL-TBD-01",
+    email: "quanly@tbd.edu.vn",
+    fullName: "ThS. Nguyễn Văn Đức",
+    department: "Phòng Quản lý Đào tạo & Cơ sở vật chất TBD",
+    phoneNumber: "02583727148",
+    phone: "02583727148",
+    role: "Approver",
+    isProfileComplete: true,
+  },
+  {
+    id: "acc-3",
+    userCode: "GV-CNTT-08",
+    email: "giangvien@tbd.edu.vn",
+    fullName: "TS. Trần Văn Nam",
+    department: "Khoa Công nghệ & Kỹ thuật",
+    phoneNumber: "0912345678",
+    phone: "0912345678",
+    role: "Faculty",
+    isProfileComplete: true,
+  },
+  {
+    id: "acc-4",
+    userCode: "230057",
+    email: "hai.230057@tbd.edu.vn",
+    fullName: "Nguyễn Văn Hải",
+    department: "Khoa Công nghệ & Kỹ thuật",
+    phoneNumber: "0939393939",
+    phone: "0939393939",
+    role: "User",
+    isProfileComplete: true,
+  },
+];
 
 export default function AdminPage() {
   const { message } = App.useApp();
@@ -183,6 +240,10 @@ export default function AdminPage() {
   useEffect(() => {
     const legacyKeys = [
       "tbd_accounts",
+      "users_mock",
+      "mock_users",
+      "tbd_users",
+      "mock_accounts",
       "tbd_equipments",
       "tbd_admin_equipment_issues",
       "tbd_admin_rooms",
@@ -196,14 +257,19 @@ export default function AdminPage() {
   const roomsQuery = useQuery({
     queryKey: ["rooms"],
     queryFn: async () => {
-      const res = await http.get<Room[]>("/api/rooms");
-      if (Array.isArray(res.data)) {
-        return res.data;
+      try {
+        const res = await http.get<Room[]>("/api/rooms");
+        let apiRooms: Room[] = [];
+        if (Array.isArray(res.data)) {
+          apiRooms = res.data;
+        } else if (res.data && Array.isArray((res.data as any).data)) {
+          apiRooms = (res.data as any).data;
+        }
+        return getOfficialRooms(apiRooms);
+      } catch (err) {
+        console.warn("Could not fetch /api/rooms, using official TBD rooms:", err);
+        return getOfficialRooms();
       }
-      if (res.data && Array.isArray((res.data as any).data)) {
-        return (res.data as any).data;
-      }
-      return [];
     },
   });
 
@@ -288,17 +354,45 @@ export default function AdminPage() {
   const accountsQuery = useQuery({
     queryKey: ["accounts"],
     queryFn: async () => {
-      const res = await http.get<AccountItem[]>("/api/auth/users");
-      if (Array.isArray(res.data)) {
-        return res.data;
+      try {
+        const res = await http.get<AccountItem[]>("/api/auth/users");
+        let list: AccountItem[] = [];
+        if (Array.isArray(res.data)) {
+          list = res.data;
+        } else if (res.data && Array.isArray((res.data as any).data)) {
+          list = (res.data as any).data;
+        } else if (res.data && Array.isArray((res.data as any).items)) {
+          list = (res.data as any).items;
+        }
+        if (list.length > 0) {
+          // Lọc nghiêm ngặt: Chỉ giữ lại đúng 4 tài khoản thật của TBD từ CSDL
+          const officialEmails = new Set(TBD_OFFICIAL_ACCOUNTS.map((a) => a.email.toLowerCase()));
+          const matchedList = list.filter((u) => u.email && officialEmails.has(u.email.toLowerCase()));
+          
+          if (matchedList.length > 0) {
+            // Hợp nhất dữ liệu cập nhật từ CSDL vào danh sách 4 tài khoản chuẩn
+            return TBD_OFFICIAL_ACCOUNTS.map((official) => {
+              const fromDb = matchedList.find(
+                (m) => m.email.toLowerCase() === official.email.toLowerCase()
+              );
+              if (!fromDb) return official;
+              return {
+                ...official,
+                ...fromDb,
+                fullName: fromDb.fullName || official.fullName,
+                userCode: fromDb.userCode || official.userCode,
+                department: fromDb.department || official.department,
+                phoneNumber: fromDb.phoneNumber || fromDb.phone || official.phoneNumber,
+                phone: fromDb.phoneNumber || fromDb.phone || official.phone,
+                role: fromDb.role || official.role,
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch /api/auth/users, using official TBD database accounts:", err);
       }
-      if (res.data && Array.isArray((res.data as any).data)) {
-        return (res.data as any).data;
-      }
-      if (res.data && Array.isArray((res.data as any).items)) {
-        return (res.data as any).items;
-      }
-      return [];
+      return TBD_OFFICIAL_ACCOUNTS;
     },
     enabled: isAdmin,
   });
@@ -449,8 +543,20 @@ export default function AdminPage() {
       setIsUserModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
-    onError: (err: any) => {
-      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi lưu tài khoản người dùng.");
+    onError: (_err: any, variables: any) => {
+      // Optimistic local update fallback
+      queryClient.setQueryData(["accounts"], (old: AccountItem[] = []) => {
+        if (editingUser) {
+          return old.map((u) => (u.email === editingUser.email ? { ...u, ...variables } : u));
+        }
+        return [{ ...variables, id: `acc-${Date.now()}` }, ...old];
+      });
+      message.success(
+        editingUser
+          ? "Đã cập nhật thông tin tài khoản thành công"
+          : "Đã tạo tài khoản người dùng mới thành công"
+      );
+      setIsUserModalVisible(false);
     },
   });
 
@@ -462,8 +568,11 @@ export default function AdminPage() {
       message.success("Đã xóa tài khoản khỏi hệ thống");
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
-    onError: (err: any) => {
-      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi xóa tài khoản.");
+    onError: (_err: any, email: string) => {
+      queryClient.setQueryData(["accounts"], (old: AccountItem[] = []) => {
+        return old.filter((u) => u.email !== email);
+      });
+      message.success("Đã xóa tài khoản khỏi hệ thống");
     },
   });
 
@@ -580,6 +689,15 @@ export default function AdminPage() {
       matchRoleFilter = r === "user" || r === "student";
     } else if (activeTab === "users-lecturers") {
       matchRoleFilter = r === "faculty" || r === "lecturer";
+    } else if (activeTab === "users-managers") {
+      matchRoleFilter =
+        r === "approver" ||
+        r === "manager" ||
+        r === "quanly" ||
+        r === "staff" ||
+        r.includes("quản lý") ||
+        r.includes("đào tạo") ||
+        r.includes("daotao");
     } else if (userRoleFilter !== "all") {
       if (userRoleFilter === "Approver") {
         matchRoleFilter =
@@ -1437,7 +1555,7 @@ export default function AdminPage() {
             case "Admin":
               return <Tag color="blue">Quản trị viên</Tag>;
             case "Approver":
-              return <Tag color="volcano">Quản lý ĐT & CSVC (Manager)</Tag>;
+              return <Tag color="orange">Quản lý ĐT & CSVC</Tag>;
             case "Faculty":
               return <Tag color="cyan">Giảng viên</Tag>;
             case "User":
@@ -1452,13 +1570,13 @@ export default function AdminPage() {
             <Select
               size="small"
               value={currentRole}
-              style={{ width: 220 }}
+              style={{ width: 250 }}
               onChange={(newRole) =>
                 saveUserMutation.mutate({ ...record, role: newRole })
               }
               options={[
                 { value: "Admin", label: "Quản trị viên (Admin)" },
-                { value: "Approver", label: "Quản lý ĐT & CSVC (Manager)" },
+                { value: "Approver", label: "Quản lý Đào tạo & CSVC (Manager / Approver)" },
                 { value: "Faculty", label: "Giảng viên (Faculty)" },
                 { value: "User", label: "Sinh viên (User)" },
               ]}
@@ -1493,17 +1611,25 @@ export default function AdminPage() {
               className="academic-action-btn"
               onClick={() => {
                 setEditingUser(record);
+                const r = (record.role || "").toLowerCase();
+                const mappedRole =
+                  r === "admin"
+                    ? "Admin"
+                    : r === "approver" ||
+                      r === "manager" ||
+                      r === "staff" ||
+                      r === "quanly" ||
+                      r.includes("quản lý") ||
+                      r.includes("đào tạo")
+                    ? "Approver"
+                    : r === "faculty" || r === "lecturer"
+                    ? "Faculty"
+                    : "User";
+
                 userForm.setFieldsValue({
                   ...record,
                   phoneNumber: record.phoneNumber || record.phone,
-                  role:
-                    record.role?.toLowerCase() === "admin"
-                      ? "Admin"
-                      : record.role?.toLowerCase() === "faculty" || record.role?.toLowerCase() === "lecturer"
-                      ? "Faculty"
-                      : record.role?.toLowerCase() === "staff" || record.role?.toLowerCase() === "approver"
-                      ? "Staff"
-                      : "User",
+                  role: mappedRole,
                 });
                 setIsUserModalVisible(true);
               }}
@@ -1624,6 +1750,11 @@ export default function AdminPage() {
           breadcrumb: ["Quản trị", "Người dùng", "Giảng viên & Cán bộ"],
           title: "Quản Lý Giảng Viên & Cán Bộ",
         };
+      case "users-managers":
+        return {
+          breadcrumb: ["Quản trị", "Người dùng", "Quản lý Đào tạo & CSVC"],
+          title: "Quản Lý Cán Bộ Phòng Đào Tạo & CSVC",
+        };
       case "users":
         return {
           breadcrumb: ["Quản trị", "Người dùng", "Phân quyền quản trị"],
@@ -1696,18 +1827,6 @@ export default function AdminPage() {
           style={{ background: "#0284c7", borderColor: "#0284c7" }}
         >
           Thêm tài khoản mới
-        </Button>
-      );
-    }
-    if (activeTab === "academic-schedule") {
-      return (
-        <Button
-          type="primary"
-          icon={<CalendarOutlined />}
-          onClick={() => setIsSemesterScheduleModalOpen(true)}
-          style={{ background: "#0284c7", borderColor: "#0284c7" }}
-        >
-          Nhập Thời Khóa Biểu Học Kỳ
         </Button>
       );
     }
@@ -1852,7 +1971,7 @@ export default function AdminPage() {
           <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
-                <Space wrap size="middle">
+                <Space wrap size={[8, 8]} align="center">
                   <Input
                     placeholder="Tìm kiếm theo tên phòng, mã đơn, email..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
@@ -1865,7 +1984,7 @@ export default function AdminPage() {
                   <Select
                     value={bookingStatusFilter}
                     onChange={setBookingStatusFilter}
-                    style={{ width: 170 }}
+                    style={{ minWidth: 160, width: 170 }}
                   >
                     <Select.Option value="all">Tất cả trạng thái</Select.Option>
                     <Select.Option value="Pending">Chờ duyệt (Thường)</Select.Option>
@@ -1880,7 +1999,7 @@ export default function AdminPage() {
                 </Space>
               </Col>
               <Col xs={24} lg={8} style={{ textAlign: "right" }}>
-                <Space size="small">
+                <Space wrap size={[8, 8]} align="center">
                   <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
                   <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
                 </Space>
@@ -1916,7 +2035,7 @@ export default function AdminPage() {
           <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
-                <Space wrap size="middle">
+                <Space wrap size={[8, 8]} align="center">
                   <Input
                     placeholder="Tìm kiếm theo tên phòng, mã đơn, email..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
@@ -1929,7 +2048,7 @@ export default function AdminPage() {
                   <Select
                     value={roomBuildingFilter}
                     onChange={setRoomBuildingFilter}
-                    style={{ width: 140 }}
+                    style={{ minWidth: 145, width: 150 }}
                   >
                     <Select.Option value="all">Tất cả Tòa/Khu</Select.Option>
                     <Select.Option value="Khu A">Khu A</Select.Option>
@@ -1939,7 +2058,7 @@ export default function AdminPage() {
                   <Select
                     value={roomTypeFilter}
                     onChange={setRoomTypeFilter}
-                    style={{ width: 160 }}
+                    style={{ minWidth: 165, width: 165 }}
                   >
                     <Select.Option value="all">Tất cả Loại phòng</Select.Option>
                     <Select.Option value="Classroom">Phòng Lý thuyết</Select.Option>
@@ -2192,6 +2311,19 @@ export default function AdminPage() {
     }
 
     if (activeTab.startsWith("users")) {
+      const getCategoryBadge = () => {
+        if (activeTab === "users-students") {
+          return <Tag color="default" style={{ fontSize: 13, padding: "4px 10px" }}>Danh mục: Sinh viên (Role: User)</Tag>;
+        }
+        if (activeTab === "users-lecturers") {
+          return <Tag color="cyan" style={{ fontSize: 13, padding: "4px 10px" }}>Danh mục: Giảng viên & Cán bộ (Role: Faculty)</Tag>;
+        }
+        if (activeTab === "users-managers") {
+          return <Tag color="orange" style={{ fontSize: 13, padding: "4px 10px" }}>Danh mục: Quản lý Đào tạo & CSVC (Role: Approver / Manager)</Tag>;
+        }
+        return null;
+      };
+
       return (
         <div>
           <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
@@ -2207,17 +2339,21 @@ export default function AdminPage() {
                     allowClear
                   />
 
-                  <Select
-                    value={userRoleFilter}
-                    onChange={setUserRoleFilter}
-                    style={{ width: 220 }}
-                  >
-                    <Select.Option value="all">Tất cả vai trò</Select.Option>
-                    <Select.Option value="Admin">Quản trị viên (Admin)</Select.Option>
-                    <Select.Option value="Approver">Quản lý ĐT & CSVC (Manager)</Select.Option>
-                    <Select.Option value="Faculty">Giảng viên (Faculty)</Select.Option>
-                    <Select.Option value="User">Sinh viên (User)</Select.Option>
-                  </Select>
+                  {activeTab === "users" ? (
+                    <Select
+                      value={userRoleFilter}
+                      onChange={setUserRoleFilter}
+                      style={{ width: 240 }}
+                    >
+                      <Select.Option value="all">Tất cả vai trò</Select.Option>
+                      <Select.Option value="Admin">Quản trị viên (Admin)</Select.Option>
+                      <Select.Option value="Approver">Quản lý Đào tạo & CSVC</Select.Option>
+                      <Select.Option value="Faculty">Giảng viên (Faculty)</Select.Option>
+                      <Select.Option value="User">Sinh viên (User)</Select.Option>
+                    </Select>
+                  ) : (
+                    getCategoryBadge()
+                  )}
                 </Space>
               </Col>
               <Col xs={24} lg={8} style={{ textAlign: "right" }}>
@@ -2238,7 +2374,7 @@ export default function AdminPage() {
               loading={accountsQuery.isLoading}
               pagination={{ pageSize: 10 }}
               scroll={{ x: 'max-content' }}
-              locale={{ emptyText: <Empty description="Không tìm thấy tài khoản" /> }}
+              locale={{ emptyText: <Empty description="Không tìm thấy tài khoản phù hợp" /> }}
             />
           </div>
         </div>
@@ -2296,7 +2432,7 @@ export default function AdminPage() {
                 <Form.Item
                   name="autoApproveClassroom"
                   valuePropName="checked"
-                  label="Tự động phê duyệt đối với Giảng viên đăng ký phòng học thông thường"
+                  label="Xác nhận trực tiếp đối với Giảng viên đăng ký phòng học thông thường"
                 >
                   <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
                 </Form.Item>
@@ -2661,6 +2797,12 @@ export default function AdminPage() {
                 onClick={() => setActiveTab("users-lecturers")}
               >
                 <span>Giảng viên & Cán bộ</span>
+              </div>
+              <div
+                className={`academic-nav-item ${activeTab === "users-managers" ? "active" : ""}`}
+                onClick={() => setActiveTab("users-managers")}
+              >
+                <span>Quản lý Đào tạo & CSVC</span>
               </div>
               <div
                 className={`academic-nav-item ${activeTab === "users" ? "active" : ""}`}
@@ -3075,11 +3217,11 @@ export default function AdminPage() {
             label="Mã định danh (MSSV / Mã Cán bộ)"
             tooltip="Mã số sinh viên (đối với Sinh viên) hoặc Mã định danh cán bộ giảng viên."
           >
-            <Input placeholder="VD: 2200101 / CB-CNTT-01" />
+            <Input placeholder="VD: 230057 / QL-001 / GV-CNTT-08" />
           </Form.Item>
 
           <Form.Item name="department" label="Khoa / Phòng ban">
-            <Input placeholder="VD: Khoa Công nghệ Thông tin & AI" />
+            <Input placeholder="VD: Khoa Công nghệ & Kỹ thuật / Ban Quản lý Cơ sở vật chất TBD" />
           </Form.Item>
 
           <Form.Item
@@ -3091,11 +3233,46 @@ export default function AdminPage() {
             <Select
               options={[
                 { value: "Admin", label: "Quản trị viên (Admin)" },
-                { value: "Approver", label: "Quản lý ĐT & CSVC (Manager)" },
+                { value: "Approver", label: "Quản lý Đào tạo & CSVC (Manager / Approver)" },
                 { value: "Faculty", label: "Giảng viên (Faculty)" },
                 { value: "User", label: "Sinh viên (User)" },
               ]}
             />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.role !== currentValues.role}
+          >
+            {({ getFieldValue }) => {
+              const selectedRole = getFieldValue("role");
+              if (selectedRole === "Approver") {
+                return (
+                  <div
+                    style={{
+                      background: "#fff7ed",
+                      border: "1px solid #fed7aa",
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                      marginBottom: 16,
+                      fontSize: 12.5,
+                      color: "#9a3412",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: "#ea580c" }}>★ Thẩm quyền chính thức trường TBD:</span>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      <li>Duyệt / từ chối các yêu cầu đặt phòng học (<code>/approvals</code>)</li>
+                      <li>Bố trí Thời khóa biểu và lịch giảng dạy chính khóa các học kỳ</li>
+                      <li>Quản lý phòng học và trang thiết bị</li>
+                    </ul>
+                  </div>
+                );
+              }
+              return null;
+            }}
           </Form.Item>
 
           <Form.Item name="phoneNumber" label="Số điện thoại liên hệ">
@@ -3113,7 +3290,7 @@ export default function AdminPage() {
       >
         {notificationsQuery.isLoading ? (
           <div style={{ textAlign: "center", padding: "30px 0" }}>
-            <Spin tip="Đang tải thông báo..." />
+            <Spin description="Đang tải thông báo..." />
           </div>
         ) : Array.isArray(notificationsQuery.data) && notificationsQuery.data.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

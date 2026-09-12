@@ -51,8 +51,10 @@ a {
   align-items: center;
   justify-content: space-between;
   min-height: 76px;
-  gap: 14px;
-  padding: 8px 20px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+  max-width: 100vw;
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -142,32 +144,38 @@ a {
 /* Nav Menu and Underline Animations */
 .desktop-nav {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 6px 8px;
   margin: 0 12px;
 }
 
 .desktop-nav a,
 .desktop-nav .nav-item {
   position: relative;
-  padding: 6px 10px;
+  padding: 4px 8px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
   color: rgba(255, 255, 255, 0.88);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0px;
   border-radius: 4px;
   white-space: nowrap;
   transition: all 0.25s ease;
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
 }
 
 .desktop-nav a::after,
 .desktop-nav .nav-item::after {
   content: "";
   position: absolute;
-  bottom: 4px;
+  bottom: 2px;
   left: 50%;
   width: 0;
   height: 2.5px;
@@ -201,9 +209,11 @@ a {
 .nav-actions {
   display: flex;
   align-items: center;
-  flex: 0 0 auto;
+  gap: 8px;
+  flex-shrink: 0;
   margin-left: auto;
-  gap: 12px;
+  padding-right: 16px;
+  z-index: 10;
 }
 
 .nav-user-button {
@@ -212,15 +222,17 @@ a {
   font-size: 12.5px !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
   border-radius: 6px !important;
-  padding: 6px 12px !important;
+  padding: 6px 10px !important;
   height: auto !important;
   background: rgba(255, 255, 255, 0.1) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
-  max-width: 200px;
+  max-width: 140px !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .nav-user-button:hover {
@@ -236,7 +248,7 @@ a {
 
 .user-email-text {
   display: inline-block;
-  max-width: 160px;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1381,10 +1393,11 @@ footer,
   }
   .nav-user-button-desktop {
     display: inline-flex !important;
+    max-width: 140px !important;
   }
   .user-email-text {
     display: inline-block !important;
-    max-width: 160px;
+    max-width: 90px !important;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1392,6 +1405,18 @@ footer,
   }
   .mobile-menu-button {
     display: none !important;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1240px) {
+  .desktop-nav {
+    gap: 4px !important;
+    margin: 0 6px !important;
+  }
+  .desktop-nav a,
+  .desktop-nav .nav-item {
+    font-size: 12px !important;
+    padding: 3px 5px !important;
   }
 }
 
@@ -1404,13 +1429,26 @@ footer,
   }
   .tbd-navbar {
     gap: 12px;
-    padding: 8px 16px;
+    padding: 0 16px;
   }
-  .user-email-text {
-    display: none;
+  .nav-actions {
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
+    margin-left: auto !important;
+    gap: 10px !important;
+    z-index: 10 !important;
   }
   .nav-user-button-desktop {
-    display: none !important;
+    display: inline-flex !important;
+    max-width: 140px !important;
+  }
+  .user-email-text {
+    display: inline-block !important;
+    max-width: 90px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
   }
 }
 @media (min-width: 1440px) {

@@ -4,12 +4,12 @@ export const OFFICIAL_ROOMS: Record<
   string, 
   { building: string; type: string; capacity: number; displayName?: string; note?: string }
 > = {
-  A201: { building: 'Khu A', type: 'Phòng học', capacity: 100 },
-  A202: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
-  A203: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
-  A204: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
-  A205: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
-  A206: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
+  A201: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 100 },
+  A202: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
+  A203: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
+  A204: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
+  A205: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
+  A206: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
   A302: { building: 'Khu A', type: 'Phòng Cinema', capacity: 40 },
   A304: { building: 'Khu A', type: 'Phòng Lab', capacity: 20, note: '20 máy tính' },
   A305: { building: 'Khu A', type: 'Phòng học nhóm', capacity: 10 },
@@ -21,17 +21,17 @@ export const OFFICIAL_ROOMS: Record<
     note: 'Hội trường lớn 300 chỗ ngồi' 
   },
   A402: { building: 'Khu A', type: 'Phòng Lab', capacity: 20, note: '20 máy tính' },
-  A403: { building: 'Khu A', type: 'Phòng học', capacity: 40 },
+  A403: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
   
-  B001: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B002: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B101: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B102: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B103: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B104: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B105: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B106: { building: 'Khu B', type: 'Phòng học', capacity: 40 },
-  B107: { building: 'Khu B', type: 'Phòng học', capacity: 40 }
+  B001: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B002: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B101: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B102: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B103: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B104: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B105: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B106: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
+  B107: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 }
 };
 
 export type ValidatedRoom = Room & { 
@@ -46,7 +46,7 @@ export function isFakeOrDisallowedRoom(room: Partial<Room>): boolean {
   const building = String(room.building || '').toLowerCase();
   const capacity = Number(room.capacity || 0);
 
-  // Loại bỏ hoàn toàn phòng ảo "Hội trường TBD", "Tòa Trung tâm", hoặc 180 chỗ
+  // Loại bỏ hoàn toàn phòng ảo, không thuộc Đại học Thái Bình Dương (như C101, D202, Tòa Trung tâm...)
   if (
     name.includes('hội trường tbd') ||
     name.includes('hoi truong tbd') ||
@@ -55,23 +55,40 @@ export function isFakeOrDisallowedRoom(room: Partial<Room>): boolean {
     building.includes('tòa trung tâm') ||
     building.includes('toa trung tam') ||
     building.includes('trung tâm') ||
+    name.includes('c101') ||
+    name.includes('d202') ||
     capacity === 180 ||
     (name.includes('hội trường') && capacity === 180)
   ) {
     return true;
   }
+
+  // Phải thuộc danh sách 23 phòng chuẩn TBD
+  const code = extractOfficialCode(room.name);
+  if (!code || !OFFICIAL_ROOMS[code]) {
+    return true;
+  }
+
   return false;
 }
 
 export function cleanupLocalStorageRooms(): void {
   try {
-    const localStr = localStorage.getItem('tbd_admin_rooms');
-    if (localStr) {
-      const rooms = JSON.parse(localStr);
-      if (Array.isArray(rooms)) {
-        const filtered = rooms.filter((r: any) => !isFakeOrDisallowedRoom(r));
-        if (filtered.length !== rooms.length) {
-          localStorage.setItem('tbd_admin_rooms', JSON.stringify(filtered));
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tbd_accounts');
+      localStorage.removeItem('users_mock');
+      localStorage.removeItem('mock_users');
+      localStorage.removeItem('tbd_users');
+      localStorage.removeItem('mock_accounts');
+
+      const localStr = localStorage.getItem('tbd_admin_rooms');
+      if (localStr) {
+        const rooms = JSON.parse(localStr);
+        if (Array.isArray(rooms)) {
+          const filtered = rooms.filter((r: any) => !isFakeOrDisallowedRoom(r));
+          if (filtered.length !== rooms.length) {
+            localStorage.setItem('tbd_admin_rooms', JSON.stringify(filtered));
+          }
         }
       }
     }

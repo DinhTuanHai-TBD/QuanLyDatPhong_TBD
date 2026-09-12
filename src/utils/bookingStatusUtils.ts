@@ -70,7 +70,7 @@ export function getEffectiveBooking(b: Booking, now = dayjs()): Booking {
       return {
         ...b,
         status: 'Expired',
-        rejectReason: b.rejectReason || 'Đơn đặt phòng đã tự động hết hạn do đã quá giờ bắt đầu sử dụng mà chưa được phê duyệt.'
+        rejectReason: b.rejectReason || 'Đơn đặt phòng đã hết hạn xử lý do đã quá giờ bắt đầu sử dụng.'
       }
     }
     return b

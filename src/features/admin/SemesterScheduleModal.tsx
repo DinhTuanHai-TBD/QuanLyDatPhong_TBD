@@ -12,21 +12,21 @@ import {
   Row,
   Col,
   Alert,
-  Table,
+  Tooltip,
   Tag,
   Button,
   Typography,
+  Tabs,
+  Badge,
   message
 } from 'antd'
 import {
   CalendarOutlined,
   ClockCircleOutlined,
-  ExclamationCircleOutlined,
-  CheckCircleOutlined,
   UserOutlined,
   BookOutlined,
-  ThunderboltOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  FileExcelOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
@@ -42,6 +42,7 @@ import {
 } from '../../types/schedule'
 import { http } from '../../api/http'
 import { useQueryClient } from '@tanstack/react-query'
+import SemesterScheduleExcelImport from './SemesterScheduleExcelImport'
 
 dayjs.extend(isBetween)
 
@@ -86,6 +87,7 @@ export default function SemesterScheduleModal({
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 3]) // Mặc định Thứ 2, Thứ 4
   const [selectedRoomId, setSelectedRoomId] = useState<number | undefined>(undefined)
+  const [activeTab, setActiveTab] = useState<'manual' | 'excel'>('manual')
 
   // Study Periods state
   const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset')
@@ -95,6 +97,7 @@ export default function SemesterScheduleModal({
 
   // School Override switch
   const [isSchoolOverride, setIsSchoolOverride] = useState<boolean>(true)
+  const [isSubmitHovered, setIsSubmitHovered] = useState<boolean>(false)
 
   // Permission authorization check
   const isAuthorized = useMemo(() => {
@@ -208,7 +211,7 @@ export default function SemesterScheduleModal({
       : conflictResult.sessions.filter(s => !s.hasConflict)
 
     if (sessionsToCreate.length === 0) {
-      message.error('Tất cả các buổi học đều bị trùng và chế độ Ghi đè đang TẮT. Không thể tạo lịch học!')
+      message.error('Tất cả các buổi học đều bị trùng giờ với lịch đã có. Vui lòng kiểm tra lại phòng học hoặc khung giờ!')
       return
     }
 
@@ -243,7 +246,7 @@ export default function SemesterScheduleModal({
               status: 'Cancelled',
               rejectReason: cancelReason,
               rejectionReason: cancelReason,
-              adminNotes: 'Hệ thống tự động hủy do trùng lịch Thời khóa biểu Nhà trường (IsSchoolOverride = true)'
+              adminNotes: 'Điều chỉnh ưu tiên theo Thời khóa biểu chính khóa của Nhà trường'
             }
           }
         }
@@ -278,7 +281,7 @@ export default function SemesterScheduleModal({
           periodInfo: periodDisplayLabel,
           approvedBy: currentUserName,
           approvedAt: new Date().toISOString(),
-          adminNotes: 'Thời khóa biểu chính khóa trường ĐH Thái Bình Dương (Đã duyệt tự động & Khóa slot).'
+          adminNotes: 'Thời khóa biểu chính khóa do Phòng Quản lý Đào tạo sắp xếp.'
         }
 
         let apiSuccess = false
@@ -333,7 +336,7 @@ export default function SemesterScheduleModal({
       await queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
 
       message.success({
-        content: `Đã nhập thành công Thời khóa biểu: Tạo ${createdBookings.length} buổi học tại ${roomName} (${semesterLabel}) với trạng thái ĐÃ DUYỆT & KHÓA SLOT!`,
+        content: `Đã lưu thành công Thời khóa biểu chính khóa: ${createdBookings.length} buổi học tại ${roomName} (${semesterLabel}).`,
         duration: 5
       })
 
@@ -349,59 +352,6 @@ export default function SemesterScheduleModal({
       setIsSubmitting(false)
     }
   }
-
-  // Table columns for displaying conflict details
-  const conflictColumns = [
-    {
-      title: 'Mã đơn',
-      dataIndex: 'id',
-      key: 'id',
-      width: 90,
-      render: (id: number) => <Tag color="blue">#{id}</Tag>
-    },
-    {
-      title: 'Người đặt',
-      dataIndex: 'userEmail',
-      key: 'userEmail',
-      render: (email: string, row: Booking) => (
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{row.personInCharge || email || 'Sinh viên / Cán bộ'}</div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>{email}</div>
-        </div>
-      )
-    },
-    {
-      title: 'Thời gian bị trùng',
-      key: 'time',
-      render: (_: any, row: Booking) => (
-        <div>
-          <div style={{ fontWeight: 500 }}>
-            {dayjs(row.startTime).format('DD/MM/YYYY')}
-          </div>
-          <div style={{ fontSize: 12, color: '#0284c7' }}>
-            {dayjs(row.startTime).format('HH:mm')} - {dayjs(row.endTime).format('HH:mm')}
-          </div>
-        </div>
-      )
-    },
-    {
-      title: 'Mục đích đặt phòng',
-      dataIndex: 'purpose',
-      key: 'purpose',
-      ellipsis: true,
-      render: (text: string) => <Text ellipsis style={{ maxWidth: 200 }}>{text || 'Đăng ký sử dụng'}</Text>
-    },
-    {
-      title: 'Trạng thái',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: any) => (
-        <Tag color={String(status) === 'Approved' ? 'green' : 'orange'}>
-          {String(status)}
-        </Tag>
-      )
-    }
-  ]
 
   return (
     <Modal
@@ -432,24 +382,136 @@ export default function SemesterScheduleModal({
       }
       open={open}
       onCancel={onClose}
-      width={920}
-      footer={[
-        <Button key="cancel" onClick={onClose} disabled={isSubmitting}>
-          Đóng
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          icon={<ThunderboltOutlined />}
-          loading={isSubmitting}
-          onClick={() => form.submit()}
-          style={{ background: '#0284c7', borderColor: '#0284c7' }}
-          disabled={!isAuthorized || conflictResult.totalSessions === 0 || (!isSchoolOverride && conflictResult.conflictSessions === conflictResult.totalSessions)}
-        >
-          Xác nhận tạo Thời khóa biểu ({isSchoolOverride ? conflictResult.totalSessions : (conflictResult.totalSessions - conflictResult.conflictSessions)} buổi)
-        </Button>
-      ]}
-      destroyOnClose
+      width={activeTab === 'excel' ? 1040 : 980}
+      footer={
+        activeTab === 'manual' ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              gap: 12
+            }}
+          >
+            {/* Góc trái Footer (Dùng Ant Design Badge trạng thái chuẩn mực) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', flexWrap: 'wrap' }}>
+              {conflictResult.totalSessions === 0 ? (
+                <Badge
+                  status="default"
+                  text={<span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>Chưa chọn lịch hoặc ngày học</span>}
+                />
+              ) : conflictResult.conflictSessions === 0 ? (
+                <Badge
+                  status="success"
+                  text={
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#15803d' }}>
+                      Dự kiến: {conflictResult.totalSessions} buổi học | Trạng thái: Hợp lệ
+                    </span>
+                  }
+                />
+              ) : (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <Tooltip
+                    title={
+                      conflictResult.allConflictingBookings.length > 0
+                        ? `Trùng với ${conflictResult.allConflictingBookings.length} đơn đặt phòng: ${conflictResult.allConflictingBookings
+                            .map((b) => `#${b.id} (${dayjs(b.startTime).format('DD/MM HH:mm')})`)
+                            .join(', ')}`
+                        : undefined
+                    }
+                  >
+                    <span style={{ cursor: 'help' }}>
+                      <Badge
+                        status="warning"
+                        text={
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#b45309' }}>
+                            Phát hiện trùng {conflictResult.conflictSessions} buổi
+                          </span>
+                        }
+                      />
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip
+                    title={
+                      isSchoolOverride
+                        ? 'Đang bật ưu tiên: Ưu tiên Thời khóa biểu chính khóa khi phát hiện lịch trùng'
+                        : 'Đang tắt ưu tiên: Giữ các lịch đã có, chỉ tạo các buổi học không bị trùng giờ'
+                    }
+                  >
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 12,
+                        color: isSchoolOverride ? '#0284c7' : '#475569',
+                        fontWeight: 500,
+                        background: isSchoolOverride ? '#eff6ff' : '#f8fafc',
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        border: isSchoolOverride ? '1px solid #bfdbfe' : '1px solid #e2e8f0'
+                      }}
+                    >
+                      <span>Ưu tiên lịch chính khóa:</span>
+                      <Switch
+                        size="small"
+                        checked={isSchoolOverride}
+                        onChange={(checked) => setIsSchoolOverride(checked)}
+                        style={{ background: isSchoolOverride ? '#0284c7' : '#cbd5e1' }}
+                      />
+                    </span>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+
+            {/* Góc phải Footer: Các nút thao tác */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <Button key="cancel" onClick={onClose} disabled={isSubmitting}>
+                Đóng
+              </Button>
+              <Button
+                id="btn-confirm-semester-schedule"
+                key="submit"
+                type="primary"
+                loading={isSubmitting}
+                onClick={() => form.submit()}
+                style={{
+                  background: isSubmitHovered ? '#0369a1' : '#0284c7',
+                  borderColor: isSubmitHovered ? '#0369a1' : '#0284c7',
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  boxShadow: isSubmitHovered
+                    ? '0 4px 10px rgba(3, 105, 161, 0.35)'
+                    : '0 2px 4px rgba(2, 132, 199, 0.25)',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={() => setIsSubmitHovered(true)}
+                onMouseLeave={() => setIsSubmitHovered(false)}
+                disabled={
+                  !isAuthorized ||
+                  conflictResult.totalSessions === 0 ||
+                  (!isSchoolOverride &&
+                    conflictResult.conflictSessions ===
+                      conflictResult.totalSessions)
+                }
+              >
+                <span style={{ color: '#ffffff', fontWeight: 600 }}>
+                  Xác nhận tạo Thời khóa biểu (
+                  {isSchoolOverride
+                    ? conflictResult.totalSessions
+                    : conflictResult.totalSessions -
+                      conflictResult.conflictSessions}{' '}
+                  buổi)
+                </span>
+              </Button>
+            </div>
+          </div>
+        ) : null
+      }
+      destroyOnHidden
     >
       {!isAuthorized && (
         <Alert
@@ -461,407 +523,516 @@ export default function SemesterScheduleModal({
         />
       )}
 
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleFinish}
-        initialValues={{
-          semester: 'HK3',
-          academicYear: currentYear,
-          daysOfWeek: [1, 3],
-          periodMode: 'preset',
-          presetKey: 'M_1_3',
-          fromPeriod: 1,
-          toPeriod: 3,
-          isSchoolOverride: true,
-          participantCount: 45
-        }}
-      >
-        {/* SECTION 1: CHỌN HỌC KỲ & THỜI GIAN ĐỊNH KỲ */}
-        <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <CalendarOutlined style={{ color: '#0284c7', fontSize: 16 }} />
-            <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
-              1. RÀNG BUỘC HỌC KỲ & THỜI GIAN ĐỊNH KỲ (HỌC KỲ 1, 2, HÈ VÀ TÙY CHỈNH)
-            </Text>
-          </div>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item label="Năm học" name="academicYear" rules={[{ required: true }]}>
-                <Select
-                  options={academicYears}
-                  value={selectedAcademicYear}
-                  onChange={(val) => setSelectedAcademicYear(val)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={16}>
-              <Form.Item label="Chế độ Học kỳ (Bao gồm Học kỳ 3 - Hè)" name="semester" rules={[{ required: true }]}>
-                <Radio.Group
-                  value={selectedSemester}
-                  onChange={(e) => setSelectedSemester(e.target.value)}
-                  style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}
-                >
-                  <Radio.Button value="HK1" style={{ height: 'auto', padding: '6px 12px', textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, color: '#1e40af' }}>Học kỳ 1 (Kỳ Thu)</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Tháng 9 - Tháng 1 (~18 tuần)</div>
-                  </Radio.Button>
-                  <Radio.Button value="HK2" style={{ height: 'auto', padding: '6px 12px', textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, color: '#166534' }}>Học kỳ 2 (Kỳ Xuân)</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Tháng 2 - Tháng 6 (~18 tuần)</div>
-                  </Radio.Button>
-                  <Radio.Button value="HK3" style={{ height: 'auto', padding: '6px 12px', textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, color: '#c2410c' }}>Học kỳ 3 (Học kỳ Hè)</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Tháng 7 - Tháng 8 (~8 tuần)</div>
-                  </Radio.Button>
-                  <Radio.Button value="CUSTOM" style={{ height: 'auto', padding: '6px 12px', textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, color: '#6b21a8' }}>Tùy chỉnh (Custom)</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Tự chọn theo tuần/tháng</div>
-                  </Radio.Button>
-                </Radio.Group>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="Dải ngày học của Học kỳ (Từ ngày - Đến ngày)"
-                name="dateRange"
-                rules={[{ required: true, message: 'Vui lòng chọn dải ngày học!' }]}
-                tooltip="Hệ thống tự động đề xuất dải ngày theo chuẩn Học kỳ TBD, bạn có thể tinh chỉnh theo lịch thực tế."
+      <Tabs
+        activeKey={activeTab}
+        onChange={(k) => setActiveTab(k as 'manual' | 'excel')}
+        type="card"
+        style={{ marginBottom: 12 }}
+        items={[
+          {
+            key: 'manual',
+            label: (
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                <CalendarOutlined style={{ marginRight: 6 }} />
+                Nhập thủ công
+              </span>
+            ),
+            children: (
+              <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleFinish}
+                initialValues={{
+                  semester: 'HK3',
+                  academicYear: currentYear,
+                  daysOfWeek: [1, 3],
+                  periodMode: 'preset',
+                  presetKey: 'M_1_3',
+                  fromPeriod: 1,
+                  toPeriod: 3,
+                  isSchoolOverride: true,
+                  participantCount: 45
+                }}
               >
-                <RangePicker
-                  format="DD/MM/YYYY"
-                  style={{ width: '100%' }}
-                  value={dateRange}
-                  onChange={(dates) => setDateRange(dates as any)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="Lịch học các thứ trong tuần"
-                name="daysOfWeek"
-                rules={[{ required: true, message: 'Vui lòng chọn ít nhất một thứ!' }]}
-              >
-                <Checkbox.Group
-                  options={DAYS_OF_WEEK_OPTIONS}
-                  value={selectedDays}
-                  onChange={(vals) => setSelectedDays(vals as number[])}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </div>
-
-        {/* SECTION 2: KHUNG GIỜ TIẾT HỌC CHUẨN TBD & PHÒNG HỌC */}
-        <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ClockCircleOutlined style={{ color: '#0284c7', fontSize: 16 }} />
-              <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
-                2. KHUNG GIỜ TIẾT HỌC CHUẨN TBD (TBD_STUDY_PERIODS) & PHÒNG HỌC
-              </Text>
-            </div>
-            <Radio.Group
-              size="small"
-              value={periodMode}
-              onChange={(e) => setPeriodMode(e.target.value)}
+        <Row gutter={16} align="stretch">
+          {/* CỘT TRÁI (Thời gian & Chu kỳ đào tạo) */}
+          <Col span={12}>
+            <div
+              style={{
+                background: '#f8fafc',
+                padding: '14px 16px',
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                height: '100%'
+              }}
             >
-              <Radio.Button value="preset">Khối tiết chuẩn</Radio.Button>
-              <Radio.Button value="custom">Tùy chọn tiết</Radio.Button>
-            </Radio.Group>
-          </div>
-
-          <Row gutter={16}>
-            <Col span={10}>
-              <Form.Item
-                label="Phòng học giảng dạy"
-                name="roomId"
-                rules={[{ required: true, message: 'Vui lòng chọn phòng học!' }]}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingBottom: 8,
+                  borderBottom: '1px solid #e2e8f0'
+                }}
               >
-                <Select
-                  placeholder="Chọn phòng học"
-                  showSearch
-                  optionFilterProp="children"
-                  value={selectedRoomId}
-                  onChange={(val) => setSelectedRoomId(val)}
-                >
-                  {rooms.map((r) => (
-                    <Select.Option key={r.id} value={r.id}>
-                      {r.name} - Sức chứa: {r.capacity} chỗ ({r.building || 'Khu giảng đường'})
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
+                <CalendarOutlined style={{ color: '#0d2e5c', fontSize: 16 }} />
+                <Text strong style={{ fontSize: 13, color: '#0d2e5c', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                  Thời gian & Chu kỳ đào tạo
+                </Text>
+              </div>
 
-            <Col span={14}>
-              {periodMode === 'preset' ? (
-                <div>
-                  <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#0f172a', fontWeight: 500 }}>
-                    Chọn nhanh khối tiết học chuẩn:
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                    {PERIOD_BLOCK_PRESETS.map((p) => {
-                      const isSelected = selectedPresetKey === p.key
-                      return (
-                        <Button
-                          key={p.key}
-                          size="small"
-                          type={isSelected ? 'primary' : 'default'}
-                          onClick={() => handlePresetSelect(p)}
-                          style={{
-                            height: 'auto',
-                            padding: '6px 8px',
-                            textAlign: 'left',
-                            fontSize: 11,
-                            background: isSelected ? '#0284c7' : '#fff',
-                            borderColor: isSelected ? '#0284c7' : '#cbd5e1'
+              {/* Dòng 1: Năm học & Dải ngày áp dụng */}
+              <Row gutter={10}>
+                <Col span={10}>
+                  <Form.Item
+                    label={<span style={{ fontSize: 12, fontWeight: 600 }}>Năm học</span>}
+                    name="academicYear"
+                    rules={[{ required: true }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Select
+                      options={academicYears}
+                      value={selectedAcademicYear}
+                      onChange={(val) => setSelectedAcademicYear(val)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={14}>
+                  <Form.Item
+                    label={<span style={{ fontSize: 12, fontWeight: 600 }}>Dải ngày áp dụng</span>}
+                    name="dateRange"
+                    rules={[{ required: true, message: 'Vui lòng chọn dải ngày!' }]}
+                    tooltip="Đề xuất dải ngày chuẩn theo học kỳ TBD"
+                    style={{ marginBottom: 0 }}
+                  >
+                    <RangePicker
+                      format="DD/MM/YYYY"
+                      style={{ width: '100%' }}
+                      value={dateRange}
+                      onChange={(dates) => setDateRange(dates as any)}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              {/* Dòng 2: Phân loại học kỳ (Lưới 4 ô chọn Radio.Button phẳng, thanh lịch) */}
+              <div>
+                <style>{`
+                  .semester-radio-group .ant-radio-button-wrapper::before {
+                    display: none !important;
+                  }
+                `}</style>
+                <Form.Item
+                  label={<span style={{ fontSize: 12, fontWeight: 600 }}>Phân loại học kỳ</span>}
+                  name="semester"
+                  rules={[{ required: true }]}
+                  style={{ marginBottom: 0 }}
+                >
+                  <Radio.Group
+                    className="semester-radio-group"
+                    value={selectedSemester}
+                    onChange={(e) => setSelectedSemester(e.target.value)}
+                    style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}
+                  >
+                    <Radio.Button
+                      value="HK1"
+                      style={{
+                        height: 'auto',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        textAlign: 'left',
+                        border: selectedSemester === 'HK1' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: selectedSemester === 'HK1' ? '#eff6ff' : '#ffffff',
+                        boxShadow: selectedSemester === 'HK1' ? '0 1px 4px rgba(37, 99, 235, 0.15)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 1 (Kỳ Thu)</div>
+                      <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tháng 9 - Tháng 1 (~18w)</div>
+                    </Radio.Button>
+                    <Radio.Button
+                      value="HK2"
+                      style={{
+                        height: 'auto',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        textAlign: 'left',
+                        border: selectedSemester === 'HK2' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: selectedSemester === 'HK2' ? '#eff6ff' : '#ffffff',
+                        boxShadow: selectedSemester === 'HK2' ? '0 1px 4px rgba(37, 99, 235, 0.15)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 2 (Kỳ Xuân)</div>
+                      <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tháng 2 - Tháng 6 (~18w)</div>
+                    </Radio.Button>
+                    <Radio.Button
+                      value="HK3"
+                      style={{
+                        height: 'auto',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        textAlign: 'left',
+                        border: selectedSemester === 'HK3' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: selectedSemester === 'HK3' ? '#eff6ff' : '#ffffff',
+                        boxShadow: selectedSemester === 'HK3' ? '0 1px 4px rgba(37, 99, 235, 0.15)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 3 (Học kỳ Hè)</div>
+                      <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tháng 7 - Tháng 8 (~8w)</div>
+                    </Radio.Button>
+                    <Radio.Button
+                      value="CUSTOM"
+                      style={{
+                        height: 'auto',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        textAlign: 'left',
+                        border: selectedSemester === 'CUSTOM' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: selectedSemester === 'CUSTOM' ? '#eff6ff' : '#ffffff',
+                        boxShadow: selectedSemester === 'CUSTOM' ? '0 1px 4px rgba(37, 99, 235, 0.15)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Tùy chỉnh (Custom)</div>
+                      <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tự chọn theo tuần/tháng</div>
+                    </Radio.Button>
+                  </Radio.Group>
+                </Form.Item>
+              </div>
+
+              {/* Dòng 3: Lịch học các thứ trong tuần (Checkbox tối giản Thứ 2 đến Chủ nhật) */}
+              <div style={{ marginTop: 'auto' }}>
+                <Form.Item
+                  label={<span style={{ fontSize: 12, fontWeight: 600 }}>Lịch học các thứ trong tuần</span>}
+                  name="daysOfWeek"
+                  rules={[{ required: true, message: 'Vui lòng chọn ít nhất một thứ!' }]}
+                  style={{ marginBottom: 0 }}
+                >
+                  <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                    <Checkbox.Group
+                      options={DAYS_OF_WEEK_OPTIONS}
+                      value={selectedDays}
+                      onChange={(vals) => setSelectedDays(vals as number[])}
+                      style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px 8px' }}
+                    />
+                  </div>
+                </Form.Item>
+              </div>
+            </div>
+          </Col>
+
+          {/* CỘT PHẢI (Địa điểm, Tiết học & Thông tin lớp) */}
+          <Col span={12}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+              {/* Khối 1: Phòng học & Khối tiết chuẩn TBD */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid #e2e8f0'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 8,
+                    paddingBottom: 6,
+                    borderBottom: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ClockCircleOutlined style={{ color: '#0d2e5c', fontSize: 15 }} />
+                    <Text strong style={{ fontSize: 13, color: '#0d2e5c', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                      Địa điểm & Tiết học chuẩn TBD
+                    </Text>
+                  </div>
+                  <Radio.Group
+                    size="small"
+                    value={periodMode}
+                    onChange={(e) => setPeriodMode(e.target.value)}
+                  >
+                    <Radio.Button value="preset" style={{ fontSize: 11 }}>Khối chuẩn</Radio.Button>
+                    <Radio.Button value="custom" style={{ fontSize: 11 }}>Tùy chọn</Radio.Button>
+                  </Radio.Group>
+                </div>
+
+                {/* Phòng học (Select) */}
+                <Form.Item
+                  label={<span style={{ fontSize: 12, fontWeight: 600 }}>Phòng học giảng dạy</span>}
+                  name="roomId"
+                  rules={[{ required: true, message: 'Vui lòng chọn phòng học!' }]}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Select
+                    placeholder="Chọn phòng học"
+                    showSearch
+                    optionFilterProp="children"
+                    value={selectedRoomId}
+                    onChange={(val) => setSelectedRoomId(val)}
+                  >
+                    {rooms.map((r) => (
+                      <Select.Option key={r.id} value={r.id}>
+                        {r.name} - {r.capacity} chỗ ({r.building || 'Khu GD'})
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                {/* Khối tiết chuẩn TBD (Nút bấm phẳng) */}
+                {periodMode === 'preset' ? (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                      {PERIOD_BLOCK_PRESETS.map((p) => {
+                        const isSelected = selectedPresetKey === p.key
+                        const periodRangeStr = `Tiết ${p.fromPeriod}-${p.toPeriod}`
+                        const timeRangeStr = `${p.startTime} - ${p.endTime}`
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => handlePresetSelect(p)}
+                            style={{
+                              border: isSelected ? '1.5px solid #0f172a' : '1px solid #cbd5e1',
+                              background: isSelected ? '#0f172a' : '#ffffff',
+                              borderRadius: 6,
+                              padding: '6px 4px',
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              outline: 'none',
+                              boxShadow: isSelected ? '0 2px 4px rgba(15, 23, 42, 0.25)' : 'none'
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: 12,
+                                lineHeight: 1.2,
+                                color: isSelected ? '#ffffff' : '#0f172a'
+                              }}
+                            >
+                              {periodRangeStr}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10.5,
+                                fontWeight: 500,
+                                color: isSelected ? '#e0f2fe' : '#475569',
+                                marginTop: 3
+                              }}
+                            >
+                              {timeRangeStr}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <Row gutter={8}>
+                    <Col span={12}>
+                      <Form.Item label={<span style={{ fontSize: 12 }}>Từ tiết</span>} required style={{ marginBottom: 0 }}>
+                        <Select
+                          value={fromPeriod}
+                          onChange={(val) => {
+                            setFromPeriod(val)
+                            if (val > toPeriod) setToPeriod(val)
                           }}
                         >
-                          <div style={{ fontWeight: 600 }}>{p.label.split(':')[1] || p.label}</div>
-                          <div style={{ opacity: 0.85 }}>{p.shift === 'morning' ? 'Ca Sáng' : 'Ca Chiều'}</div>
-                        </Button>
-                      )
-                    })}
+                          {TBD_STUDY_PERIODS.map((p) => (
+                            <Select.Option key={p.period} value={p.period}>
+                              {p.label}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label={<span style={{ fontSize: 12 }}>Đến tiết</span>} required style={{ marginBottom: 0 }}>
+                        <Select
+                          value={toPeriod}
+                          onChange={(val) => {
+                            setToPeriod(val)
+                            if (val < fromPeriod) setFromPeriod(val)
+                          }}
+                        >
+                          {TBD_STUDY_PERIODS.filter((p) => p.period >= fromPeriod).map((p) => (
+                            <Select.Option key={p.period} value={p.period}>
+                              {p.label}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                )}
+
+                {/* Sub-banner: Giờ áp dụng */}
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: 11
+                  }}
+                >
+                  <div style={{ color: '#0369a1', fontWeight: 600 }}>
+                    <strong style={{ color: '#0369a1' }}>Áp dụng: </strong>
+                    <Tag
+                      color="blue"
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        margin: '0 4px',
+                        padding: '1px 6px',
+                        color: '#0369a1',
+                        background: '#e0f2fe',
+                        borderColor: '#7dd3fc'
+                      }}
+                    >
+                      {startTimeStr} - {endTimeStr}
+                    </Tag>
+                    <span style={{ color: '#0369a1', fontWeight: 600, fontSize: 11 }}>
+                      ({periodDisplayLabel})
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>
+                    Nghỉ 15p: 09:30 & 15:45
                   </div>
                 </div>
-              ) : (
-                <Row gutter={8}>
-                  <Col span={12}>
-                    <Form.Item label="Từ tiết" required>
-                      <Select
-                        value={fromPeriod}
-                        onChange={(val) => {
-                          setFromPeriod(val)
-                          if (val > toPeriod) setToPeriod(val)
-                        }}
-                      >
-                        {TBD_STUDY_PERIODS.map((p) => (
-                          <Select.Option key={p.period} value={p.period}>
-                            {p.label}
-                          </Select.Option>
-                        ))}
-                      </Select>
+              </div>
+
+              {/* Khối 2: Tên học phần, Mã HP, Mã lớp, Giảng viên & Khoa/Bộ môn */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  marginTop: 'auto'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginBottom: 8,
+                    paddingBottom: 6,
+                    borderBottom: '1px solid #e2e8f0'
+                  }}
+                >
+                  <BookOutlined style={{ color: '#0d2e5c', fontSize: 14 }} />
+                  <Text strong style={{ fontSize: 13, color: '#0d2e5c', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                    Thông tin học phần & Giảng viên
+                  </Text>
+                </div>
+
+                {/* Tên học phần */}
+                <Form.Item
+                  label={<span style={{ fontSize: 12, fontWeight: 600 }}>Tên học phần / Môn học</span>}
+                  name="subjectName"
+                  rules={[{ required: true, message: 'Vui lòng nhập tên học phần!' }]}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Input placeholder="VD: Lập trình Web nâng cao" />
+                </Form.Item>
+
+                {/* Mã học phần & Mã lớp (2 ô song song) kèm số SV */}
+                <Row gutter={8} style={{ marginBottom: 8 }}>
+                  <Col span={10}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Mã học phần</span>}
+                      name="subjectCode"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="VD: CNTT302" />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
-                    <Form.Item label="Đến tiết" required>
-                      <Select
-                        value={toPeriod}
-                        onChange={(val) => {
-                          setToPeriod(val)
-                          if (val < fromPeriod) setFromPeriod(val)
-                        }}
-                      >
-                        {TBD_STUDY_PERIODS.filter((p) => p.period >= fromPeriod).map((p) => (
-                          <Select.Option key={p.period} value={p.period}>
-                            {p.label}
-                          </Select.Option>
-                        ))}
-                      </Select>
+                  <Col span={9}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Mã lớp</span>}
+                      name="classCode"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="VD: 22CT111" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={5}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Số SV</span>}
+                      name="participantCount"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <InputNumber min={1} max={300} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                 </Row>
-              )}
-            </Col>
-          </Row>
 
-          {/* Time Reference Banner */}
-          <div style={{
-            marginTop: 4,
-            padding: '8px 12px',
-            borderRadius: 6,
-            background: '#e0f2fe',
-            border: '1px solid #bae6fd',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: 12,
-            color: '#0369a1'
-          }}>
-            <div>
-              <strong>Khung giờ áp dụng: </strong>
-              <Tag color="blue" style={{ fontSize: 12, fontWeight: 700, margin: '0 4px' }}>
-                {startTimeStr} - {endTimeStr}
-              </Tag>
-              ({periodDisplayLabel})
-            </div>
-            <div style={{ fontSize: 11, color: '#0284c7' }}>
-              Giải lao 15p: 09:30 - 09:45 (Sáng) & 15:45 - 16:00 (Chiều)
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 3: THÔNG TIN HỌC PHẦN & GIẢNG VIÊN */}
-        <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <BookOutlined style={{ color: '#0284c7', fontSize: 16 }} />
-            <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
-              3. THÔNG TIN HỌC PHẦN, LỚP VÀ GIẢNG VIÊN PHỤ TRÁCH
-            </Text>
-          </div>
-
-          <Row gutter={16}>
-            <Col span={10}>
-              <Form.Item
-                label="Tên Học phần / Môn học"
-                name="subjectName"
-                rules={[{ required: true, message: 'Vui lòng nhập tên học phần!' }]}
-              >
-                <Input placeholder="VD: Lập trình Web nâng cao" />
-              </Form.Item>
-            </Col>
-            <Col span={7}>
-              <Form.Item label="Mã Học phần" name="subjectCode">
-                <Input placeholder="VD: CNTT302" />
-              </Form.Item>
-            </Col>
-            <Col span={7}>
-              <Form.Item label="Mã Lớp học phần / Nhóm" name="classCode">
-                <Input placeholder="VD: 22CT111" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={10}>
-              <Form.Item label="Giảng viên phụ trách" name="lecturerName" rules={[{ required: true, message: 'Vui lòng nhập tên giảng viên!' }]}>
-                <Input placeholder="VD: TS. Nguyễn Văn A" prefix={<UserOutlined style={{ color: '#94a3b8' }} />} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="Khoa / Bộ môn" name="department">
-                <Input placeholder="VD: Khoa Công nghệ Thông tin" />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item label="Số SV dự kiến" name="participantCount">
-                <InputNumber min={1} max={300} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </div>
-
-        {/* SECTION 4: KIỂM TRA XUNG ĐỘT (CONFLICT DETECTION & OVERRIDE) */}
-        <div style={{
-          background: conflictResult.conflictSessions > 0 ? '#fffbeb' : '#f0fdf4',
-          padding: '16px 20px',
-          borderRadius: 8,
-          border: conflictResult.conflictSessions > 0 ? '1px solid #fde68a' : '1px solid #bbf7d0',
-          marginBottom: 8
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {conflictResult.conflictSessions > 0 ? (
-                <ExclamationCircleOutlined style={{ color: '#d97706', fontSize: 18 }} />
-              ) : (
-                <CheckCircleOutlined style={{ color: '#16a34a', fontSize: 18 }} />
-              )}
-              <div>
-                <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
-                  4. KIỂM TRA XUNG ĐỘT (CONFLICT DETECTION & OVERRIDE)
-                </Text>
-                <div style={{ fontSize: 12, color: '#64748b' }}>
-                  Hệ thống tự động rà soát lịch hiện có tại {selectedRoom?.name || 'phòng học'} trong dải ngày đã chọn
-                </div>
+                {/* Giảng viên phụ trách & Khoa/Bộ môn (2 ô song song) */}
+                <Row gutter={8}>
+                  <Col span={12}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Giảng viên phụ trách</span>}
+                      name="lecturerName"
+                      rules={[{ required: true, message: 'Vui lòng nhập tên giảng viên!' }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="VD: TS. Nguyễn Văn A" prefix={<UserOutlined style={{ color: '#94a3b8' }} />} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Khoa / Bộ môn</span>}
+                      name="department"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="VD: Khoa CNTT" />
+                    </Form.Item>
+                  </Col>
+                </Row>
               </div>
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                background: '#fff',
-                padding: '4px 12px',
-                borderRadius: 20,
-                border: '1px solid #e2e8f0',
-                fontSize: 13
-              }}>
-                Tổng buổi dự kiến: <strong style={{ color: '#0284c7' }}>{conflictResult.totalSessions}</strong>
-              </div>
-              <div style={{
-                background: conflictResult.conflictSessions > 0 ? '#fee2e2' : '#dcfce7',
-                padding: '4px 12px',
-                borderRadius: 20,
-                border: conflictResult.conflictSessions > 0 ? '1px solid #fca5a5' : '1px solid #86efac',
-                fontSize: 13,
-                color: conflictResult.conflictSessions > 0 ? '#b91c1c' : '#15803d',
-                fontWeight: 600
-              }}>
-                {conflictResult.conflictSessions > 0
-                  ? `Phát hiện ${conflictResult.conflictSessions} buổi xung đột!`
-                  : 'Hoàn toàn không có xung đột'}
-              </div>
-            </div>
-          </div>
-
-          {/* Conflict List & Override Toggle */}
-          {conflictResult.conflictSessions > 0 ? (
-            <div>
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginBottom: 12 }}
-                message={
-                  <div style={{ fontWeight: 600 }}>
-                    Có {conflictResult.conflictSessions} buổi học trùng với {conflictResult.allConflictingBookings.length} đơn đặt phòng của sinh viên / giảng viên khác
-                  </div>
-                }
-                description={
-                  <div style={{ fontSize: 12, marginTop: 4 }}>
-                    Dưới đây là danh sách các đơn trùng lịch tại {selectedRoom?.name}. Vui lòng chọn chế độ Ghi đè Nhà trường (Override) để tự động giải tỏa slot phòng.
-                  </div>
-                }
-              />
-
-              <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 14, border: '1px solid #fed7aa', borderRadius: 6 }}>
-                <Table
-                  size="small"
-                  columns={conflictColumns}
-                  dataSource={conflictResult.allConflictingBookings}
-                  rowKey="id"
-                  pagination={false}
-                />
-              </div>
-
-              <div style={{
-                background: isSchoolOverride ? '#eff6ff' : '#f8fafc',
-                border: isSchoolOverride ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                padding: '12px 16px',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div>
-                  <div style={{ fontWeight: 700, color: isSchoolOverride ? '#1e40af' : '#475569', fontSize: 13 }}>
-                    Chế độ Ghi đè Nhà trường (IsSchoolOverride = true): {isSchoolOverride ? 'ĐANG BẬT' : 'ĐANG TẮT'}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                    {isSchoolOverride
-                      ? 'Nhà trường có quyền ưu tiên cao nhất. Hệ thống sẽ tự động HỦY các đơn trùng giờ, và phê duyệt toàn bộ lịch học chính khóa (Approved).'
-                      : 'Giữ nguyên các đơn cũ. Hệ thống sẽ BỎ QUA các buổi bị trùng lịch (chỉ tạo các buổi không bị xung đột).'}
-                  </div>
-                </div>
-                <Switch
-                  checked={isSchoolOverride}
-                  onChange={(checked) => setIsSchoolOverride(checked)}
-                  checkedChildren="Ghi đè"
-                  unCheckedChildren="Bỏ qua"
-                  style={{ background: isSchoolOverride ? '#0284c7' : '#94a3b8' }}
-                />
-              </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: '#166534', padding: '4px 0' }}>
-              Toàn bộ {conflictResult.totalSessions} buổi học đều thông suốt, không trùng với bất kỳ lịch đăng ký nào tại phòng học này.
-              Các buổi học sẽ được phê duyệt tự động với cờ <strong>IsSchoolOverride = true</strong> và khóa slot trên /calendar.
-            </div>
-          )}
-        </div>
+          </Col>
+        </Row>
       </Form>
+            )
+          },
+          {
+            key: 'excel',
+            label: (
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                <FileExcelOutlined style={{ marginRight: 6, color: '#16a34a' }} />
+                Nhập từ File (Excel / CSV)
+              </span>
+            ),
+            children: (
+              <SemesterScheduleExcelImport
+                rooms={rooms}
+                allBookings={allBookings}
+                currentUserRole={currentUserRole}
+                currentUserEmail={currentUserEmail}
+                currentUserName={currentUserName}
+                onClose={onClose}
+                onScheduleCreated={onScheduleCreated}
+              />
+            )
+          }
+        ]}
+      />
     </Modal>
   )
 }

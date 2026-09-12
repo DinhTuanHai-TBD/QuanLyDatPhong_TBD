@@ -206,15 +206,12 @@ function App() {
   );
   const canAccessAdminPage = isAdmin || isApprover;
 
-  const activeNavigationItems = [
+  const navigationItems = [
     { to: "/", label: "Trang chủ" },
     { to: "/calendar", label: "Lịch phòng" },
     { to: "/bookings", label: "Đặt phòng" },
     { to: "/rooms", label: "Thông tin phòng" },
-    {
-      to: "/booking-history",
-      label: "Lịch sử đặt phòng",
-    },
+    { to: "/booking-history", label: "Lịch sử đặt" },
     { to: "/report-issue", label: "Báo cáo sự cố" },
     ...(canAccessAdminPage
       ? [
@@ -222,10 +219,17 @@ function App() {
             to: "/approvals",
             label: "Duyệt yêu cầu",
           },
-          { to: "/admin", label: isAdmin ? "Quản trị" : "Quản lý ĐT & CSVC" },
+          {
+            to: "/admin",
+            label: isAdmin ? "Quản trị" : "Quản lý ĐT & CSVC",
+          },
         ]
       : []),
   ];
+
+  const displayName = isAdmin
+    ? "Admin"
+    : (userProfile?.fullName || getUserEmail() || "Hồ sơ cá nhân");
 
   useEffect(() => {
     const updateHeader = () => setScrolled(window.scrollY > 32);
@@ -270,7 +274,7 @@ function App() {
         </Link>
 
         <nav className="desktop-nav" aria-label="Điều hướng chính">
-          {activeNavigationItems.map((item) => (
+          {navigationItems.map((item) => (
             <Link
               className={`nav-item ${activePath === item.to.split("?")[0] && !(item.to.includes("?") && !location.search.includes("history")) ? "active" : ""}`}
               key={item.to}
@@ -285,27 +289,43 @@ function App() {
           {isLoggedIn && <NotificationBell />}
 
           {isLoggedIn ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Tooltip title="Xem và cập nhật Hồ sơ cá nhân">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minWidth: 'max-content' }}>
+              <Tooltip title={isAdmin ? "Tài khoản Quản trị viên (Admin)" : "Xem và cập nhật Hồ sơ cá nhân"}>
                 <Button
                   type="text"
                   className="nav-user-button nav-user-button-desktop"
-                  icon={<UserOutlined style={{ color: isProfileIncomplete ? '#eab308' : '#38bdf8' }} />}
+                  icon={<UserOutlined style={{ color: isProfileIncomplete && !isAdmin ? '#eab308' : '#38bdf8' }} />}
                   onClick={() => setProfileModalOpen(true)}
-                  style={{ display: 'flex', alignItems: 'center' }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    maxWidth: 140,
+                  }}
                 >
-                  <span className="user-email-text" style={{ maxWidth: 160, textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                    {userProfile?.fullName || getUserEmail() || "Hồ sơ cá nhân"}
+                  <span
+                    className="user-email-text"
+                    style={{
+                      maxWidth: 90,
+                      textOverflow: 'ellipsis',
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-block',
+                    }}
+                  >
+                    {displayName}
                   </span>
-                  {isProfileIncomplete && (
+                  {isProfileIncomplete && !isAdmin && (
                     <span 
                       style={{ 
-                        width: 8, 
-                        height: 8, 
+                        width: 7, 
+                        height: 7, 
                         borderRadius: '50%', 
                         backgroundColor: '#ef4444', 
                         marginLeft: 4,
-                        display: 'inline-block' 
+                        display: 'inline-block',
+                        flexShrink: 0
                       }} 
                       title="Hồ sơ chưa hoàn thiện"
                     />
@@ -318,7 +338,7 @@ function App() {
                   icon={<LogoutOutlined />}
                   onClick={logout}
                   aria-label="Đăng xuất"
-                  style={{ color: '#ef4444', minWidth: 36, padding: '0 8px' }}
+                  style={{ color: '#ef4444', minWidth: 32, padding: '0 6px', flexShrink: 0 }}
                 />
               </Tooltip>
             </div>
@@ -378,7 +398,7 @@ function App() {
                   {isProfileIncomplete && <Tag color="warning" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>Chưa hoàn tất</Tag>}
                 </div>
                 <div style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {userProfile?.fullName || getUserEmail()}
+                  {displayName}
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#0284c7', marginTop: 2 }}>
                   <EditOutlined /> Cập nhật thông tin ›
@@ -386,7 +406,7 @@ function App() {
               </div>
             </div>
           )}
-          {activeNavigationItems.map((item) => (
+          {navigationItems.map((item) => (
             <Link key={item.to} to={item.to} onClick={() => setMenuOpen(false)}>
               {item.label}
             </Link>

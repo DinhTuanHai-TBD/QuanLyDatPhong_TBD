@@ -98,12 +98,12 @@ export function getUserEmail(): string {
   if (!token) return ''
   
   const payload = decodeToken(token)
-  if (!payload) return 'user@tbd.edu.vn'
+  if (!payload) return 'hai.230057@tbd.edu.vn'
   
   const emailClaim = 
     payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] || 
     payload['email'] || 
     payload['sub']
     
-  return emailClaim ? String(emailClaim) : 'user@tbd.edu.vn'
+  return emailClaim ? String(emailClaim) : 'hai.230057@tbd.edu.vn'
 }

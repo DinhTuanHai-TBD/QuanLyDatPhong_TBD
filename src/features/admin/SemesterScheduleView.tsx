@@ -29,6 +29,7 @@ import {
   ThunderboltOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { toVN, formatVNTime } from '../../utils/dateUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { http } from '../../api/http'
@@ -108,7 +109,8 @@ export default function SemesterScheduleView({
       const classCode = b.classCode || ''
       const key = `${subject}_${classCode}_${b.roomId}_${b.semester || 'HK'}`
 
-      const dayOfWeek = dayjs(b.startTime).day()
+      const d = toVN(b.startTime)
+      const dayOfWeek = d.day()
       const dayName = dayOfWeek === 0 ? 'CN' : `T${dayOfWeek + 1}`
 
       if (!map.has(key)) {
@@ -253,7 +255,7 @@ export default function SemesterScheduleView({
       render: (_: any, r: CourseScheduleGroup) => (
         <div>
           <div style={{ fontWeight: 600, color: '#0284c7' }}>{r.roomName}</div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>Khóa slot sinh viên</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Lịch học chính khóa</div>
         </div>
       )
     },
@@ -323,7 +325,7 @@ export default function SemesterScheduleView({
           {canManageSchedule && (
             <Popconfirm
               title="Xóa toàn bộ lịch học môn này?"
-              description={`Hành động này sẽ giải phóng ${r.sessionCount} buổi học đã khóa tại ${r.roomName}.`}
+              description={`Hành động này sẽ hủy ${r.sessionCount} buổi học chính khóa của học phần tại ${r.roomName}.`}
               onConfirm={() => handleDeleteCourse(r)}
               okText="Xóa"
               cancelText="Hủy"
@@ -346,12 +348,13 @@ export default function SemesterScheduleView({
             Thời Khóa Biểu & Lịch Học Định Kỳ Theo Học Kỳ (TBD)
           </Title>
           <Text style={{ fontSize: 13, color: '#64748b' }}>
-            Quản lý lịch học chính khóa các Học kỳ 1, 2, Học kỳ 3 (Hè), khóa slot phòng học và kiểm tra xung đột
+            Quản lý kế hoạch giảng dạy chính khóa các Học kỳ 1, 2, Học kỳ 3 (Hè), phân bổ phòng học và kiểm tra trùng lịch
           </Text>
         </div>
 
         {canManageSchedule && (
           <Button
+            id="btn-import-semester-schedule"
             type="primary"
             icon={<PlusOutlined />}
             onClick={onOpenCreateModal}
@@ -371,7 +374,7 @@ export default function SemesterScheduleView({
               title={<span style={{ fontSize: 12, color: '#64748b' }}>Tổng số học phần</span>}
               value={courseGroups.length}
               suffix="môn"
-              valueStyle={{ color: '#0284c7', fontWeight: 700 }}
+              styles={{ content: { color: '#0284c7', fontWeight: 700 } }}
               prefix={<BookOutlined />}
             />
           </Card>
@@ -382,7 +385,7 @@ export default function SemesterScheduleView({
               title={<span style={{ fontSize: 12, color: '#1e40af' }}>Tổng số buổi học</span>}
               value={schoolBookings.length}
               suffix="buổi"
-              valueStyle={{ color: '#1e40af', fontWeight: 700 }}
+              styles={{ content: { color: '#1e40af', fontWeight: 700 } }}
               prefix={<CalendarOutlined />}
             />
           </Card>
@@ -393,7 +396,7 @@ export default function SemesterScheduleView({
               title={<span style={{ fontSize: 12, color: '#854d0e' }}>HK3 (Học kỳ Hè)</span>}
               value={hk3Count}
               suffix="buổi"
-              valueStyle={{ color: '#ca8a04', fontWeight: 700 }}
+              styles={{ content: { color: '#ca8a04', fontWeight: 700 } }}
               prefix={<ThunderboltOutlined />}
             />
           </Card>
@@ -401,11 +404,11 @@ export default function SemesterScheduleView({
         <Col xs={12} sm={6}>
           <Card size="small" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
             <Statistic
-              title={<span style={{ fontSize: 12, color: '#166534' }}>Khóa slot sinh viên</span>}
+              title={<span style={{ fontSize: 12, color: '#166534' }}>Lịch học chính khóa</span>}
               value={schoolBookings.length}
-              suffix="slot"
-              valueStyle={{ color: '#16a34a', fontWeight: 700 }}
-              prefix={<LockOutlined />}
+              suffix="buổi"
+              styles={{ content: { color: '#16a34a', fontWeight: 700 } }}
+              prefix={<BookOutlined />}
             />
           </Card>
         </Col>
@@ -462,7 +465,7 @@ export default function SemesterScheduleView({
               description="Chưa có thời khóa biểu học kỳ nào được nhập"
             >
               {canManageSchedule && (
-                <Button type="primary" icon={<PlusOutlined />} onClick={onOpenCreateModal} style={{ background: '#0284c7' }}>
+                <Button id="btn-empty-import-semester-schedule" type="primary" icon={<PlusOutlined />} onClick={onOpenCreateModal} style={{ background: '#0284c7' }}>
                   Nhập Thời Khóa Biểu Ngay
                 </Button>
               )}
@@ -484,7 +487,7 @@ export default function SemesterScheduleView({
           </div>
         }
         placement="right"
-        width={560}
+        size={560}
         open={isDetailDrawerOpen}
         onClose={() => setIsDetailDrawerOpen(false)}
       >
@@ -522,7 +525,7 @@ export default function SemesterScheduleView({
                   title: 'Ngày học',
                   key: 'date',
                   render: (_: any, b: Booking) => {
-                    const d = dayjs(b.startTime)
+                    const d = toVN(b.startTime)
                     const dayOfWeek = d.day() === 0 ? 'CN' : `Thứ ${d.day() + 1}`
                     return (
                       <div>
@@ -536,14 +539,14 @@ export default function SemesterScheduleView({
                   key: 'time',
                   render: (_: any, b: Booking) => (
                     <Tag color="blue">
-                      {dayjs(b.startTime).format('HH:mm')} - {dayjs(b.endTime).format('HH:mm')}
+                      {formatVNTime(b.startTime)} - {formatVNTime(b.endTime)}
                     </Tag>
                   )
                 },
                 {
                   title: 'Trạng thái',
                   key: 'status',
-                  render: () => <Tag color="green">Đã duyệt (Khóa)</Tag>
+                  render: () => <Tag color="blue">Thời khóa biểu chính khóa</Tag>
                 }
               ]}
             />
