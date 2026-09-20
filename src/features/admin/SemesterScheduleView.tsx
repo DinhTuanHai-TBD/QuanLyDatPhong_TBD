@@ -13,7 +13,7 @@ import {
   Statistic,
   Badge,
   Popconfirm,
-  message,
+  App,
   Drawer,
   Empty
 } from 'antd'
@@ -26,7 +26,7 @@ import {
   DeleteOutlined,
   EyeOutlined,
   LockOutlined,
-  ThunderboltOutlined
+  ScheduleOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { toVN, formatVNTime } from '../../utils/dateUtils'
@@ -34,6 +34,7 @@ import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { http } from '../../api/http'
 import { useQueryClient } from '@tanstack/react-query'
+import { extractMajorFromNotes, normalizeDepartmentName } from '../../utils/academicPrograms'
 
 const { Title, Text } = Typography
 
@@ -51,6 +52,7 @@ interface CourseScheduleGroup {
   classCode: string
   lecturerName: string
   department: string
+  major?: string
   roomId: number
   roomName: string
   semester: string
@@ -69,6 +71,7 @@ export default function SemesterScheduleView({
   onOpenCreateModal,
   canManageSchedule
 }: SemesterScheduleViewProps) {
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [semesterFilter, setSemesterFilter] = useState<string>('all')
   const [roomFilter, setRoomFilter] = useState<number | 'all'>('all')
@@ -112,6 +115,7 @@ export default function SemesterScheduleView({
       const d = toVN(b.startTime)
       const dayOfWeek = d.day()
       const dayName = dayOfWeek === 0 ? 'CN' : `T${dayOfWeek + 1}`
+      const extractedMajor = b.major || extractMajorFromNotes(b.notes).major
 
       if (!map.has(key)) {
         map.set(key, {
@@ -120,7 +124,8 @@ export default function SemesterScheduleView({
           subjectCode: b.subjectCode || 'N/A',
           classCode: b.classCode || 'Lớp chung',
           lecturerName: b.lecturerName || b.personInCharge || 'Bộ môn',
-          department: b.department || 'Đại học Thái Bình Dương',
+          department: normalizeDepartmentName(b.department) || 'Đại học Thái Bình Dương',
+          major: extractedMajor || undefined,
           roomId: b.roomId,
           roomName: b.roomName || `Phòng ${b.roomId}`,
           semester: b.semester || 'Học kỳ',
@@ -136,6 +141,9 @@ export default function SemesterScheduleView({
         const group = map.get(key)!
         group.sessionCount += 1
         group.sessions.push(b)
+        if (!group.major && extractedMajor) {
+          group.major = extractedMajor
+        }
 
         if (new Date(b.startTime).getTime() < new Date(group.firstSessionDate).getTime()) {
           group.firstSessionDate = b.startTime
@@ -192,18 +200,11 @@ export default function SemesterScheduleView({
         } catch {}
       }
 
-      // 2. Remove or cancel in local storage
-      const localStr = localStorage.getItem('tbd_admin_bookings')
-      if (localStr) {
-        const list: Booking[] = JSON.parse(localStr)
-        const sessionIds = new Set(group.sessions.map(s => s.id))
-        const updated = list.filter(b => !sessionIds.has(b.id))
-        localStorage.setItem('tbd_admin_bookings', JSON.stringify(updated))
-      }
-
       await queryClient.invalidateQueries({ queryKey: ['bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
+      await queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
 
       message.success(`Đã xóa thành công lịch học của môn ${group.subjectName} (${group.sessionCount} buổi)!`)
     } catch {
@@ -280,7 +281,12 @@ export default function SemesterScheduleView({
       render: (name: string, r: CourseScheduleGroup) => (
         <div>
           <div style={{ fontWeight: 600 }}>{name}</div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>{r.department}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>{normalizeDepartmentName(r.department)}</div>
+          {r.major && (
+            <Tag color="purple" style={{ fontSize: 10, marginTop: 2, padding: '0 4px' }}>
+              Ngành: {r.major}
+            </Tag>
+          )}
         </div>
       )
     },
@@ -397,7 +403,7 @@ export default function SemesterScheduleView({
               value={hk3Count}
               suffix="buổi"
               styles={{ content: { color: '#ca8a04', fontWeight: 700 } }}
-              prefix={<ThunderboltOutlined />}
+              prefix={<ScheduleOutlined />}
             />
           </Card>
         </Col>
@@ -501,7 +507,12 @@ export default function SemesterScheduleView({
                 </Col>
                 <Col span={12}>
                   <div style={{ fontSize: 11, color: '#64748b' }}>Khoa / Bộ môn:</div>
-                  <div style={{ fontWeight: 600 }}>{selectedGroup.department}</div>
+                  <div style={{ fontWeight: 600 }}>{normalizeDepartmentName(selectedGroup.department)}</div>
+                  {selectedGroup.major && (
+                    <Tag color="purple" style={{ marginTop: 4, fontSize: 11 }}>
+                      Ngành: {selectedGroup.major}
+                    </Tag>
+                  )}
                 </Col>
                 <Col span={12} style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 11, color: '#64748b' }}>Khung giờ chuẩn:</div>

@@ -6,7 +6,7 @@ import {
   Pagination,
   Skeleton,
   Empty,
-  message,
+  App,
   Typography,
   Breadcrumb,
 } from 'antd';
@@ -56,6 +56,7 @@ export interface NotificationItem {
 type MainFilter = 'all' | 'unread' | 'booking' | 'issue';
 
 export default function NotificationsPage() {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const userEmail = getUserEmail();
@@ -119,11 +120,11 @@ export default function NotificationsPage() {
   const urgentNotifications: NotificationItem[] = useMemo(() => {
     if (!isAdmin || !Array.isArray(adminBookings)) return [];
     return adminBookings
-      .filter((b) => isPendingBooking(b) && isBookingUrgent(b))
+      .filter((b) => isPendingBooking(b) && isBookingUrgent(b, undefined, 1.0))
       .map((b) => ({
         id: `urgent-booking-${b.id}`,
-        title: 'Cần duyệt gấp (< 2h)',
-        message: `Đơn đặt phòng #${b.id} tại ${b.roomName} chỉ còn dưới 2 tiếng nữa sẽ diễn ra, cần phê duyệt ngay!`,
+        title: `Khẩn cấp: Đơn đặt phòng #${b.id} cần duyệt gấp (< 1h)`,
+        message: `Đơn đặt phòng #${b.id} tại ${b.roomName} chỉ còn dưới 1 tiếng nữa sẽ diễn ra, cần phê duyệt ngay!`,
         type: 'urgent',
         isUnread: true,
         createdAt: b.startTime,
@@ -170,7 +171,9 @@ export default function NotificationsPage() {
       String(item.id).startsWith('urgent-booking-') ||
       full.includes('cần duyệt gấp') ||
       full.includes('duyệt gấp') ||
-      full.includes('< 2h')
+      full.includes('< 1h') ||
+      full.includes('< 2h') ||
+      full.includes('khẩn cấp')
     ) {
       return 'urgent';
     }

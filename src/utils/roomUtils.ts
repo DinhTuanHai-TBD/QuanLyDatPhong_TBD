@@ -1,103 +1,60 @@
 import type { Room } from '../types/room';
 
-export const OFFICIAL_ROOMS: Record<
-  string, 
-  { building: string; type: string; capacity: number; displayName?: string; note?: string }
-> = {
-  A201: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 100 },
-  A202: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  A203: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  A204: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  A205: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  A206: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  A302: { building: 'Khu A', type: 'Phòng Cinema', capacity: 40 },
-  A304: { building: 'Khu A', type: 'Phòng Lab', capacity: 20, note: '20 máy tính' },
-  A305: { building: 'Khu A', type: 'Phòng học nhóm', capacity: 10 },
-  A401: { 
-    building: 'Khu A', 
-    type: 'Hội trường 300 chỗ', 
-    capacity: 300, 
-    displayName: 'A401 (Hội trường 300 chỗ)', 
-    note: 'Hội trường lớn 300 chỗ ngồi' 
-  },
-  A402: { building: 'Khu A', type: 'Phòng Lab', capacity: 20, note: '20 máy tính' },
-  A403: { building: 'Khu A', type: 'Phòng học lý thuyết', capacity: 40 },
-  
-  B001: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B002: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B101: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B102: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B103: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B104: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B105: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B106: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 },
-  B107: { building: 'Khu B', type: 'Phòng thực hành', capacity: 40 }
-};
-
 export type ValidatedRoom = Room & { 
   _displayType: string; 
   _displayNote?: string;
   _displayName?: string;
 };
 
-export function isFakeOrDisallowedRoom(room: Partial<Room>): boolean {
-  if (!room) return true;
-  const name = String(room.name || '').toLowerCase();
-  const building = String(room.building || '').toLowerCase();
-  const capacity = Number(room.capacity || 0);
+/**
+ * Derives user-friendly display labels for room types based exclusively on backend data.
+ */
+export function getRoomTypeDisplayLabel(roomType: any): string {
+  const t = String(roomType || '').toLowerCase().trim();
+  if (t === 'lecturehall' || t === '2' || t.includes('hội trường')) return 'Hội trường';
+  if (t === 'lab' || t === 'computerlab' || t === '3' || t.includes('lab') || t.includes('máy tính')) return 'Phòng Lab';
+  if (t === 'meetingroom' || t === '1' || t.includes('họp')) return 'Phòng họp';
+  if (t.includes('cinema')) return 'Phòng Cinema';
+  if (t.includes('nhóm')) return 'Phòng học nhóm';
+  return 'Phòng học lý thuyết';
+}
 
-  // Loại bỏ hoàn toàn phòng ảo, không thuộc Đại học Thái Bình Dương (như C101, D202, Tòa Trung tâm...)
-  if (
-    name.includes('hội trường tbd') ||
-    name.includes('hoi truong tbd') ||
-    name.includes('tòa trung tâm') ||
-    name.includes('toa trung tam') ||
-    building.includes('tòa trung tâm') ||
-    building.includes('toa trung tam') ||
-    building.includes('trung tâm') ||
-    name.includes('c101') ||
-    name.includes('d202') ||
-    capacity === 180 ||
-    (name.includes('hội trường') && capacity === 180)
-  ) {
-    return true;
-  }
-
-  // Phải thuộc danh sách 23 phòng chuẩn TBD
-  const code = extractOfficialCode(room.name);
-  if (!code || !OFFICIAL_ROOMS[code]) {
-    return true;
-  }
-
+/**
+ * Rooms returned from the API are real rooms; do not filter out admin additions.
+ */
+export function isFakeOrDisallowedRoom(_room: Partial<Room>): boolean {
   return false;
 }
 
+/**
+ * Remove legacy business data from localStorage to ensure server is the single source of truth.
+ */
 export function cleanupLocalStorageRooms(): void {
   try {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tbd_accounts');
-      localStorage.removeItem('users_mock');
-      localStorage.removeItem('mock_users');
-      localStorage.removeItem('tbd_users');
-      localStorage.removeItem('mock_accounts');
-
-      const localStr = localStorage.getItem('tbd_admin_rooms');
-      if (localStr) {
-        const rooms = JSON.parse(localStr);
-        if (Array.isArray(rooms)) {
-          const filtered = rooms.filter((r: any) => !isFakeOrDisallowedRoom(r));
-          if (filtered.length !== rooms.length) {
-            localStorage.setItem('tbd_admin_rooms', JSON.stringify(filtered));
-          }
-        }
-      }
+      const legacyKeys = [
+        'tbd_accounts',
+        'users_mock',
+        'mock_users',
+        'tbd_users',
+        'mock_accounts',
+        'tbd_admin_rooms',
+        'tbd_admin_bookings',
+        'tbd_equipments',
+        'tbd_admin_equipments',
+        'tbd_room_images',
+        'testRole',
+        'userEmail',
+        'userRole'
+      ];
+      legacyKeys.forEach((key) => localStorage.removeItem(key));
     }
   } catch (err) {
     console.error('Error in cleanupLocalStorageRooms:', err);
   }
 }
 
-// Chạy dọn dẹp ngay khi nạp module
+// Perform cleanup on load
 if (typeof window !== 'undefined') {
   cleanupLocalStorageRooms();
 }
@@ -106,94 +63,42 @@ export function extractOfficialCode(roomName?: string): string | null {
   if (!roomName) return null;
   const clean = roomName.trim().replace(/^phòng\s+/i, '').trim();
   const match = clean.match(/^([AB]\d{3})/i);
-  if (match) {
-    const code = match[1].toUpperCase();
-    if (OFFICIAL_ROOMS[code]) {
-      return code;
-    }
-  }
-  return null;
+  return match ? match[1].toUpperCase() : null;
 }
 
+/**
+ * Normalizes rooms solely from GET /api/rooms.
+ * Does NOT generate static rooms on empty/error.
+ * Does NOT overwrite real capacity, building, or roomType with hardcoded constants.
+ */
 export function getOfficialRooms(apiRooms?: Room[]): ValidatedRoom[] {
-  cleanupLocalStorageRooms();
-
-  const officialEntries = Object.entries(OFFICIAL_ROOMS);
-
-  if (!apiRooms || apiRooms.length === 0) {
-    return officialEntries.map(([code, info], index) => ({
-      id: index + 1,
-      name: info.displayName || code,
-      building: info.building,
-      capacity: info.capacity,
-      roomType: (info.type.includes('Hội trường') ? 'LectureHall' : info.type.includes('Lab') ? 'Lab' : 'Classroom') as any,
-      status: 'Active',
-      isActive: true,
-      description: info.note || '',
-      imageUrl: '',
-      _displayType: info.type,
-      _displayNote: info.note,
-      _displayName: info.displayName || code
-    }));
+  if (!apiRooms || !Array.isArray(apiRooms) || apiRooms.length === 0) {
+    return [];
   }
 
-  // Lọc bỏ bất kỳ phòng ảo nào từ apiRooms
-  const validApiRooms = apiRooms.filter(r => !isFakeOrDisallowedRoom(r));
-  const matchedCodes = new Set<string>();
-  const result: ValidatedRoom[] = [];
-
-  for (const r of validApiRooms) {
-    const code = extractOfficialCode(r.name);
-    if (code && OFFICIAL_ROOMS[code]) {
-      matchedCodes.add(code);
-      const info = OFFICIAL_ROOMS[code];
-      const roomType = (info.type.includes('Hội trường') ? 'LectureHall' : info.type.includes('Lab') ? 'Lab' : 'Classroom') as any;
-      result.push({
-        ...r,
-        name: info.displayName || r.name,
-        building: info.building,
-        capacity: info.capacity,
-        roomType: r.roomType || roomType,
-        _displayType: info.type,
-        _displayNote: info.note || r.description || '',
-        _displayName: info.displayName || r.name
-      });
-    }
-  }
-
-  // Bổ sung các phòng chính thức chưa có trong API để luôn đủ 21 phòng chuẩn
-  officialEntries.forEach(([code, info], index) => {
-    if (!matchedCodes.has(code)) {
-      result.push({
-        id: 1000 + index,
-        name: info.displayName || code,
-        building: info.building,
-        capacity: info.capacity,
-        roomType: (info.type.includes('Hội trường') ? 'LectureHall' : info.type.includes('Lab') ? 'Lab' : 'Classroom') as any,
-        status: 'Active',
-        isActive: true,
-        description: info.note || '',
-        imageUrl: '',
-        _displayType: info.type,
-        _displayNote: info.note,
-        _displayName: info.displayName || code
-      });
-    }
+  const result: ValidatedRoom[] = apiRooms.map((r) => {
+    const displayType = getRoomTypeDisplayLabel(r.roomType);
+    return {
+      ...r,
+      _displayType: displayType,
+      _displayNote: r.description || '',
+      _displayName: r.name
+    };
   });
 
-  // Sắp xếp thứ tự: Khu A trước (A201 -> A403), Khu B sau (B001 -> B107)
+  // Natural sorting by building, then by name
   return result.sort((a, b) => {
-    const codeA = extractOfficialCode(a.name) || a.name;
-    const codeB = extractOfficialCode(b.name) || b.name;
-    const isAKhuA = codeA.startsWith('A');
-    const isBKhuA = codeB.startsWith('A');
-    if (isAKhuA && !isBKhuA) return -1;
-    if (!isAKhuA && isBKhuA) return 1;
-    return codeA.localeCompare(codeB, undefined, { numeric: true });
+    const buildingA = String(a.building || '');
+    const buildingB = String(b.building || '');
+    if (buildingA !== buildingB) {
+      return buildingA.localeCompare(buildingB);
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
   });
 }
 
-export function hasInvalidRooms(apiRooms: Room[]): boolean {
-  return apiRooms.some(r => isFakeOrDisallowedRoom(r) || !extractOfficialCode(r.name));
+export function hasInvalidRooms(_apiRooms: Room[]): boolean {
+  return false;
 }
+
 

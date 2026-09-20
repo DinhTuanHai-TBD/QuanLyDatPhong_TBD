@@ -49,13 +49,16 @@ function classifyNotification(item: RealNotification): NotificationCategory {
   const idStr = String(item.id);
   const full = `${title} ${message} ${type}`;
 
-  // 1. Cần duyệt gấp (< 2h)
+  // 1. Cần duyệt gấp (< 1h)
   if (
     idStr.startsWith('urgent-booking-') ||
     full.includes('cần duyệt gấp') ||
     full.includes('duyệt gấp') ||
+    full.includes('< 1h') ||
+    full.includes('< 1 tiếng') ||
     full.includes('< 2h') ||
-    full.includes('< 2 tiếng')
+    full.includes('< 2 tiếng') ||
+    full.includes('khẩn cấp')
   ) {
     return 'urgent';
   }
@@ -218,14 +221,8 @@ export default function NotificationBell() {
     queryFn: async () => {
       try {
         const res = await http.get<Booking[]>('/api/bookings');
-        return res.data;
+        return Array.isArray(res.data) ? res.data : [];
       } catch {
-        const local = localStorage.getItem('tbd_admin_bookings');
-        if (local) {
-          try {
-            return JSON.parse(local) as Booking[];
-          } catch {}
-        }
         return [];
       }
     },
@@ -236,11 +233,11 @@ export default function NotificationBell() {
   const urgentNotifications: RealNotification[] = useMemo(() => {
     if (!isAdminOrApprover || !Array.isArray(adminBookings)) return [];
     return adminBookings
-      .filter((b) => isPendingBooking(b) && isBookingUrgent(b))
+      .filter((b) => isPendingBooking(b) && isBookingUrgent(b, undefined, 1.0))
       .map((b) => ({
         id: `urgent-booking-${b.id}`,
-        title: 'Cần duyệt gấp (< 2h)',
-        message: `Đơn đặt phòng #${b.id} tại ${b.roomName} chỉ còn dưới 2 tiếng nữa sẽ diễn ra, cần phê duyệt ngay!`,
+        title: `Khẩn cấp: Đơn đặt phòng #${b.id} cần duyệt gấp (< 1h)`,
+        message: `Đơn đặt phòng #${b.id} tại ${b.roomName} chỉ còn dưới 1 tiếng nữa sẽ diễn ra, cần phê duyệt ngay!`,
         type: 'error',
         isUnread: true,
         createdAt: b.startTime,

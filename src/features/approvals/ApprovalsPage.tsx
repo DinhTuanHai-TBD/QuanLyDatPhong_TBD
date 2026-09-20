@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Card, Table, Tag, Typography, Button, DatePicker, Select, Input, Modal, Popconfirm, Space, App } from 'antd'
-import { CheckCircleOutlined, CheckCircleFilled, CloseCircleOutlined, SearchOutlined, WarningOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import { Card, Table, Tag, Typography, Button, DatePicker, Select, Input, Modal, Popconfirm, App } from 'antd'
+import { CheckCircleOutlined, CheckCircleFilled, CheckOutlined, CloseCircleOutlined, SearchOutlined, WarningOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { http } from '../../api/http'
 import dayjs from 'dayjs'
@@ -11,6 +11,7 @@ import { getUserRole, getUserEmail } from '../../api/authUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { isBookingUrgent, isBookingExpired, getEffectiveBooking } from '../../utils/bookingStatusUtils'
+import { normalizeDepartmentName } from '../../utils/academicPrograms'
 
 dayjs.extend(isBetween)
 dayjs.extend(isSameOrBefore)
@@ -43,7 +44,16 @@ export default function ApprovalsPage() {
     queryKey: ['admin-bookings'],
     queryFn: async () => {
       const res = await http.get<Booking[]>('/api/bookings')
-      return res.data
+      let list: Booking[] = []
+      if (Array.isArray(res.data)) {
+        list = res.data
+      } else if (res.data && Array.isArray((res.data as any).data)) {
+        list = (res.data as any).data
+      }
+      return list.map(b => ({
+        ...b,
+        department: normalizeDepartmentName(b.department)
+      }))
     }
   })
 
@@ -90,38 +100,13 @@ export default function ApprovalsPage() {
       notes?: string
       reason?: string
     }) => {
-      try {
-        const endpoint = `/api/bookings/${id}/${action}`
-        const payload =
-          action === 'approve'
-            ? { notes: notes || 'Ban Quản lý đồng ý phê duyệt' }
-            : { reason: reason || '' }
-        const res = await http.put(endpoint, payload)
-        return res.data
-      } catch (err) {
-        // Local fallback sync
-        const localStr = localStorage.getItem('tbd_admin_bookings')
-        if (localStr) {
-          try {
-            const list = JSON.parse(localStr) as Booking[]
-            const nextStatus = action === 'approve' ? 'Approved' : 'Rejected'
-            const updated = list.map(b =>
-              b.id === id
-                ? {
-                    ...b,
-                    status: nextStatus,
-                    adminNotes: action === 'approve' ? notes || 'Ban Quản lý đồng ý phê duyệt' : b.adminNotes,
-                    rejectReason: action === 'reject' ? reason : b.rejectReason,
-                  }
-                : b
-            )
-            localStorage.setItem('tbd_admin_bookings', JSON.stringify(updated))
-          } catch {
-            // fallback
-          }
-        }
-        throw err
-      }
+      const endpoint = `/api/bookings/${id}/${action}`
+      const payload =
+        action === 'approve'
+          ? { notes: notes || 'Ban Quản lý đồng ý phê duyệt' }
+          : { reason: reason || '' }
+      const res = await http.put(endpoint, payload)
+      return res.data
     },
     onSuccess: (_, variables) => {
       setRemovingIds(prev => [...prev, variables.id])
@@ -452,10 +437,13 @@ export default function ApprovalsPage() {
     {
       title: 'Thời gian',
       key: 'time',
+      width: 140,
       render: (_: any, record: Booking) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{dayjs(record.startTime).format('DD/MM/YYYY')}</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>
+        <div style={{ whiteSpace: 'normal' }}>
+          <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13.5 }}>
+            {dayjs(record.startTime).format('DD/MM/YYYY')}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: 500 }}>
             {dayjs(record.startTime).format('HH:mm')} - {dayjs(record.endTime).format('HH:mm')}
           </div>
         </div>
@@ -465,16 +453,64 @@ export default function ApprovalsPage() {
       title: 'Phòng',
       dataIndex: 'roomName',
       key: 'room',
-      render: (text: string) => <strong style={{ color: '#0d2e5c' }}>{text}</strong>
+      width: 110,
+      render: (text: string) => (
+        <div style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+          <strong style={{ color: '#0d2e5c', fontSize: 13.5 }}>{text}</strong>
+        </div>
+      )
     },
     {
-      title: 'Người yêu cầu',
+      title: 'Người yêu cầu & Mục đích',
       key: 'user',
+      // Không đặt width cố định để cột này tự động nhận toàn bộ không gian còn lại của bảng
       render: (_: any, record: Booking) => (
-        <div>
-          <div style={{ fontWeight: 500 }}>{record.userEmail || 'N/A'}</div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>
-            {record.purpose ? `Mục đích: ${record.purpose}` : (record.department || 'Không có ghi chú')}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              color: '#0f172a',
+              fontSize: 13.5,
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word'
+            }}
+          >
+            {record.userEmail || 'N/A'}
+          </div>
+
+          {record.department && (
+            <div
+              style={{
+                fontSize: 12,
+                color: '#475569',
+                fontWeight: 500,
+                whiteSpace: 'normal',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word'
+              }}
+            >
+              {normalizeDepartmentName(record.department)}
+            </div>
+          )}
+
+          <div
+            style={{
+              fontSize: 12.5,
+              color: '#334155',
+              lineHeight: 1.55,
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 6,
+              padding: '6px 10px',
+              marginTop: 2
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#64748b' }}>Mục đích: </span>
+            <span style={{ color: '#0f172a' }}>{record.purpose || 'Không có ghi chú'}</span>
           </div>
         </div>
       )
@@ -482,23 +518,25 @@ export default function ApprovalsPage() {
     {
       title: 'Trạng thái',
       key: 'status',
+      width: 155,
       render: (_: any, record: Booking) => {
         const urgent = isBookingUrgent(record)
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
             {renderStatusTag(record.status, record.rejectReason || record.rejectionReason || record.adminNotes || '')}
             {urgent && (
               <span
                 style={{
                   display: 'inline-block',
                   color: '#dc2626',
-                  fontSize: 11.5,
+                  fontSize: 11,
                   fontWeight: 600,
                   border: '1px solid #fca5a5',
                   borderRadius: 4,
-                  padding: '1px 6px',
+                  padding: '2px 6px',
                   backgroundColor: '#fff1f2',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'normal',
+                  lineHeight: 1.3
                 }}
               >
                 [Cần duyệt gấp &lt; 2h]
@@ -511,12 +549,13 @@ export default function ApprovalsPage() {
     {
       title: 'Thao tác',
       key: 'action',
+      width: 215,
       render: (_: any, record: Booking) => {
         const isExpired = String(record.status) === 'Expired' || isBookingExpired(record)
         const isPending = !isExpired && (String(record.status) === 'Pending' || String(record.status) === 'PendingSpecial' || String(record.status) === '0')
         const isApprovedThis = approvedId === record.id
         return (
-          <Space size="small">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             <Button size="small" type="default" onClick={() => {
               setProcessingBooking(record)
               setProcessModalOpen(true)
@@ -540,6 +579,7 @@ export default function ApprovalsPage() {
                   <Button
                     size="small"
                     type="primary"
+                    icon={isApprovedThis ? <CheckCircleFilled /> : <CheckOutlined />}
                     className={isApprovedThis ? 'btn-approve-success' : ''}
                     style={{
                       backgroundColor: isApprovedThis ? '#10b981' : '#059669',
@@ -567,7 +607,7 @@ export default function ApprovalsPage() {
                 </Button>
               </>
             )}
-          </Space>
+          </div>
         )
       }
     }
@@ -583,8 +623,48 @@ export default function ApprovalsPage() {
     )
   }
 
+  const isFilterActive = Boolean(filterDate || filterRoom || filterUser || filterStatus !== 'All')
+
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="approvals-page-container">
+      <style>{`
+        .approvals-page-container {
+          width: 100%;
+          max-width: 1560px;
+          margin: 0 auto;
+          padding: 24px 20px 48px;
+          box-sizing: border-box;
+        }
+        @media (max-width: 768px) {
+          .approvals-page-container {
+            padding: 16px 12px 36px;
+          }
+        }
+        /* Bảng phê duyệt: căn nội dung các ô lên trên (vertical-align: top) */
+        .approvals-table .ant-table-tbody > tr > td {
+          vertical-align: top !important;
+          padding: 12px 14px !important;
+          white-space: normal !important;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        .approvals-table .ant-table-thead > tr > th {
+          vertical-align: middle !important;
+          padding: 12px 14px !important;
+          font-weight: 600 !important;
+          background-color: #f8fafc !important;
+          color: #334155 !important;
+        }
+        .approvals-table .ant-table-cell {
+          white-space: normal !important;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        .approvals-table .ant-table-row:hover > td {
+          background-color: #f8fafc !important;
+        }
+      `}</style>
+
       <Title level={2} style={{ color: '#0d2e5c', marginBottom: 20 }}>Phê duyệt yêu cầu đặt phòng</Title>
 
       {/* Cảnh báo Admin khẩn cấp trước 2 tiếng (< 2h Urgent Warning) */}
@@ -633,12 +713,12 @@ export default function ApprovalsPage() {
       )}
       
       <Card style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #e2e8f0' }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 200px' }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 180px' }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Ngày sử dụng</Text>
             <DatePicker style={{ width: '100%' }} value={filterDate} onChange={setFilterDate} format="DD/MM/YYYY" placeholder="Chọn ngày" />
           </div>
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ flex: '1 1 180px' }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Phòng học</Text>
             <Select 
               style={{ width: '100%' }} 
@@ -649,16 +729,17 @@ export default function ApprovalsPage() {
               options={rooms.map(r => ({ value: r.id, label: r.name }))}
             />
           </div>
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ flex: '1 1 220px' }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Người yêu cầu</Text>
             <Input 
               placeholder="Email người yêu cầu" 
               value={filterUser} 
               onChange={e => setFilterUser(e.target.value)} 
               prefix={<SearchOutlined />}
+              allowClear
             />
           </div>
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ flex: '1 1 180px' }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Trạng thái</Text>
             <Select style={{ width: '100%' }} value={filterStatus} onChange={setFilterStatus}>
               <Select.Option value="All">Tất cả</Select.Option>
@@ -672,18 +753,42 @@ export default function ApprovalsPage() {
               <Select.Option value="NoShow">Không đến</Select.Option>
             </Select>
           </div>
+          {isFilterActive && (
+            <div style={{ paddingBottom: 2 }}>
+              <Button 
+                onClick={() => {
+                  setFilterDate(null)
+                  setFilterRoom(null)
+                  setFilterUser('')
+                  setFilterStatus('All')
+                }}
+              >
+                Đặt lại bộ lọc
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
-      <Card style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 0 } }}>
+      <Card 
+        style={{ borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }} 
+        styles={{ body: { padding: 0 } }}
+      >
         <Table
+          className="approvals-table"
           loading={bookingsLoading}
           dataSource={filteredBookings}
           columns={columns}
           rowKey="id"
           rowClassName={(record: Booking) => removingIds.includes(record.id) ? 'booking-row-removing' : ''}
-          pagination={{ pageSize: 15 }}
-          scroll={{ x: 'max-content' }}
+          pagination={{ 
+            pageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '15', '25', '50'],
+            showTotal: (total) => `Tổng cộng ${total} yêu cầu`
+          }}
+          tableLayout="fixed"
+          scroll={{ x: 880 }}
         />
       </Card>
 
@@ -707,6 +812,13 @@ export default function ApprovalsPage() {
 
                 <Text type="secondary">Người yêu cầu:</Text>
                 <Text strong>{processingBooking.userEmail}</Text>
+
+                {processingBooking.department && (
+                  <>
+                    <Text type="secondary">Đơn vị / Khoa:</Text>
+                    <Text>{normalizeDepartmentName(processingBooking.department)}</Text>
+                  </>
+                )}
 
                 <Text type="secondary">Mục đích:</Text>
                 <Text>{processingBooking.purpose || 'Không có'}</Text>

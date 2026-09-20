@@ -20,11 +20,14 @@ import {
   Descriptions,
   Tag,
   Button,
-  Spin
+  Spin,
+  Alert,
+  App
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { http } from '../../api/http'
+import { getUserId, getUserRole, getUserEmail, isAuthenticated } from '../../api/authUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
@@ -34,15 +37,21 @@ import {
   formatVNTime,
   formatVNDateTimeRange,
   formatVNTimeRange,
-  isSchoolScheduleBooking
+  isSchoolScheduleBooking,
+  getCalendarQueryRange
 } from '../../utils/dateUtils'
+import { extractMajorFromNotes, normalizeDepartmentName } from '../../utils/academicPrograms'
+import { useBookingSettings, checkClosedPeriodOverlap } from '../../api/bookingSettings'
 import dayjs from 'dayjs'
 import {
   CalendarOutlined,
   UnorderedListOutlined,
   AppstoreOutlined,
   LeftOutlined,
-  RightOutlined
+  RightOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons'
 
 moment.locale('vi')
@@ -51,66 +60,130 @@ const localizer = momentLocalizer(moment)
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
 
-async function fetchRooms() {
+async function fetchRooms(): Promise<Room[]> {
   try {
-    return (await http.get<Room[]>('/api/rooms')).data
-  } catch {
-    const localStr = localStorage.getItem('tbd_admin_rooms')
-    if (localStr) return JSON.parse(localStr) as Room[]
+    const res = await http.get<Room[]>('/api/rooms')
+    return res.data || []
+  } catch (err) {
+    console.error('Không thể tải danh sách phòng từ /api/rooms:', err)
     return []
   }
 }
 
-async function fetchBookings(): Promise<Booking[]> {
-  try {
-    const res = await http.get<Booking[]>('/api/bookings')
-    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-      return res.data
-    }
-  } catch (err) {
-    console.warn('Không thể tải /api/bookings, dùng dữ liệu cache local:', err)
-  }
-  const localStr = localStorage.getItem('tbd_admin_bookings')
-  if (localStr) {
-    try {
-      return JSON.parse(localStr) as Booking[]
-    } catch {
-      // ignore
-    }
-  }
-  return []
-}
+export type EventStatusGroup =
+  | 'school-schedule'
+  | 'approved'
+  | 'using'
+  | 'completed'
+  | 'pending'
+  | 'rejected'
 
-export const getEventStatusGroup = (booking: Booking): string => {
-  if (isSchoolScheduleBooking(booking)) return 'school-schedule'
-  const s = String(booking.status).toLowerCase()
-  const reason = (booking.rejectReason || booking.rejectionReason || booking.adminNotes || '').toLowerCase()
-  const isExp = s === 'expired' || s === '3' || reason.includes('hết hạn')
-
-  if (s === 'completed' || s === 'cancelled' || s === '-1' || isExp) return 'completed'
-  if (s === 'rejected' || s === '2') return 'rejected'
-  if (s === 'approved' || s === '1' || s === 'using') return 'approved'
-  if (s === 'pending' || s === 'pendingspecial' || s === '0') return 'pending'
-  return 'approved'
-}
-
-const statusColors: Record<string, string> = {
+export const statusColors: Record<EventStatusGroup, string> = {
   'school-schedule': '#1e3a8a',
-  pending: '#f59e0b',
   approved: '#10b981',
-  completed: '#94a3b8',
-  rejected: '#ef4444'
+  using: '#0284c7',
+  completed: '#64748b',
+  pending: '#f59e0b',
+  rejected: '#ef4444',
 }
 
-const statusLabels: Record<string, string> = {
+export const statusLabels: Record<EventStatusGroup, string> = {
   'school-schedule': 'Thời khóa biểu chính khóa',
+  approved: 'Đã duyệt',
+  using: 'Đang sử dụng',
+  completed: 'Hoàn thành',
   pending: 'Chờ duyệt',
-  approved: 'Đã duyệt / Đang dùng',
-  completed: 'Hoàn thành / Đã hủy / Hết hạn',
-  rejected: 'Từ chối / Trùng'
+  rejected: 'Từ chối / Đã hủy',
+}
+
+export function getBookingStatusInfo(booking: Booking): {
+  group: EventStatusGroup
+  label: string
+  color: string
+} {
+  const isSchool = isSchoolScheduleBooking(booking)
+  const s = String(booking.status ?? '').toLowerCase().trim()
+
+  // 1. Hoàn thành: status 5 hoặc Completed
+  if (s === '5' || s === 'completed') {
+    return {
+      group: 'completed',
+      label: 'Hoàn thành',
+      color: isSchool ? '#475569' : '#64748b',
+    }
+  }
+
+  // 2. Đang sử dụng: status 4 hoặc Using
+  if (s === '4' || s === 'using') {
+    return {
+      group: 'using',
+      label: 'Đang sử dụng',
+      color: '#0284c7',
+    }
+  }
+
+  // 3. Đã duyệt: status 1 hoặc Approved
+  if (s === '1' || s === 'approved') {
+    return {
+      group: isSchool ? 'school-schedule' : 'approved',
+      label: 'Đã duyệt',
+      color: isSchool ? '#1e3a8a' : '#10b981',
+    }
+  }
+
+  // 4. Chờ duyệt: status 0 hoặc Pending / PendingSpecial
+  if (s === '0' || s === 'pending' || s === 'pendingspecial') {
+    return {
+      group: 'pending',
+      label: 'Chờ duyệt',
+      color: '#f59e0b',
+    }
+  }
+
+  // 5. Đã hủy / Hết hạn: status 3 hoặc Cancelled / Expired
+  if (s === '3' || s === 'cancelled' || s === 'expired' || s === '-1') {
+    return {
+      group: 'completed',
+      label: 'Đã hủy / Hết hạn',
+      color: '#94a3b8',
+    }
+  }
+
+  // 6. Từ chối: status 2 hoặc Rejected
+  if (s === '2' || s === 'rejected') {
+    return {
+      group: 'rejected',
+      label: 'Từ chối',
+      color: '#ef4444',
+    }
+  }
+
+  if (isSchool) {
+    return {
+      group: 'school-schedule',
+      label: 'Thời khóa biểu chính khóa',
+      color: '#1e3a8a',
+    }
+  }
+
+  return {
+    group: 'approved',
+    label: 'Đã duyệt',
+    color: '#10b981',
+  }
+}
+
+export const getEventStatusGroup = (booking: Booking): EventStatusGroup => {
+  return getBookingStatusInfo(booking).group
+}
+
+const isOnlineRoom = (r: { name?: string | null } | null | undefined): boolean => {
+  if (!r || !r.name) return false
+  return r.name.toLowerCase().trim().includes('online')
 }
 
 export default function CalendarPage() {
+  const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const screens = useBreakpoint()
 
@@ -134,7 +207,54 @@ export default function CalendarPage() {
     }
   }, [screens.md])
 
-  // React Query with 5 minutes stale time and no refetch on window focus
+  // User auth details
+  const userId = getUserId()
+  const userRole = getUserRole()
+  const userEmail = getUserEmail()
+  const isAuthed = isAuthenticated()
+
+  useEffect(() => {
+    if (!isAuthed) {
+      navigate('/login?redirect=/calendar', { replace: true })
+    }
+  }, [isAuthed, navigate])
+
+  // Calculate strict Vietnam timezone boundaries and ISO UTC for API query
+  const { startDateUtc, endDateUtc, displayRangeLabel } = useMemo(() => {
+    return getCalendarQueryRange(mode, filterDate)
+  }, [mode, filterDate])
+
+  const { data: bookingSettings } = useBookingSettings()
+
+  const openTime = bookingSettings?.openTime || '07:00'
+  const closeTime = bookingSettings?.closeTime || '20:00'
+
+  const { openHour, openMinute, closeHour, closeMinute, timelineStartMin, totalTimelineMinutes, totalHalfHours, totalHourHeaders } = useMemo(() => {
+    const oH = parseInt(openTime.split(':')[0], 10) || 7
+    const oM = parseInt(openTime.split(':')[1], 10) || 0
+    const cH = parseInt(closeTime.split(':')[0], 10) || 20
+    const cM = parseInt(closeTime.split(':')[1], 10) || 0
+
+    const tStartMin = oH * 60 + oM
+    // Thêm đúng một cột hiển thị mốc 20:00 ngay sau cột 19:00 (mốc 20:00 là giờ đóng cửa)
+    const displayEndHour = Math.max(21, cH + (cM > 0 ? 1 : 0))
+    const tEndMin = displayEndHour * 60
+    const totalMins = Math.max(60, tEndMin - tStartMin)
+    const halfHours = Math.ceil(totalMins / 30)
+    const hourHeaders = Math.ceil(totalMins / 60)
+
+    return {
+      openHour: oH,
+      openMinute: oM,
+      closeHour: cH,
+      closeMinute: cM,
+      timelineStartMin: tStartMin,
+      totalTimelineMinutes: totalMins,
+      totalHalfHours: halfHours,
+      totalHourHeaders: hourHeaders,
+    }
+  }, [openTime, closeTime])
+
   const roomsQuery = useQuery({
     queryKey: ['rooms'],
     queryFn: fetchRooms,
@@ -142,65 +262,72 @@ export default function CalendarPage() {
     refetchOnWindowFocus: false,
   })
 
+  // Query key: incorporates userEmail and userRole to prevent cache leaking across user accounts, and time range
+  const bookingsQueryKey = useMemo(() => [
+    'calendar-bookings',
+    userEmail || userId || 'guest',
+    userRole,
+    mode,
+    startDateUtc,
+    endDateUtc,
+  ], [userEmail, userId, userRole, mode, startDateUtc, endDateUtc])
+
   const bookingsQuery = useQuery({
-    queryKey: ['admin-bookings'],
-    queryFn: fetchBookings,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    queryKey: bookingsQueryKey,
+    queryFn: async ({ signal }) => {
+      const params: Record<string, string | number> = {
+        startDate: startDateUtc,
+        endDate: endDateUtc,
+      }
+      const res = await http.get<Booking[]>('/api/bookings', {
+        params,
+        signal,
+      })
+      if (!res.data || !Array.isArray(res.data)) {
+        return []
+      }
+      return res.data.map((b) => ({
+        ...b,
+        department: normalizeDepartmentName(b.department)
+      }))
+    },
+    staleTime: 10 * 1000, // 10 seconds
+    refetchInterval: 60 * 1000, // 60 seconds auto-refresh
+    refetchIntervalInBackground: false, // Do not poll when tab is hidden
+    retry: (failureCount, error: any) => {
+      const status = error?.response?.status
+      if (status === 401 || status === 403) return false
+      return failureCount < 1 // Retry at most once for transient network errors
+    },
+    enabled: isAuthed,
+    refetchOnWindowFocus: true,
   })
 
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
     queryFn: async () => {
-      const localStr = localStorage.getItem('tbd_admin_equipments')
-      if (localStr) return JSON.parse(localStr)
-      return []
+      const res = await http.get<any[]>('/api/equipments')
+      return Array.isArray(res.data) ? res.data : []
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
 
-  const [localBookings, setLocalBookings] = useState<Booking[]>([])
-
-  useEffect(() => {
-    const localStr = localStorage.getItem('tbd_admin_bookings')
-    let localData: Booking[] = []
-    if (localStr) {
-      try {
-        localData = JSON.parse(localStr)
-      } catch {
-        // ignore parse error
-      }
-    }
-    const apiData = bookingsQuery.data ?? []
-    const combined = [...apiData]
-    localData.forEach((local) => {
-      const idx = combined.findIndex((b) => b.id === local.id)
-      if (idx > -1) combined[idx] = local
-      else combined.push(local)
-    })
-
-    const nowVN = toVN().valueOf()
-    const updated = combined.map((b) => {
-      // Official school schedule sessions always maintain active timetable status
-      if (isSchoolScheduleBooking(b)) {
-        return b
-      }
-      const s = String(b.status)
-      if (s === 'Approved' || s === '1' || s === 'Using') {
-        const start = toVN(b.startTime).valueOf()
-        const end = toVN(b.endTime).valueOf()
-        if (nowVN >= end) return { ...b, status: 'Completed' as Booking['status'] }
-        if (nowVN >= start && nowVN < end) return { ...b, status: 'Using' as Booking['status'] }
-      }
-      return b
-    })
-    setLocalBookings(updated)
+  // Dữ liệu booking thực từ GET /api/bookings: không tự lọc hay ép loại bỏ lịch cũ
+  const apiBookings = useMemo(() => {
+    return bookingsQuery.data ?? []
   }, [bookingsQuery.data])
 
   const buildings = useMemo(() => {
     if (!roomsQuery.data) return []
-    return Array.from(new Set(getOfficialRooms(roomsQuery.data).map((r: Room) => r.building).filter(Boolean)))
+    return Array.from(
+      new Set(
+        getOfficialRooms(roomsQuery.data)
+          .filter((r: Room) => !isOnlineRoom(r))
+          .map((r: Room) => r.building)
+          .filter(Boolean)
+      )
+    )
   }, [roomsQuery.data])
 
   const roomTypes = useMemo(() => {
@@ -208,6 +335,7 @@ export default function CalendarPage() {
     return Array.from(
       new Set(
         getOfficialRooms(roomsQuery.data)
+          .filter((r: any) => !isOnlineRoom(r))
           .map((r: Room) => (r as any)._displayType || r.roomType)
           .filter(Boolean)
       )
@@ -222,6 +350,8 @@ export default function CalendarPage() {
   const filteredRooms = useMemo(() => {
     if (!roomsQuery.data) return []
     return getOfficialRooms(roomsQuery.data).filter((r: any) => {
+      // Requirement 5: Ẩn các phòng có tên "Online" khỏi bảng lịch phòng
+      if (isOnlineRoom(r)) return false
       if (filterBuilding !== 'all' && r.building !== filterBuilding) return false
       if (filterRoomType !== 'all' && r._displayType !== filterRoomType) return false
       if (filterMinCapacity && r.capacity < filterMinCapacity) return false
@@ -242,16 +372,21 @@ export default function CalendarPage() {
     })
   }, [roomsQuery.data, filterBuilding, filterRoomType, filterMinCapacity, filterEquipments])
 
-  // Filter all bookings by user-selected status filter
+  // Filter all bookings by user-selected status filter and exclude online rooms
   const filteredBookings = useMemo(() => {
-    return localBookings.filter((b) => {
+    return apiBookings.filter((b) => {
+      if (isOnlineRoom({ name: b.roomName })) return false
+
       if (filterStatuses.length > 0) {
-        const g = getEventStatusGroup(b)
-        if (!filterStatuses.includes(g)) return false
+        const info = getBookingStatusInfo(b)
+        const isSchool = isSchoolScheduleBooking(b)
+        const matchesGroup = filterStatuses.includes(info.group)
+        const matchesSchool = isSchool && filterStatuses.includes('school-schedule')
+        if (!matchesGroup && !matchesSchool) return false
       }
       return true
     })
-  }, [localBookings, filterStatuses])
+  }, [apiBookings, filterStatuses])
 
   // PRE-FILTER: Only select bookings for the active filterDate (dayjs(b.startTime).isSame(filterDate, 'day'))
   const dayBookings = useMemo(() => {
@@ -274,6 +409,59 @@ export default function CalendarPage() {
   }, [dayBookings])
 
   const handleSlotClick = (room: Room, startHour: number, startMinute: number) => {
+    if (bookingsQuery.isLoading || bookingsQuery.isFetching) {
+      message.warning('Dữ liệu lịch đang được tải hoặc cập nhật, vui lòng đợi trong giây lát trước khi chọn đặt phòng.')
+      return
+    }
+    if (bookingsQuery.isError) {
+      message.error('Không thể chọn đặt phòng do dữ liệu lịch chưa được tải thành công. Vui lòng bấm "Thử lại".')
+      return
+    }
+
+    // Lịch quá khứ chỉ được xem lại; không mở quyền đặt mới vào thời gian đã qua
+    const dayStr = toVN(filterDate).format('YYYY-MM-DD')
+    const slotStart = toVN(
+      `${dayStr} ${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}:00`
+    )
+    if (slotStart.isBefore(toVN())) {
+      message.warning('Không thể đặt phòng cho thời gian đã qua. Lịch quá khứ chỉ dùng để xem lại.')
+      return
+    }
+
+    // Mốc 20:00 là giờ đóng cửa, không cho đặt phòng sau giờ này
+    if (startHour >= closeHour) {
+      message.warning('Mốc 20:00 là giờ đóng cửa. Không thể đặt phòng sau giờ này.')
+      return
+    }
+
+    // Kiểm tra khung giờ có rơi vào giai đoạn tạm ngưng hoạt động / bảo trì của phòng theo quy định không
+    if (bookingSettings?.closedPeriods && bookingSettings.closedPeriods.length > 0) {
+      const slotStart = toVN(`${dayStr} ${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}:00`)
+      const slotEnd = slotStart.add(30, 'minute')
+      const hitClosed = checkClosedPeriodOverlap(room.id, slotStart, slotEnd, bookingSettings.closedPeriods)
+      if (hitClosed) {
+        modal.warning({
+          title: 'Khung Giờ Đang Tạm Ngưng / Bảo Trì',
+          content: (
+            <div>
+              <p>Phòng <strong>{room.name}</strong> trong khung giờ này đang trong thời gian tạm ngưng hoạt động theo quy định.</p>
+              <div style={{ background: '#fef3c7', border: '1px dashed #f59e0b', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#92400e', margin: '8px 0' }}>
+                <strong>Lý do:</strong> {hitClosed.reason}
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  Thời gian: {formatVNDateTimeRange(hitClosed.start, hitClosed.end)}
+                </div>
+              </div>
+              <p style={{ margin: 0, color: '#475569', fontSize: 12 }}>
+                Vui lòng chọn khung giờ hoặc phòng học khác.
+              </p>
+            </div>
+          ),
+          okText: 'Đã hiểu'
+        })
+        return
+      }
+    }
+
     const roomEvents = dayBookingsByRoom.get(room.id) || []
     const slotStartMin = startHour * 60 + startMinute
     const slotEndMin = slotStartMin + 30
@@ -292,7 +480,7 @@ export default function CalendarPage() {
     if (conflictingBooking) {
       const isSchool = isSchoolScheduleBooking(conflictingBooking)
       if (isSchool) {
-        Modal.warning({
+        modal.warning({
           title: 'Khung Giờ Đã Có Lịch Học Chính Khóa',
           content: (
             <div>
@@ -341,7 +529,7 @@ export default function CalendarPage() {
         return
       }
 
-      Modal.info({
+      modal.info({
         title: 'Khung Giờ Đã Có Người Đặt',
         content: `Phòng ${room.name} vào khung giờ này đã có người đăng ký (${
           conflictingBooking.purpose || 'Đã đặt'
@@ -351,12 +539,15 @@ export default function CalendarPage() {
       return
     }
 
-    const dayStr = toVN(filterDate).format('YYYY-MM-DD')
     const startIso = toVN(
       `${dayStr} ${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}:00`
     ).toISOString()
+    const maxEndMinutes = closeHour * 60 + closeMinute
+    const requestedEndMinutes = Math.min(maxEndMinutes, (startHour + 1) * 60 + startMinute)
+    const endH = Math.floor(requestedEndMinutes / 60)
+    const endM = requestedEndMinutes % 60
     const endIso = toVN(
-      `${dayStr} ${String(startHour + 1).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}:00`
+      `${dayStr} ${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`
     ).toISOString()
 
     navigate(`/bookings?roomId=${room.id}&start=${startIso}&end=${endIso}`)
@@ -368,9 +559,23 @@ export default function CalendarPage() {
 
   const renderRoomView = () => {
     return (
-      <div style={{ overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fff' }}>
+      <div 
+        className="calendar-timeline-table"
+        style={{ 
+          overflowX: 'auto', 
+          border: '1.5px solid #94A3B8', 
+          borderRadius: 8, 
+          background: '#fff' 
+        }}
+      >
         <div style={{ minWidth: 1000 }}>
-          <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <div 
+            style={{ 
+              display: 'flex', 
+              borderBottom: '2px solid #94A3B8', 
+              background: '#F1F5F9' 
+            }}
+          >
             <div
               style={{
                 width: 200,
@@ -378,37 +583,64 @@ export default function CalendarPage() {
                 position: 'sticky',
                 left: 0,
                 zIndex: 10,
-                background: '#fafafa',
+                background: '#F1F5F9',
                 padding: '12px 16px',
                 fontWeight: 600,
-                borderRight: '1px solid #f0f0f0',
+                borderRight: '2px solid #94A3B8',
+                color: '#1e293b',
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
               Phòng
             </div>
             <div style={{ flex: 1, display: 'flex' }}>
-              {Array.from({ length: 14 }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1,
-                    padding: '12px 0',
-                    textAlign: 'center',
-                    borderRight: '1px solid #f0f0f0',
-                    fontWeight: 500,
-                    fontSize: 13,
-                    color: '#334155'
-                  }}
-                >
-                  {7 + i}:00
-                </div>
-              ))}
+              {Array.from({ length: totalHourHeaders }).map((_, i) => {
+                const hourVal = openHour + i
+                const isClosingCol = hourVal >= closeHour
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      padding: '12px 0',
+                      textAlign: 'center',
+                      borderRight: i === totalHourHeaders - 1 ? 'none' : '1px solid #CBD5E1',
+                      fontWeight: 600,
+                      fontSize: 13,
+                      color: isClosingCol ? '#64748b' : '#334155',
+                      background: isClosingCol ? '#f8fafc' : undefined,
+                    }}
+                    title={isClosingCol ? `${String(hourVal).padStart(2, '0')}:00 - Giờ đóng cửa (không cho đặt phòng)` : undefined}
+                  >
+                    {String(hourVal).padStart(2, '0')}:00
+                  </div>
+                )
+              })}
             </div>
           </div>
-          {filteredRooms.map((room) => {
+          {filteredRooms.map((room, roomIndex) => {
             const roomBookings = dayBookingsByRoom.get(room.id) || []
+            const isLastRoom = roomIndex === filteredRooms.length - 1
+
+            // Check if any closed periods apply to this room on this day
+            const roomClosedPeriods = (bookingSettings?.closedPeriods || []).filter((cp) => {
+              if (cp.roomId !== null && cp.roomId !== room.id) return false
+              const targetDayStr = toVN(filterDate).format('YYYY-MM-DD')
+              const cpStartDayStr = toVN(cp.start).format('YYYY-MM-DD')
+              const cpEndDayStr = toVN(cp.end).format('YYYY-MM-DD')
+              return targetDayStr >= cpStartDayStr && targetDayStr <= cpEndDayStr
+            })
+
             return (
-              <div key={room.id} style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', minHeight: 70 }}>
+              <div 
+                key={room.id} 
+                style={{ 
+                  display: 'flex', 
+                  borderBottom: isLastRoom ? 'none' : '1px solid #CBD5E1', 
+                  minHeight: 70 
+                }}
+              >
                 <div
                   style={{
                     width: 200,
@@ -418,7 +650,7 @@ export default function CalendarPage() {
                     zIndex: 5,
                     background: '#fff',
                     padding: '12px 16px',
-                    borderRight: '1px solid #f0f0f0',
+                    borderRight: '2px solid #94A3B8',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
@@ -428,42 +660,139 @@ export default function CalendarPage() {
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Sức chứa: {room.capacity}</div>
                 </div>
                 <div style={{ flex: 1, display: 'flex', position: 'relative', background: '#fff' }}>
-                  {Array.from({ length: 28 }).map((_, i) => {
-                    const hour = 7 + Math.floor(i / 2)
-                    const min = (i % 2) * 30
+                  {Array.from({ length: totalHalfHours }).map((_, i) => {
+                    const slotMinutes = timelineStartMin + i * 30
+                    const hour = Math.floor(slotMinutes / 60)
+                    const min = slotMinutes % 60
+                    const isMainHour = min === 30
+                    const isLastSlot = i === totalHalfHours - 1
+                    const isClosedAfterHours = slotMinutes >= (closeHour * 60 + closeMinute)
+
+                    const slotDay = toVN(filterDate).format('YYYY-MM-DD')
+                    const slotStartTime = toVN(
+                      `${slotDay} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:00`
+                    )
+                    const isPastSlot = slotStartTime.isBefore(toVN())
+                    const isSlotDisabled = isClosedAfterHours || isPastSlot
+
                     return (
                       <div
                         key={i}
                         style={{
                           flex: 1,
-                          borderRight: i % 2 === 1 ? '1px solid #f0f0f0' : '1px dashed #f1f5f9',
-                          cursor: 'pointer',
+                          borderRight: isLastSlot
+                            ? 'none'
+                            : isMainHour
+                              ? '1px solid #CBD5E1'
+                              : '1px dashed #E2E8F0',
+                          cursor: isSlotDisabled ? 'not-allowed' : 'pointer',
+                          background: isClosedAfterHours ? '#f8fafc' : isPastSlot ? '#fbfcfe' : undefined,
                         }}
-                        className="calendar-slot-hover"
-                        onClick={() => handleSlotClick(room, hour, min)}
+                        className={isSlotDisabled ? undefined : 'calendar-slot-hover'}
+                        title={
+                          isClosedAfterHours
+                            ? 'Mốc 20:00 là giờ đóng cửa. Không thể đặt phòng sau giờ này.'
+                            : isPastSlot
+                              ? 'Thời gian này đã qua. Lịch quá khứ chỉ dùng để xem lại.'
+                              : undefined
+                        }
+                        onClick={() => {
+                          if (isClosedAfterHours) {
+                            message.warning('Mốc 20:00 là giờ đóng cửa. Không thể đặt phòng sau giờ này.')
+                            return
+                          }
+                          if (isPastSlot) {
+                            message.warning('Không thể đặt phòng cho thời gian đã qua. Lịch quá khứ chỉ dùng để xem lại.')
+                            return
+                          }
+                          handleSlotClick(room, hour, min)
+                        }}
                       />
                     )
                   })}
+
+                  {/* Closed / Maintenance periods indicator */}
+                  {roomClosedPeriods.map((cp, cpIdx) => {
+                    const cpStart = toVN(cp.start)
+                    const cpEnd = toVN(cp.end)
+                    const targetDay = toVN(filterDate)
+
+                    let mStart = 0
+                    let mEnd = totalTimelineMinutes
+                    if (cpStart.isSame(targetDay, 'day')) {
+                      mStart = Math.max(0, (cpStart.hour() * 60 + cpStart.minute()) - timelineStartMin)
+                    }
+                    if (cpEnd.isSame(targetDay, 'day')) {
+                      mEnd = Math.min(totalTimelineMinutes, (cpEnd.hour() * 60 + cpEnd.minute()) - timelineStartMin)
+                    }
+                    const mDuration = Math.max(15, mEnd - mStart)
+                    const leftP = (mStart / totalTimelineMinutes) * 100
+                    const widthP = (mDuration / totalTimelineMinutes) * 100
+
+                    return (
+                      <div
+                        key={`maint-${cpIdx}-${cp.start}`}
+                        title={`Tạm ngưng/Bảo trì: ${cp.reason}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          modal.info({
+                            title: 'Khung Giờ Tạm Ngưng Hoạt Động / Bảo Trì',
+                            content: `Phòng ${room.name} tạm ngưng: ${cp.reason}. Thời gian từ ${formatVNDateTimeRange(cp.start, cp.end)}.`,
+                            okText: 'Đã hiểu'
+                          })
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          bottom: 8,
+                          left: `calc(${leftP}% + 1px)`,
+                          width: `calc(${widthP}% - 2px)`,
+                          background: 'repeating-linear-gradient(45deg, #fef3c7, #fef3c7 8px, #fde68a 8px, #fde68a 16px)',
+                          border: '1px dashed #d97706',
+                          borderRadius: 6,
+                          padding: '4px 6px',
+                          color: '#92400e',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          cursor: 'pointer',
+                          zIndex: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          ⚠️ Bảo trì: {cp.reason}
+                        </span>
+                      </div>
+                    )
+                  })}
+
+                  {/* Room Bookings */}
                   {roomBookings.map((b) => {
                     const bStart = toVN(b.startTime)
                     const bEnd = toVN(b.endTime)
 
-                    // Position within the 07:00 - 21:00 timeline (14 hours = 840 minutes)
-                    const startMins = Math.max(0, (bStart.hour() - 7) * 60 + bStart.minute())
-                    const endMins = Math.min(14 * 60, (bEnd.hour() - 7) * 60 + bEnd.minute())
+                    // Position within dynamic openTime - closeTime timeline
+                    const bStartMinRaw = bStart.hour() * 60 + bStart.minute()
+                    const bEndMinRaw = bEnd.hour() * 60 + bEnd.minute()
+
+                    const startMins = Math.max(0, bStartMinRaw - timelineStartMin)
+                    const endMins = Math.min(totalTimelineMinutes, Math.max(0, bEndMinRaw - timelineStartMin))
                     const durationMins = Math.max(15, endMins - startMins)
 
-                    const leftPercent = (startMins / (14 * 60)) * 100
-                    const widthPercent = (durationMins / (14 * 60)) * 100
-                    const group = getEventStatusGroup(b)
-                    const color = statusColors[group] || '#1e3a8a'
+                    const leftPercent = (startMins / totalTimelineMinutes) * 100
+                    const widthPercent = (durationMins / totalTimelineMinutes) * 100
+                    const statusInfo = getBookingStatusInfo(b)
+                    const color = statusInfo.color
                     const isSchool = isSchoolScheduleBooking(b)
 
                     return (
                       <div
                         key={b.id}
                         onClick={() => handleBookingClick(b)}
-                        title={`${formatVNTime(b.startTime)} - ${formatVNTime(b.endTime)}: ${b.purpose || 'Đã đặt'}`}
+                        title={`${formatVNTime(b.startTime)} - ${formatVNTime(b.endTime)}: ${b.purpose || 'Đã đặt'} (${statusInfo.label})`}
                         style={{
                           position: 'absolute',
                           top: 8,
@@ -498,6 +827,27 @@ export default function CalendarPage() {
           {filteredRooms.length === 0 && (
             <div style={{ padding: 40, textAlign: 'center', color: '#8c8c8c' }}>
               Không tìm thấy phòng phù hợp với bộ lọc.
+            </div>
+          )}
+          {filteredRooms.length > 0 && dayBookings.length === 0 && (
+            <div
+              style={{
+                margin: '12px 16px',
+                padding: '10px 16px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                color: '#475569',
+                fontSize: 13,
+              }}
+            >
+              <InfoCircleOutlined style={{ color: '#0284c7' }} />
+              <span>
+                Không có lịch đặt phòng hoặc thời khóa biểu nào trong ngày này ({displayRangeLabel}). Tất cả các phòng học đang sẵn sàng.
+              </span>
             </div>
           )}
         </div>
@@ -537,6 +887,27 @@ export default function CalendarPage() {
           border: '1px solid #f0f0f0',
         }}
       >
+        {events.length === 0 && (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: '10px 16px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              color: '#475569',
+              fontSize: 13,
+            }}
+          >
+            <InfoCircleOutlined style={{ color: '#0284c7' }} />
+            <span>
+              Không có lịch đặt phòng hoặc thời khóa biểu nào trong {displayRangeLabel}{selectedRoomId !== 'all' ? ' đối với phòng đã chọn' : ''}.
+            </span>
+          </div>
+        )}
         <Calendar
           localizer={localizer}
           events={events}
@@ -546,23 +917,39 @@ export default function CalendarPage() {
           date={currentDate}
           onNavigate={(newDate) => setFilterDate(toVN(newDate))}
           onSelectSlot={(slotInfo) => {
+            if (bookingsQuery.isLoading || bookingsQuery.isFetching) {
+              message.warning('Dữ liệu lịch đang được tải hoặc cập nhật, vui lòng đợi trong giây lát trước khi chọn đặt phòng.')
+              return
+            }
+            if (bookingsQuery.isError) {
+              message.error('Không thể chọn đặt phòng do dữ liệu lịch chưa được tải thành công. Vui lòng bấm "Thử lại".')
+              return
+            }
+            if (dayjs(slotInfo.start).isBefore(toVN())) {
+              message.warning('Không thể đặt phòng cho thời gian đã qua. Lịch quá khứ chỉ dùng để xem lại.')
+              return
+            }
             const roomIdParam = selectedRoomId !== 'all' ? `&roomId=${selectedRoomId}` : ''
             navigate(`/bookings?start=${slotInfo.start.toISOString()}&end=${slotInfo.end.toISOString()}${roomIdParam}`)
           }}
           onSelectEvent={(e) => handleBookingClick(e.resource)}
-          eventPropGetter={(event) => ({
-            style: {
-              backgroundColor: statusColors[getEventStatusGroup(event.resource)],
-              borderRadius: '4px',
-              opacity: 0.9,
-              color: '#fff',
-              border: '0px',
-              display: 'block',
-              padding: '2px 5px',
-            },
-          })}
-          min={new Date(2025, 0, 1, 7, 0)}
-          max={new Date(2025, 0, 1, 21, 0)}
+          eventPropGetter={(event) => {
+            const statusInfo = getBookingStatusInfo(event.resource)
+            return {
+              style: {
+                backgroundColor: statusInfo.color,
+                borderRadius: '4px',
+                opacity: 0.95,
+                color: '#fff',
+                border: '0px',
+                display: 'block',
+                padding: '2px 5px',
+                cursor: 'pointer',
+              },
+            }
+          }}
+          min={new Date(2025, 0, 1, openHour, openMinute)}
+          max={new Date(2025, 0, 1, closeHour, closeMinute)}
           messages={{
             today: 'Hôm nay',
             previous: 'Trước',
@@ -584,25 +971,55 @@ export default function CalendarPage() {
   }
 
   const renderListView = () => {
-    const targetDay = toVN(filterDate).startOf('day')
     const sortedBookings = [...filteredBookings]
-      .filter((b) => {
-        if (!b || !b.startTime) return false
-        return toVN(b.startTime).isSameOrAfter(targetDay, 'day')
-      })
       .sort((a, b) => toVN(a.startTime).valueOf() - toVN(b.startTime).valueOf())
 
     return (
-      <Table
-        dataSource={sortedBookings}
-        rowKey="id"
-        pagination={{ pageSize: 15 }}
-        scroll={{ x: 'max-content' }}
-        onRow={(record) => ({
-          onClick: () => handleBookingClick(record),
-          style: { cursor: 'pointer' },
-        })}
-        columns={[
+      <div>
+        <div
+          style={{
+            padding: '14px 18px',
+            background: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div>
+            <Text strong style={{ color: '#0d2e5c', fontSize: 14 }}>
+              Danh sách lịch đặt phòng & thời khóa biểu
+            </Text>
+            <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 2 }}>
+              Phạm vi hiển thị 30 ngày: <strong style={{ color: '#0f172a' }}>{displayRangeLabel}</strong>
+            </div>
+          </div>
+          <Tag color="cyan" style={{ borderRadius: 6, fontWeight: 500, padding: '2px 10px', fontSize: 13 }}>
+            Tổng số: {sortedBookings.length} lịch
+          </Tag>
+        </div>
+        <Table
+          dataSource={sortedBookings}
+          rowKey="id"
+          pagination={{ pageSize: 15, showSizeChanger: true }}
+          scroll={{ x: 'max-content' }}
+          locale={{
+            emptyText: (
+              <div style={{ padding: '48px 16px', textAlign: 'center' }}>
+                <InfoCircleOutlined style={{ fontSize: 24, color: '#94a3b8', marginBottom: 8 }} />
+                <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>
+                  Không có lịch đặt phòng hoặc thời khóa biểu nào trong phạm vi {displayRangeLabel}.
+                </p>
+              </div>
+            ),
+          }}
+          onRow={(record) => ({
+            onClick: () => handleBookingClick(record),
+            style: { cursor: 'pointer' },
+          })}
+          columns={[
           {
             title: 'Ngày',
             dataIndex: 'startTime',
@@ -631,13 +1048,18 @@ export default function CalendarPage() {
           {
             title: 'Trạng thái',
             render: (_, record) => {
-              const group = getEventStatusGroup(record)
-              return <Tag color={statusColors[group]}>{statusLabels[group]}</Tag>
+              const statusInfo = getBookingStatusInfo(record)
+              return <Tag color={statusInfo.color}>{statusInfo.label}</Tag>
             },
           },
         ]}
       />
-    )
+    </div>
+  )
+}
+
+  if (!isAuthed) {
+    return null
   }
 
   return (
@@ -659,19 +1081,34 @@ export default function CalendarPage() {
           <Text type="secondary">Tra cứu thời khóa biểu toàn trường và lịch đặt phòng</Text>
         </div>
 
-        <Segmented
-          options={[
-            { label: 'Theo phòng', value: 'room', icon: <AppstoreOutlined /> },
-            { label: 'Theo tuần', value: 'week', icon: <CalendarOutlined /> },
-            { label: 'Danh sách', value: 'list', icon: <UnorderedListOutlined /> },
-          ]}
-          value={mode}
-          onChange={(val) => {
-            setMode(val as any)
-            window.scrollTo({ top: 0, behavior: 'smooth' })
-          }}
-          size="large"
-        />
+        <Space size="middle" wrap>
+          <Button
+            icon={<ReloadOutlined spin={bookingsQuery.isFetching || roomsQuery.isFetching} />}
+            loading={bookingsQuery.isFetching || roomsQuery.isFetching}
+            onClick={() => {
+              bookingsQuery.refetch()
+              roomsQuery.refetch()
+              message.success('Đang làm mới dữ liệu lịch phòng và phòng học...')
+            }}
+            style={{ fontWeight: 500, borderRadius: 8 }}
+          >
+            Tải lại lịch
+          </Button>
+
+          <Segmented
+            options={[
+              { label: 'Theo phòng', value: 'room', icon: <AppstoreOutlined /> },
+              { label: 'Theo tuần', value: 'week', icon: <CalendarOutlined /> },
+              { label: 'Danh sách', value: 'list', icon: <UnorderedListOutlined /> },
+            ]}
+            value={mode}
+            onChange={(val) => {
+              setMode(val as any)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+            size="large"
+          />
+        </Space>
       </div>
 
       <Card style={{ marginBottom: 24, borderRadius: 12 }}>
@@ -683,9 +1120,10 @@ export default function CalendarPage() {
                 icon={<LeftOutlined />}
                 onClick={() => {
                   setSlideDirection('right')
-                  setFilterDate((prev) => toVN(prev).subtract(1, 'day'))
+                  const step = mode === 'week' ? 7 : mode === 'list' ? 30 : 1
+                  setFilterDate((prev) => toVN(prev).subtract(step, 'day'))
                 }}
-                title="Lùi 1 ngày"
+                title={mode === 'week' ? 'Lùi 1 tuần' : mode === 'list' ? 'Lùi 30 ngày' : 'Lùi 1 ngày'}
               />
               <DatePicker
                 value={filterDate}
@@ -704,9 +1142,10 @@ export default function CalendarPage() {
                 icon={<RightOutlined />}
                 onClick={() => {
                   setSlideDirection('left')
-                  setFilterDate((prev) => toVN(prev).add(1, 'day'))
+                  const step = mode === 'week' ? 7 : mode === 'list' ? 30 : 1
+                  setFilterDate((prev) => toVN(prev).add(step, 'day'))
                 }}
-                title="Tiến 1 ngày"
+                title={mode === 'week' ? 'Tiến 1 tuần' : mode === 'list' ? 'Tiến 30 ngày' : 'Tiến 1 ngày'}
               />
             </div>
           </Col>
@@ -766,10 +1205,11 @@ export default function CalendarPage() {
               placeholder="Chọn trạng thái"
               options={[
                 { value: 'school-schedule', label: 'Thời khóa biểu chính khóa' },
-                { value: 'approved', label: 'Đã duyệt / Đang dùng' },
+                { value: 'approved', label: 'Đã duyệt' },
+                { value: 'using', label: 'Đang sử dụng' },
+                { value: 'completed', label: 'Hoàn thành' },
                 { value: 'pending', label: 'Chờ duyệt' },
-                { value: 'completed', label: 'Hoàn thành / Đã hủy / Hết hạn' },
-                { value: 'rejected', label: 'Từ chối / Trùng' },
+                { value: 'rejected', label: 'Từ chối / Đã hủy' },
               ]}
               maxTagCount="responsive"
             />
@@ -797,31 +1237,121 @@ export default function CalendarPage() {
         <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <Space size="middle" align="center" style={{ flexWrap: 'wrap' }}>
             <Badge color="#1e3a8a" text="Thời khóa biểu chính khóa" />
-            <Badge color="#10b981" text="Đã duyệt / Đang dùng" />
+            <Badge color="#10b981" text="Đã duyệt" />
+            <Badge color="#0284c7" text="Đang sử dụng" />
+            <Badge color="#64748b" text="Hoàn thành" />
             <Badge color="#f59e0b" text="Chờ duyệt" />
-            <Badge color="#94a3b8" text="Hoàn thành / Đã hủy / Hết hạn" />
-            <Badge color="#ef4444" text="Từ chối / Trùng" />
+            <Badge color="#ef4444" text="Từ chối / Đã hủy" />
           </Space>
         </div>
       </Card>
 
-      {bookingsQuery.isLoading || roomsQuery.isLoading ? (
-        <Card style={{ borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: '#fff' }}>
-          <Spin size="large" description="Đang tải lịch phòng và thời khóa biểu toàn trường..." />
+      {bookingsQuery.isError ? (
+        (() => {
+          const err = bookingsQuery.error as any
+          const status = err?.response?.status
+
+          if (status === 401) {
+            return (
+              <Alert
+                type="error"
+                showIcon
+                title="Phiên đăng nhập đã hết hạn (Lỗi 401)"
+                description="Phiên làm việc của bạn đã hết hạn hoặc chưa được xác thực. Vui lòng đăng nhập lại để tiếp tục xem lịch phòng."
+                action={
+                  <Button type="primary" danger onClick={() => navigate('/login?redirect=/calendar')}>
+                    Đăng nhập lại
+                  </Button>
+                }
+                style={{ borderRadius: 12, padding: 20, marginBottom: 24 }}
+              />
+            )
+          }
+
+          if (status === 403) {
+            return (
+              <Alert
+                type="warning"
+                showIcon
+                title="Không có quyền truy cập (Lỗi 403)"
+                description="Tài khoản của bạn không có quyền truy cập vào dữ liệu lịch phòng này."
+                action={
+                  <Button onClick={() => bookingsQuery.refetch()}>
+                    Thử lại
+                  </Button>
+                }
+                style={{ borderRadius: 12, padding: 20, marginBottom: 24 }}
+              />
+            )
+          }
+
+          const errorMsg =
+            err?.response?.data?.message ||
+            err?.response?.data?.error ||
+            err?.message ||
+            'Không thể kết nối tới máy chủ để tải lịch.'
+
+          return (
+            <Alert
+              type="error"
+              showIcon
+              title="Không thể tải lịch phòng từ máy chủ"
+              description={
+                <div>
+                  <div style={{ marginBottom: 8, color: '#1e293b' }}>{errorMsg}</div>
+                  <Text type="secondary" style={{ fontSize: 12.5 }}>
+                    Bảng lịch tạm thời không hiển thị để tránh hiểu lầm rằng tất cả phòng học đang trống. Vui lòng bấm &quot;Thử lại&quot; bên dưới.
+                  </Text>
+                </div>
+              }
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    bookingsQuery.refetch()
+                    roomsQuery.refetch()
+                  }}
+                  style={{ background: '#0d2e5c' }}
+                >
+                  Thử lại
+                </Button>
+              }
+              style={{ borderRadius: 12, padding: 20, marginBottom: 24 }}
+            />
+          )
+        })()
+      ) : bookingsQuery.isLoading || roomsQuery.isLoading ? (
+        <Card style={{ borderRadius: 12, padding: '64px 24px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0' }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600, color: '#0d2e5c' }}>
+            Đang tải lịch phòng và thời khóa biểu...
+          </div>
+          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
+            Đang tải dữ liệu {displayRangeLabel}. Bảng lịch sẽ hiển thị ngay khi dữ liệu hoàn tất.
+          </Text>
         </Card>
       ) : (
-        <div
-          key={`${toVN(filterDate).format('YYYY-MM-DD')}-${mode}`}
-          className={slideDirection === 'left' ? 'calendar-slide-left' : 'calendar-slide-right'}
-        >
-          {mode === 'room' && renderRoomView()}
-          {mode === 'week' && renderWeekView()}
-          {mode === 'list' && (
-            <Card style={{ borderRadius: 12, padding: 0 }} styles={{ body: { padding: 0 } }}>
-              {renderListView()}
-            </Card>
+        <>
+          {bookingsQuery.isFetching && (
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Tag icon={<SyncOutlined spin />} color="processing" style={{ padding: '4px 10px', fontSize: 12.5, borderRadius: 6 }}>
+                Đang cập nhật lịch mới nhất...
+              </Tag>
+            </div>
           )}
-        </div>
+          <div
+            key={`${toVN(filterDate).format('YYYY-MM-DD')}-${mode}`}
+            className={slideDirection === 'left' ? 'calendar-slide-left' : 'calendar-slide-right'}
+          >
+            {mode === 'room' && renderRoomView()}
+            {mode === 'week' && renderWeekView()}
+            {mode === 'list' && (
+              <Card style={{ borderRadius: 12, padding: 0 }} styles={{ body: { padding: 0 } }}>
+                {renderListView()}
+              </Card>
+            )}
+          </div>
+        </>
       )}
 
       {/* Standardized Booking & Schedule Details Modal */}
@@ -893,29 +1423,52 @@ export default function CalendarPage() {
                 </Descriptions.Item>
 
                 <Descriptions.Item label="Trạng thái">
-                  {isSchool ? (
-                    <Tag
-                      style={{
-                        backgroundColor: '#e0f2fe',
-                        color: '#0369a1',
-                        borderColor: '#bae6fd',
-                        fontWeight: 600,
-                        padding: '2px 10px',
-                        borderRadius: 4,
-                      }}
-                    >
-                      Thời khóa biểu chính khóa
-                    </Tag>
-                  ) : (
-                    <Tag color={statusColors[getEventStatusGroup(selectedBooking)]}>
-                      {statusLabels[getEventStatusGroup(selectedBooking)]}
-                    </Tag>
-                  )}
+                  {(() => {
+                    const statusInfo = getBookingStatusInfo(selectedBooking)
+                    return (
+                      <Space wrap>
+                        {isSchool && (
+                          <Tag
+                            style={{
+                              backgroundColor: '#e0f2fe',
+                              color: '#0369a1',
+                              borderColor: '#bae6fd',
+                              fontWeight: 600,
+                              padding: '2px 10px',
+                              borderRadius: 4,
+                            }}
+                          >
+                            Thời khóa biểu chính khóa
+                          </Tag>
+                        )}
+                        <Tag
+                          color={statusInfo.color}
+                          style={{
+                            fontWeight: 600,
+                            padding: '2px 10px',
+                            borderRadius: 4,
+                          }}
+                        >
+                          {statusInfo.label}
+                        </Tag>
+                      </Space>
+                    )
+                  })()}
                 </Descriptions.Item>
 
                 {selectedBooking.department && (
-                  <Descriptions.Item label="Đơn vị / Khoa">{selectedBooking.department}</Descriptions.Item>
+                  <Descriptions.Item label="Đơn vị / Khoa">{normalizeDepartmentName(selectedBooking.department)}</Descriptions.Item>
                 )}
+
+                {(() => {
+                  const majorInfo = extractMajorFromNotes(selectedBooking.notes)
+                  const displayMajor = selectedBooking.major || majorInfo.major
+                  return displayMajor ? (
+                    <Descriptions.Item label="Ngành học">
+                      <Tag color="purple" style={{ fontWeight: 600 }}>{displayMajor}</Tag>
+                    </Descriptions.Item>
+                  ) : null
+                })()}
 
                 {isSchool ? (
                   <Descriptions.Item label="Ghi chú">

@@ -7,7 +7,7 @@ import { LeftOutlined, RightOutlined, CalendarOutlined,
   TeamOutlined,
   ReadOutlined,
   DesktopOutlined,
-  ThunderboltOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined
 } from '@ant-design/icons'
 import {  Button, Carousel, Col, Row, Typography } from 'antd'
@@ -359,7 +359,7 @@ function HomePage() {
               </Col>
               <Col xs={12} sm={12} lg={6}>
                 <StatCounter
-                  icon={<ThunderboltOutlined />}
+                  icon={<CheckCircleOutlined />}
                   value={100}
                   suffix="%"
                   label="Đặt phòng trực tuyến"

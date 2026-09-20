@@ -2198,3 +2198,85 @@ img {
   }
 }
 
+/* ==========================================================================
+   GLOBAL MODAL STYLES: FIT SCREEN, BALANCED TOP/BOTTOM GAPS
+   ========================================================================== */
+.ant-modal {
+  max-width: calc(100vw - 32px) !important;
+  margin: 0 auto !important;
+  top: 40px !important;
+  padding-bottom: 40px !important; /* Đảm bảo khoảng hở đáy bằng 40px như phần trên */
+}
+
+.ant-modal.ant-modal-centered {
+  top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.ant-modal-content {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: calc(100vh - 80px) !important; /* 100vh trừ 40px trên và 40px dưới */
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+  padding: 0 !important;
+}
+
+.ant-modal-header {
+  flex-shrink: 0 !important;
+  padding: 16px 24px !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.ant-modal-body {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  max-height: calc(100vh - 220px) !important;
+  padding: 20px 24px !important;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.ant-modal-footer {
+  flex-shrink: 0 !important;
+  margin-top: 0 !important;
+  padding: 12px 24px !important;
+  border-top: 1px solid #f1f5f9 !important;
+  background: #fafafa !important;
+}
+
+.ant-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ant-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ant-modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ant-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.ant-modal-close {
+  top: 14px !important;
+  inset-inline-end: 16px !important;
+}
+
+/* Ant Design confirmation modals exception to preserve adequate padding */
+.ant-modal-confirm .ant-modal-content {
+  padding: 24px 24px 20px !important;
+}
+
+.ant-modal-confirm .ant-modal-body {
+  padding: 0 !important;
+  max-height: calc(100vh - 160px) !important;
+}
+
+

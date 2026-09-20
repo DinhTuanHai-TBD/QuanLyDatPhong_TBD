@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LockOutlined, MailOutlined, SafetyOutlined, ArrowLeftOutlined } from '@ant-design/icons'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Form, Input, App } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { http } from '../../api/http'
 
 interface AuthFormValues {
@@ -23,17 +23,45 @@ async function login(values: AuthFormValues) {
 export default function LoginPage() {
   const [form] = Form.useForm<AuthFormValues>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { message } = App.useApp()
 
+  const redirectParam = searchParams.get('redirect')
+
+  // Nếu người dùng đã đăng nhập từ trước, tự động chuyển hướng
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (token) {
+      if (redirectParam && redirectParam.startsWith('/')) {
+        navigate(redirectParam, { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
+    }
+  }, [navigate, redirectParam])
+
+  const queryClient = useQueryClient()
+
   const saveToken = (data: AuthResponse) => {
+    // Clear all React Query cache so previous account data does not bleed into this session
+    queryClient.clear()
+
+    // Store JWT accessToken
     localStorage.setItem('accessToken', data.accessToken)
     
-    // Set the testRole override to match the token role
-    const isLocalAdmin = data.accessToken.includes('"admin"')
-    localStorage.setItem('testRole', isLocalAdmin ? 'admin' : 'user')
+    // Clean up testRole and userEmail or legacy mock keys
+    localStorage.removeItem('testRole')
+    localStorage.removeItem('userEmail')
+    localStorage.removeItem('tbd_admin_bookings')
+    localStorage.removeItem('tbd_admin_rooms')
     
     message.success('Đăng nhập thành công')
-    navigate('/')
+
+    if (redirectParam && redirectParam.startsWith('/')) {
+      navigate(redirectParam)
+    } else {
+      navigate('/')
+    }
   }
 
   const loginMutation = useMutation({

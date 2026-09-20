@@ -4,7 +4,6 @@ import { Modal, Form, DatePicker, Select, Row, Col, Alert, Button, Empty, Tag, T
 import dayjs from 'dayjs'
 import { HomeOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { getUserRole } from '../../api/authUtils'
 import { useState, useEffect } from 'react'
 import { http } from '../../api/http'
 import type { Booking } from '../../types/booking'
@@ -13,9 +12,18 @@ import { getOfficialRooms } from '../../utils/roomUtils'
 import { isBookingExpired, getEffectiveBooking } from '../../utils/bookingStatusUtils'
 import type { EquipmentItem } from '../admin/AdminPage'
 import { EquipmentSelector } from './EquipmentSelector'
+import { normalizeDepartmentName } from '../../utils/academicPrograms'
+import { useBookingSettings } from '../../api/bookingSettings'
+import { toVN } from '../../utils/dateUtils'
 
 async function fetchMyBookings(): Promise<Booking[]> {
   const response = await http.get<Booking[]>('/api/bookings/mine')
+  if (Array.isArray(response.data)) {
+    return response.data.map(b => ({
+      ...b,
+      department: normalizeDepartmentName(b.department)
+    }))
+  }
   return response.data
 }
 
@@ -328,7 +336,7 @@ function BookingCard({
           </span>
           {record.department && (
             <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>
-              • {record.department}
+              • {normalizeDepartmentName(record.department)}
             </span>
           )}
         </div>
@@ -576,6 +584,8 @@ function BookingCard({
 function BookingHistoryPage() {
   const queryClient = useQueryClient()
   const { message: AppMessage } = App.useApp()
+  const { data: bookingSettings } = useBookingSettings()
+  const minCancelHours = bookingSettings?.minCancelHours ?? 2
 
   const [now, setNow] = useState(dayjs())
 
@@ -619,6 +629,8 @@ function BookingHistoryPage() {
     onSuccess: () => {
       AppMessage.success('Check-in thành công!')
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
       setQrModalVisible(false)
     },
     onError: (error: any) => {
@@ -638,6 +650,8 @@ function BookingHistoryPage() {
     onSuccess: () => {
       AppMessage.success('Check-out thành công!')
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
       setCheckoutModalVisible(false)
       checkoutForm.resetFields()
     },
@@ -683,55 +697,30 @@ function BookingHistoryPage() {
   const roomsQuery = useQuery({
     queryKey: ['rooms'],
     queryFn: async () => {
-      try {
-        const res = await http.get<Room[]>('/api/rooms')
-        return getOfficialRooms(res.data)
-      } catch {
-        const localStr = localStorage.getItem('tbd_admin_rooms')
-        if (localStr) return getOfficialRooms(JSON.parse(localStr))
-        return getOfficialRooms()
-      }
+      const res = await http.get<Room[]>('/api/rooms')
+      return getOfficialRooms(res.data)
     }
   })
-
-  const DEFAULT_EQUIPMENTS: EquipmentItem[] = [
-    { id: 101, code: 'EQ-MC-001', name: 'Micro không dây Shure (Bộ 2 mic)', type: 'Microphone', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 10, status: 'Active' },
-    { id: 102, code: 'EQ-SP-002', name: 'Loa kéo công suất lớn 500W', type: 'Sound System', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 5, status: 'Active' },
-    { id: 103, code: 'EQ-PJ-003', name: 'Máy chiếu di động Panasonic PT-LB386', type: 'Projector', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 4, status: 'Active' },
-    { id: 104, code: 'EQ-CAM-004', name: 'Webcam/Camera họp & giảng dạy trực tuyến HD', type: 'Camera', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 6, status: 'Active' },
-    { id: 105, code: 'EQ-BO-005', name: 'Bảng di động Flipchart / Bảng phụ', type: 'Board', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 8, status: 'Active' },
-    { id: 106, code: 'EQ-EXT-006', name: 'Ổ cắm điện kéo dài (Dây 10m)', type: 'Extension Cord', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 12, status: 'Active' },
-    { id: 107, code: 'EQ-PRES-007', name: 'Bút trình chiếu Laser (Presenter)', type: 'Presenter', roomId: null, roomName: 'Kho thiết bị dùng chung', quantity: 15, status: 'Active' }
-  ]
 
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
     queryFn: async () => {
-      try {
-        const res = await http.get<EquipmentItem[]>('/api/equipments')
-        if (Array.isArray(res.data) && res.data.length > 0) return res.data
-      } catch {}
-      const localStr = localStorage.getItem('tbd_equipments') || localStorage.getItem('tbd_admin_equipments')
-      if (localStr) {
-        try {
-          const parsed = JSON.parse(localStr)
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed
-        } catch {}
-      }
-      return DEFAULT_EQUIPMENTS
+      const res = await http.get<EquipmentItem[]>('/api/equipments')
+      return Array.isArray(res.data) ? res.data : []
     }
   })
 
   const allBookingsQuery = useQuery({
     queryKey: ['all-bookings'],
     queryFn: async () => {
-      try {
-        return (await http.get<Booking[]>('/api/bookings')).data
-      } catch {
-        const localStr = localStorage.getItem('tbd_admin_bookings')
-        if (localStr) return JSON.parse(localStr) as Booking[]
-        return []
+      const res = await http.get<Booking[]>('/api/bookings')
+      if (Array.isArray(res.data)) {
+        return res.data.map(b => ({
+          ...b,
+          department: normalizeDepartmentName(b.department)
+        }))
       }
+      return []
     }
   })
 
@@ -744,22 +733,22 @@ function BookingHistoryPage() {
 
   const cancelMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: number, reason: string }) => {
-      try {
-        const res = await http.put(`/api/bookings/${id}/cancel`, { reason })
-        return res.data
-      } catch {
-        throw new Error('Backend cần bổ sung endpoint PUT /api/bookings/:id/cancel để xử lý hủy lịch cùng với lý do.')
-      }
+      const res = await http.put(`/api/bookings/${id}/cancel`, { reason })
+      return res.data
     },
     onSuccess: () => {
       AppMessage.success('Đã hủy yêu cầu đặt phòng thành công!')
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
       setCancelModalVisible(false)
       setBookingToCancel(null)
       setCancelReason('')
     },
     onError: (error: any) => {
-      AppMessage.error(error.message || 'Lỗi khi hủy đặt phòng!')
+      const serverMsg = error?.response?.data?.message || error?.response?.data?.error || error.message || 'Lỗi khi hủy đặt phòng!'
+      AppMessage.error(serverMsg)
     }
   })
 
@@ -771,6 +760,8 @@ function BookingHistoryPage() {
     onSuccess: () => {
       AppMessage.success('Cập nhật yêu cầu đặt phòng thành công!')
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
       setEditModalVisible(false)
       setBookingToEdit(null)
@@ -792,7 +783,7 @@ function BookingHistoryPage() {
       endTime: endDayjs.isValid() ? endDayjs.format('HH:mm') : '08:00',
       purpose: booking.purpose || '',
       participantCount: booking.participantCount || 1,
-      department: booking.department || '',
+      department: normalizeDepartmentName(booking.department) || '',
       personInCharge: booking.personInCharge || '',
       requestedEquipments: booking.requestedEquipments || [],
       notes: booking.notes || ''
@@ -828,7 +819,7 @@ function BookingHistoryPage() {
         endTime: endTimeIso,
         purpose: values.purpose,
         participantCount: values.participantCount,
-        department: values.department,
+        department: normalizeDepartmentName(values.department),
         personInCharge: values.personInCharge,
         requestedEquipments: values.requestedEquipments || [],
         notes: values.notes || ''
@@ -841,20 +832,18 @@ function BookingHistoryPage() {
   }
 
   const checkCanCancel = (booking: Booking) => {
-    const isStudent = getUserRole() === 'student'
-    const isLectureHall = booking.roomName.toLowerCase().includes('hội trường')
-    const start = dayjs(booking.startTime)
-    const currentTime = dayjs()
+    const start = toVN(booking.startTime)
+    const currentTime = toVN()
     const diffHours = start.diff(currentTime, 'hour', true)
 
-    if (isLectureHall && diffHours < 24) {
-      return { can: false, reason: 'Phòng Hội trường phải hủy trước ít nhất 24 giờ.' }
-    }
-    if (isStudent && diffHours < 2) {
-      return { can: false, reason: 'Sinh viên phải hủy trước ít nhất 2 giờ.' }
-    }
     if (start.isBefore(currentTime)) {
       return { can: false, reason: 'Không thể hủy lịch trong quá khứ.' }
+    }
+    if (diffHours < minCancelHours) {
+      return {
+        can: false,
+        reason: `Quy định yêu cầu phải hủy trước giờ sử dụng tối thiểu ${minCancelHours} giờ (Hiện còn ${Math.max(0, diffHours).toFixed(1)} giờ).`
+      }
     }
     return { can: true }
   }
@@ -1139,7 +1128,45 @@ function BookingHistoryPage() {
       </div>
 
       {/* 2. Danh Sách Thẻ Phiếu Đặt Phòng (Booking Pass Cards) */}
-      {filteredBookings.length === 0 ? (
+      {bookingsQuery.isLoading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[1, 2, 3].map((key) => (
+            <div
+              key={key}
+              style={{
+                background: '#ffffff',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                padding: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div className="skeleton-card-loading" style={{ width: 140, height: 24, borderRadius: 6 }} />
+                <div className="skeleton-card-loading" style={{ width: 90, height: 24, borderRadius: 6 }} />
+              </div>
+              <div className="skeleton-card-loading" style={{ width: '60%', height: 28, borderRadius: 6 }} />
+              <div className="skeleton-card-loading" style={{ width: '40%', height: 20, borderRadius: 6 }} />
+            </div>
+          ))}
+        </div>
+      ) : bookingsQuery.isError ? (
+        <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #fee2e2', padding: 24, textAlign: 'center' }}>
+          <Alert
+            type="error"
+            showIcon
+            message="Không thể kết nối máy chủ để tải lịch sử đặt phòng"
+            description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
+            action={
+              <Button danger type="primary" onClick={() => bookingsQuery.refetch()}>
+                Thử lại
+              </Button>
+            }
+          />
+        </div>
+      ) : filteredBookings.length === 0 ? (
         <div
           style={{
             background: '#ffffff',
@@ -1153,7 +1180,9 @@ function BookingHistoryPage() {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               <span style={{ color: '#64748b', fontSize: 14 }}>
-                Chưa có yêu cầu đặt phòng nào phù hợp với bộ lọc hiện tại
+                {totalCount === 0 
+                  ? 'Bạn chưa có yêu cầu đặt phòng nào trên hệ thống.' 
+                  : 'Chưa có yêu cầu đặt phòng nào phù hợp với bộ lọc hiện tại'}
               </span>
             }
           />
@@ -1294,7 +1323,7 @@ function BookingHistoryPage() {
               {selectedBookingForDetail.department && (
                 <>
                   <span style={{ color: '#64748b' }}>Đơn vị / Khoa / Lớp:</span>
-                  <span style={{ color: '#334155' }}>{selectedBookingForDetail.department}</span>
+                  <span style={{ color: '#334155' }}>{normalizeDepartmentName(selectedBookingForDetail.department)}</span>
                 </>
               )}
 
@@ -1428,7 +1457,10 @@ function BookingHistoryPage() {
       >
         <div style={{ marginBottom: 16 }}>
           <div style={{ marginBottom: 16, padding: 12, background: '#fef2f2', borderRadius: 6, border: '1px solid #fca5a5' }}>
-            <strong>Cảnh báo:</strong> Thao tác này sẽ giải phóng phòng và không thể hoàn tác.
+            <div><strong>Cảnh báo:</strong> Thao tác này sẽ giải phóng phòng và không thể hoàn tác.</div>
+            <div style={{ marginTop: 4, fontSize: 13, color: '#991b1b' }}>
+              Quy định hệ thống: Yêu cầu đặt phòng chỉ có thể hủy trước giờ bắt đầu ít nhất <strong>{minCancelHours} giờ</strong>.
+            </div>
           </div>
           <Form layout="vertical">
             <Form.Item required label="Lý do hủy (bắt buộc)">

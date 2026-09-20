@@ -107,3 +107,32 @@ export function getUserEmail(): string {
     
   return emailClaim ? String(emailClaim) : 'hai.230057@tbd.edu.vn'
 }
+
+/**
+ * Retrieves the current user's ID or unique identifier from token safely without exposing raw JWT.
+ */
+export function getUserId(): string {
+  const token = localStorage.getItem('accessToken')
+  if (!token) return 'anonymous'
+  
+  const payload = decodeToken(token)
+  if (!payload) return 'anonymous'
+  
+  const idClaim =
+    payload['nameid'] ||
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ||
+    payload['id'] ||
+    payload['userId'] ||
+    payload['sub'] ||
+    payload['email'] ||
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress']
+    
+  return idClaim ? String(idClaim) : 'anonymous'
+}
+
+/**
+ * Checks whether the current user is authenticated.
+ */
+export function isAuthenticated(): boolean {
+  return !!localStorage.getItem('accessToken')
+}

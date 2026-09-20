@@ -13,7 +13,7 @@ import {
   Tooltip,
   Modal,
   Spin,
-  message,
+  App,
   Typography
 } from 'antd'
 import {
@@ -22,7 +22,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ExclamationCircleOutlined,
-  ThunderboltOutlined,
+  SafetyCertificateOutlined,
   DeleteOutlined,
   FileExcelOutlined,
   ScheduleOutlined
@@ -39,6 +39,13 @@ import {
 } from '../../types/schedule'
 import { http } from '../../api/http'
 import { useQueryClient } from '@tanstack/react-query'
+import {
+  ACADEMIC_FACULTIES,
+  NON_FACULTY_UNITS,
+  validateFacultyMajorPair,
+  buildNotesWithMajor,
+  normalizeDepartmentName
+} from '../../utils/academicPrograms'
 
 dayjs.extend(customParseFormat)
 
@@ -63,6 +70,7 @@ export interface ParsedCourseRow {
   endDateStr: string
   semester: string
   department?: string
+  major?: string
   notes?: string
   isValid: boolean
   errors: string[]
@@ -91,6 +99,7 @@ export default function SemesterScheduleExcelImport({
   onClose,
   onScheduleCreated
 }: SemesterScheduleExcelImportProps) {
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [fileList, setFileList] = useState<any[]>([])
   const [parsedRows, setParsedRows] = useState<ParsedCourseRow[]>([])
@@ -226,6 +235,7 @@ export default function SemesterScheduleExcelImport({
         'Ngày kết thúc',
         'Học kỳ',
         'Khoa',
+        'Ngành học',
         'Ghi chú'
       ]
 
@@ -242,13 +252,14 @@ export default function SemesterScheduleExcelImport({
           '2026-09-01',
           '2027-01-15',
           'HK1',
-          'Khoa Công nghệ Thông tin',
+          'Khoa Công nghệ thông tin và Bán dẫn',
+          'Công nghệ thông tin',
           'Lớp chuyên ngành chính khóa (HK1)'
         ],
         [
           'B101',
-          'Cơ sở dữ liệu phân tán',
-          'IT21B',
+          'Thiết kế đồ họa 3D',
+          'TK21B',
           'ThS. Trần Thị B',
           'Thứ 4',
           7,
@@ -256,13 +267,14 @@ export default function SemesterScheduleExcelImport({
           '2027-02-15',
           '2027-06-25',
           'HK2',
-          'Khoa Công nghệ Thông tin',
-          'Thực hành phòng máy (HK2)'
+          'Khoa Thiết kế và Truyền thông',
+          'Thiết kế đồ họa',
+          'Thực hành phòng máy đồ họa (HK2)'
         ],
         [
           'A102',
-          'Kỹ năng giao tiếp chuyên nghiệp',
-          'GE03',
+          'Kỹ năng Quản trị doanh nghiệp',
+          'QT03',
           'ThS. Lê Văn C',
           'Thứ 6',
           4,
@@ -270,7 +282,8 @@ export default function SemesterScheduleExcelImport({
           '2027-07-01',
           '2027-08-25',
           'HK3',
-          'Khoa Kinh tế & QTKD',
+          'Khoa Kinh doanh và Quản lý',
+          'Quản trị kinh doanh',
           'Học kỳ Hè (HK3)'
         ]
       ]
@@ -287,12 +300,44 @@ export default function SemesterScheduleExcelImport({
         { wch: 16 }, // Ngày bắt đầu
         { wch: 16 }, // Ngày kết thúc
         { wch: 12 }, // Học kỳ
-        { wch: 28 }, // Khoa
+        { wch: 38 }, // Khoa
+        { wch: 32 }, // Ngành học
         { wch: 34 }  // Ghi chú
       ]
       XLSX.utils.book_append_sheet(wb, ws1, 'ThoiKhoaBieu_TBD')
 
-      // Sheet 2: TraCuu_12TietHoc_TBD
+      // Sheet 2: DanhMuc_Khoa_Nganh (9 Khoa, 23 Ngành tra cứu)
+      const facultyHeaders = ['STT', 'Khoa / Đơn vị', 'Ngành đào tạo', 'Ghi chú']
+      const facultyRows: any[][] = [facultyHeaders]
+      let stt = 1
+      ACADEMIC_FACULTIES.forEach((fac) => {
+        fac.majors.forEach((m) => {
+          facultyRows.push([
+            stt++,
+            fac.name,
+            m.label,
+            'Ngành đào tạo chính khóa'
+          ])
+        })
+      })
+      NON_FACULTY_UNITS.forEach((unit) => {
+        facultyRows.push([
+          stt++,
+          unit,
+          '(Không có ngành)',
+          'Đơn vị hành chính chuyên trách'
+        ])
+      })
+      const wsFaculty = XLSX.utils.aoa_to_sheet(facultyRows)
+      wsFaculty['!cols'] = [
+        { wch: 8 },  // STT
+        { wch: 42 }, // Khoa / Đơn vị
+        { wch: 40 }, // Ngành đào tạo
+        { wch: 32 }  // Ghi chú
+      ]
+      XLSX.utils.book_append_sheet(wb, wsFaculty, 'DanhMuc_Khoa_Nganh')
+
+      // Sheet 3: TraCuu_12TietHoc_TBD
       const periodHeaders = ['Tiết', 'Ca học', 'Giờ bắt đầu', 'Giờ kết thúc', 'Thời lượng', 'Ghi chú']
       const periodRows = [
         periodHeaders,
@@ -362,7 +407,12 @@ export default function SemesterScheduleExcelImport({
         const rawStartDate = getColValue(row, ['Ngày bắt đầu', 'Ngay bat dau', 'Ngày BĐ', 'Ngay BD', 'Start Date'])
         const rawEndDate = getColValue(row, ['Ngày kết thúc', 'Ngay ket thuc', 'Ngày KT', 'Ngay KT', 'End Date'])
         const semester = String(getColValue(row, ['Học kỳ', 'Hoc ky', 'HK', 'Semester']) || 'HK1').trim()
-        const department = String(getColValue(row, ['Khoa', 'Đơn vị', 'Don vi', 'Department']) || 'Phòng Quản lý Đào tạo & CSVC').trim()
+        const rawDept = String(getColValue(row, ['Khoa', 'Khoa / Đơn vị', 'Đơn vị', 'Don vi', 'Department']) || 'Phòng Quản lý Đào tạo & CSVC').trim()
+        const department = normalizeDepartmentName(rawDept)
+        const rawMajor = getColValue(row, [
+          'Ngành học', 'Nganh hoc', 'Ngành', 'Nganh', 'Major', 'Chuyên ngành', 'Chuyen nganh'
+        ])
+        const rawMajorStr = rawMajor !== undefined && rawMajor !== null ? String(rawMajor).trim() : ''
         const notes = String(getColValue(row, ['Ghi chú', 'Ghi chu', 'Notes', 'Lưu ý']) || '').trim()
 
         // Skip completely empty rows
@@ -427,6 +477,17 @@ export default function SemesterScheduleExcelImport({
           errors.push(`Ngày bắt đầu (${startDateStr}) sau ngày kết thúc (${endDateStr}).`)
         }
 
+        // 5.5. Validate Faculty & Major
+        let validatedMajor: string | undefined = undefined
+        if (rawMajorStr) {
+          const facultyMajorCheck = validateFacultyMajorPair(department, rawMajorStr)
+          if (!facultyMajorCheck.isValid) {
+            errors.push(facultyMajorCheck.error || `Ngành "${rawMajorStr}" không hợp lệ với Khoa "${department}".`)
+          } else {
+            validatedMajor = facultyMajorCheck.cleanMajor
+          }
+        }
+
         // 6. Calculate Sessions & Conflicts if valid so far
         let totalSessions = 0
         let sessions: CalculatedSession[] = []
@@ -473,6 +534,7 @@ export default function SemesterScheduleExcelImport({
           endDateStr: endDateStr || String(rawEndDate),
           semester,
           department,
+          major: validatedMajor,
           notes,
           isValid,
           errors,
@@ -531,9 +593,6 @@ export default function SemesterScheduleExcelImport({
     setIsSubmitting(true)
 
     try {
-      const localBookingsStr = localStorage.getItem('tbd_admin_bookings')
-      let localBookingsList: Booking[] = localBookingsStr ? JSON.parse(localBookingsStr) : []
-
       // 1. If override enabled, reject/cancel all student conflicting bookings
       if (isSchoolOverride) {
         const uniqueConflicts = new Map<number, Booking>()
@@ -548,26 +607,13 @@ export default function SemesterScheduleExcelImport({
           } catch {
             // fallback
           }
-
-          const idx = localBookingsList.findIndex((b) => b.id === id)
-          if (idx > -1) {
-            localBookingsList[idx] = {
-              ...localBookingsList[idx],
-              status: 'Cancelled',
-              rejectReason: cancelReason,
-              rejectionReason: cancelReason,
-              adminNotes: 'Điều chỉnh ưu tiên theo Thời khóa biểu chính khóa của Nhà trường'
-            }
-          }
         }
       }
 
       // 2. Generate and save academic sessions
       const createdBookings: Booking[] = []
-      let baseId = Date.now()
 
       for (const course of validCourses) {
-        const roomName = course.matchedRoom?.name || `Phòng ${course.matchedRoom?.id}`
         const periodDisplay = `Tiết ${course.startPeriod} - ${course.endPeriod} (${course.startTimeStr} - ${course.endTimeStr})`
 
         const sessionsToSave = isSchoolOverride
@@ -576,7 +622,11 @@ export default function SemesterScheduleExcelImport({
 
         for (let i = 0; i < sessionsToSave.length; i++) {
           const session = sessionsToSave[i]
-          const bookingId = baseId++
+
+          const baseCourseNote = course.notes
+            ? course.notes.trim()
+            : `Thời khóa biểu chính khóa TBD | Môn: ${course.subjectName} | Lớp: ${course.classCode || 'N/A'} | ${periodDisplay} | ${session.dayOfWeekLabel} | Nhập từ File Excel`
+          const finalCourseNotes = buildNotesWithMajor(baseCourseNote, course.major)
 
           const payload: CreateBookingPayload = {
             roomId: course.matchedRoom!.id,
@@ -585,9 +635,9 @@ export default function SemesterScheduleExcelImport({
             purpose: `[TKB ${course.semester}] ${course.subjectName} (${course.classCode || 'HP'}) - GV: ${course.lecturerName}`,
             status: 'Approved',
             participantCount: course.matchedRoom?.capacity || 45,
-            department: course.department || 'Phòng Quản lý Đào tạo & CSVC',
+            department: normalizeDepartmentName(course.department) || 'Phòng Quản lý Đào tạo & CSVC',
             personInCharge: course.lecturerName || currentUserName,
-            notes: `Thời khóa biểu chính khóa TBD | Môn: ${course.subjectName} | Lớp: ${course.classCode || 'N/A'} | ${periodDisplay} | ${session.dayOfWeekLabel} | Nhập từ File Excel`,
+            notes: finalCourseNotes,
             isSchoolOverride: true,
             IsSchoolOverride: true,
             semester: course.semester,
@@ -601,56 +651,23 @@ export default function SemesterScheduleExcelImport({
             adminNotes: 'Thời khóa biểu chính khóa do Phòng Quản lý Đào tạo sắp xếp.'
           }
 
-          let apiSuccess = false
           try {
             const res = await http.post<Booking>('/api/bookings', payload)
             if (res.data && res.data.id) {
               createdBookings.push(res.data)
-              apiSuccess = true
             }
           } catch {
             // fallback
           }
-
-          if (!apiSuccess) {
-            const localItem: Booking = {
-              id: bookingId,
-              roomId: course.matchedRoom!.id,
-              roomName: roomName,
-              startTime: session.startTime,
-              endTime: session.endTime,
-              purpose: payload.purpose,
-              status: 'Approved',
-              participantCount: payload.participantCount,
-              department: payload.department,
-              personInCharge: payload.personInCharge,
-              notes: payload.notes,
-              isSchoolOverride: true,
-              IsSchoolOverride: true,
-              semester: payload.semester,
-              subjectCode: payload.subjectCode,
-              subjectName: payload.subjectName,
-              classCode: payload.classCode,
-              lecturerName: payload.lecturerName,
-              periodInfo: payload.periodInfo,
-              approvedBy: currentUserName,
-              approvedAt: new Date().toISOString(),
-              adminNotes: payload.adminNotes,
-              userEmail: currentUserEmail || 'quanly@tbd.edu.vn'
-            }
-            createdBookings.push(localItem)
-          }
         }
       }
-
-      // Merge and save to localStorage
-      const mergedList = [...createdBookings, ...localBookingsList]
-      localStorage.setItem('tbd_admin_bookings', JSON.stringify(mergedList))
 
       // Invalidate queries to refresh calendars and tables
       await queryClient.invalidateQueries({ queryKey: ['bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
+      await queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
 
       message.success({
         content: `Đã lưu thành công Thời khóa biểu chính khóa cho ${validCourses.length} lớp học (Tổng cộng ${createdBookings.length} buổi học).`,
@@ -734,6 +751,27 @@ export default function SemesterScheduleExcelImport({
             {row.classCode && <Tag color="cyan">Lớp: {row.classCode}</Tag>}
             {row.semester && <Tag color="purple">{row.semester}</Tag>}
           </Space>
+        </div>
+      )
+    },
+    {
+      title: 'Khoa / Ngành học',
+      key: 'departmentMajor',
+      width: 210,
+      render: (_: any, row: ParsedCourseRow) => (
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>
+            {normalizeDepartmentName(row.department) || 'Phòng Quản lý Đào tạo & CSVC'}
+          </div>
+          {row.major ? (
+            <Tag color="purple" style={{ marginTop: 2, fontSize: 11 }}>
+              Ngành: {row.major}
+            </Tag>
+          ) : (
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+              Chung / Không gắn ngành
+            </div>
+          )}
         </div>
       )
     },
@@ -868,7 +906,7 @@ export default function SemesterScheduleExcelImport({
             Kéo thả file Excel (.xlsx, .xls) hoặc CSV vào đây hoặc bấm để chọn file
           </p>
           <p className="ant-upload-hint" style={{ fontSize: 12, color: '#64748b' }}>
-            File mẫu gồm các cột: Phòng học, Tên môn học, Mã lớp, Giảng viên, Thứ, Tiết BĐ, Tiết KT, Ngày BĐ, Ngày KT, Học kỳ, Khoa, Ghi chú.
+            File mẫu gồm các cột: Phòng học, Tên môn học, Mã lớp, Giảng viên, Thứ, Tiết BĐ, Tiết KT, Ngày BĐ, Ngày KT, Học kỳ, Khoa, Ngành học (tùy chọn), Ghi chú.
           </p>
         </Dragger>
       </Spin>
@@ -944,7 +982,7 @@ export default function SemesterScheduleExcelImport({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <ThunderboltOutlined style={{ color: isSchoolOverride ? '#0284c7' : '#94a3b8', fontSize: 20, marginTop: 2 }} />
+            <SafetyCertificateOutlined style={{ color: isSchoolOverride ? '#0284c7' : '#94a3b8', fontSize: 20, marginTop: 2 }} />
             <div>
               <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13 }}>
                 Ưu tiên Thời khóa biểu chính khóa khi trùng lịch
@@ -1017,7 +1055,7 @@ export default function SemesterScheduleExcelImport({
           </Button>
           <Button
             type="primary"
-            icon={<ThunderboltOutlined />}
+            icon={<CheckCircleOutlined />}
             loading={isSubmitting}
             disabled={!isAuthorized || stats.valid === 0}
             onClick={handleSaveToSystem}
@@ -1050,7 +1088,7 @@ export default function SemesterScheduleExcelImport({
             <Alert
               type="warning"
               showIcon
-              message={`Lớp ${conflictDetailRow.subjectName} tại ${conflictDetailRow.matchedRoom?.name} trùng ${conflictDetailRow.conflictingBookings.length} đơn của sinh viên:`}
+              title={`Lớp ${conflictDetailRow.subjectName} tại ${conflictDetailRow.matchedRoom?.name} trùng ${conflictDetailRow.conflictingBookings.length} đơn của sinh viên:`}
               style={{ marginBottom: 12 }}
             />
             <Table

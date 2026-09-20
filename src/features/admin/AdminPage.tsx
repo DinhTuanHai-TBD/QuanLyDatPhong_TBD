@@ -15,28 +15,29 @@ import {
   Card,
   Row,
   Col,
-  Switch,
   Descriptions,
   Segmented,
   Skeleton,
   Empty,
   Drawer,
-  Divider,
   Spin,
+  Upload,
 } from "antd";
 import {
   PlusOutlined,
   SearchOutlined,
   ReloadOutlined,
   UserAddOutlined,
-  CheckOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
   CalendarOutlined,
+  PictureOutlined,
+  DeleteOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { http } from "../../api/http";
-import { getUserRole } from "../../api/authUtils";
+import { getUserRole, getUserEmail } from "../../api/authUtils";
 import AnalyticsDashboard from "./AnalyticsDashboard";
 import SemesterScheduleModal from "./SemesterScheduleModal";
 import SemesterScheduleView from "./SemesterScheduleView";
@@ -45,8 +46,53 @@ import type { Booking, BookingStatus } from "../../types/booking";
 import dayjs from "dayjs";
 import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking } from "../../utils/bookingStatusUtils";
 import { getOfficialRooms } from "../../utils/roomUtils";
+import { normalizeDepartmentName } from "../../utils/academicPrograms";
+import BookingSettingsManagement from "./BookingSettingsManagement";
 
 const { Title, Paragraph, Text } = Typography;
+
+// Helper chuyển đổi File sang Base64 có nén tự động nếu ảnh kích thước lớn
+const getBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    if (file.size > 1.5 * 1024 * 1024) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+          const maxDim = 1280;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.85));
+            return;
+          }
+          resolve((e.target?.result as string) || "");
+        };
+        img.onerror = () => resolve((e.target?.result as string) || "");
+        img.src = (e.target?.result as string) || "";
+      };
+      reader.onerror = (error) => reject(error);
+    } else {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    }
+  });
 
 export interface EquipmentIssue {
   id: number;
@@ -131,7 +177,7 @@ export const TBD_OFFICIAL_ACCOUNTS: AccountItem[] = [
     userCode: "GV-CNTT-08",
     email: "giangvien@tbd.edu.vn",
     fullName: "TS. Trần Văn Nam",
-    department: "Khoa Công nghệ & Kỹ thuật",
+    department: "Khoa Công nghệ thông tin và Bán dẫn",
     phoneNumber: "0912345678",
     phone: "0912345678",
     role: "Faculty",
@@ -142,7 +188,7 @@ export const TBD_OFFICIAL_ACCOUNTS: AccountItem[] = [
     userCode: "230057",
     email: "hai.230057@tbd.edu.vn",
     fullName: "Nguyễn Văn Hải",
-    department: "Khoa Công nghệ & Kỹ thuật",
+    department: "Khoa Công nghệ thông tin và Bán dẫn",
     phoneNumber: "0939393939",
     phone: "0939393939",
     role: "User",
@@ -157,7 +203,7 @@ export default function AdminPage() {
   const isApprover = activeUserRole === "approver";
   const canAccess = isAdmin || isApprover;
   const canManageSchedule = isAdmin || isApprover;
-  const currentUserEmail = localStorage.getItem("userEmail") || (isAdmin ? "admin@tbd.edu.vn" : "quanly@tbd.edu.vn");
+  const currentUserEmail = getUserEmail() || (isAdmin ? "admin@tbd.edu.vn" : "quanly@tbd.edu.vn");
   const currentUserName = isAdmin ? "Quản trị viên (Admin)" : "Quản lý Đào tạo & CSVC";
   const queryClient = useQueryClient();
 
@@ -191,6 +237,7 @@ export default function AdminPage() {
   // Modals & Drawers state
   const [isRoomModalVisible, setIsRoomModalVisible] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [roomPreviewImage, setRoomPreviewImage] = useState<string>("");
   const [roomForm] = Form.useForm();
 
   const [isRoomEquipmentDrawerVisible, setIsRoomEquipmentDrawerVisible] = useState(false);
@@ -215,26 +262,6 @@ export default function AdminPage() {
   const [editingUser, setEditingUser] = useState<AccountItem | null>(null);
   const [userForm] = Form.useForm();
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-
-  // System Config State
-  const [systemConfig, setSystemConfig] = useState(() => {
-    const localStr = localStorage.getItem("tbd_system_config");
-    if (localStr) {
-      try {
-        return JSON.parse(localStr);
-      } catch {
-        // fallback
-      }
-    }
-    return {
-      maxAdvanceDays: 14,
-      maxHoursPerBooking: 4,
-      cancelBeforeHours: 2,
-      autoApproveClassroom: false,
-      requireSpecialJustification: true,
-      operatingHours: "07:00 - 21:00",
-    };
-  });
 
   // Clean up legacy mock/seed localStorage keys
   useEffect(() => {
@@ -276,34 +303,18 @@ export default function AdminPage() {
   const bookingsQuery = useQuery({
     queryKey: ["bookings"],
     queryFn: async () => {
+      const res = await http.get<Booking[]>("/api/bookings");
       let list: Booking[] = [];
-      try {
-        const res = await http.get<Booking[]>("/api/bookings");
-        if (Array.isArray(res.data)) {
-          list = res.data;
-        } else if (res.data && Array.isArray((res.data as any).data)) {
-          list = (res.data as any).data;
-        }
-      } catch (e) {
-        console.warn("Could not fetch API bookings:", e);
+      if (Array.isArray(res.data)) {
+        list = res.data;
+      } else if (res.data && Array.isArray((res.data as any).data)) {
+        list = (res.data as any).data;
       }
 
-      const localStr = localStorage.getItem("tbd_admin_bookings");
-      if (localStr) {
-        try {
-          const localList: Booking[] = JSON.parse(localStr);
-          localList.forEach((local) => {
-            const idx = list.findIndex((b) => b.id === local.id);
-            if (idx > -1) {
-              list[idx] = { ...list[idx], ...local };
-            } else {
-              list.push(local);
-            }
-          });
-        } catch {}
-      }
-
-      return list;
+      return list.map((b) => ({
+        ...b,
+        department: normalizeDepartmentName(b.department),
+      }));
     },
   });
 
@@ -381,7 +392,7 @@ export default function AdminPage() {
                 ...fromDb,
                 fullName: fromDb.fullName || official.fullName,
                 userCode: fromDb.userCode || official.userCode,
-                department: fromDb.department || official.department,
+                department: normalizeDepartmentName(fromDb.department || official.department),
                 phoneNumber: fromDb.phoneNumber || fromDb.phone || official.phoneNumber,
                 phone: fromDb.phoneNumber || fromDb.phone || official.phone,
                 role: fromDb.role || official.role,
@@ -440,6 +451,7 @@ export default function AdminPage() {
   // Room Mutations
   const saveRoomMutation = useMutation({
     mutationFn: async (values: Partial<Room>) => {
+      // Send to Backend API
       if (editingRoom) {
         await http.put(`/api/rooms/${editingRoom.id}`, values);
       } else {
@@ -451,10 +463,13 @@ export default function AdminPage() {
         editingRoom ? "Đã cập nhật thông tin phòng thành công" : "Đã thêm phòng học mới thành công"
       );
       setIsRoomModalVisible(false);
+      setRoomPreviewImage("");
+      roomForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
     },
     onError: (err: any) => {
       message.error(err?.response?.data?.message || "Có lỗi xảy ra khi lưu thông tin phòng.");
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
     },
   });
 
@@ -1050,15 +1065,49 @@ export default function AdminPage() {
       key: "name",
       sorter: (a: Room, b: Room) => a.name.localeCompare(b.name),
       render: (text: string, record: Room) => (
-        <div>
-          <Text strong style={{ color: "#0f172a", fontSize: 13.5 }}>
-            {text}
-          </Text>
-          {record.floor && (
-            <div style={{ fontSize: 12, color: "#64748b" }}>
-              Tầng: {record.floor}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {record.imageUrl ? (
+            <img
+              src={record.imageUrl}
+              alt={record.name}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 6,
+                objectFit: "cover",
+                border: "1px solid #cbd5e1",
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 6,
+                background: "#f1f5f9",
+                border: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#64748b",
+                fontSize: 18,
+                flexShrink: 0,
+              }}
+            >
+              🏛
             </div>
           )}
+          <div>
+            <Text strong style={{ color: "#0f172a", fontSize: 13.5 }}>
+              {text}
+            </Text>
+            {record.floor && (
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                Tầng: {record.floor}
+              </div>
+            )}
+          </div>
         </div>
       ),
     },
@@ -1111,6 +1160,7 @@ export default function AdminPage() {
             onClick={() => {
               setEditingRoom(record);
               roomForm.setFieldsValue(record);
+              setRoomPreviewImage(record.imageUrl || "");
               setIsRoomModalVisible(true);
             }}
           >
@@ -1174,7 +1224,7 @@ export default function AdminPage() {
             {email || "N/A"}
           </Text>
           {record.department && (
-            <div style={{ fontSize: 11, color: "#64748b" }}>{record.department}</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>{normalizeDepartmentName(record.department)}</div>
           )}
         </div>
       ),
@@ -1523,7 +1573,7 @@ export default function AdminPage() {
       title: "Khoa / Đơn Vị",
       dataIndex: "department",
       key: "department",
-      render: (dept: string) => dept || "Chưa phân bổ",
+      render: (dept: string) => normalizeDepartmentName(dept) || "Chưa phân bổ",
     },
     {
       title: "Số Điện Thoại",
@@ -1790,6 +1840,7 @@ export default function AdminPage() {
           onClick={() => {
             setEditingRoom(null);
             roomForm.resetFields();
+            setRoomPreviewImage("");
             setIsRoomModalVisible(true);
           }}
           style={{ background: "#0284c7", borderColor: "#0284c7" }}
@@ -2111,17 +2162,53 @@ export default function AdminPage() {
                     cover={
                       <div
                         style={{
-                          height: 120,
-                          background: room.imageUrl
-                            ? `url(${room.imageUrl}) center/cover`
-                            : "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                          height: 140,
+                          position: "relative",
+                          overflow: "hidden",
+                          background: "#0f172a",
                           display: "flex",
                           alignItems: "flex-end",
                           padding: 10,
-                          color: "#fff",
                         }}
                       >
-                        <Tag color="blue">{room.building || "Khu A"}</Tag>
+                        {room.imageUrl ? (
+                          <img
+                            src={room.imageUrl}
+                            alt={room.name}
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "100%",
+                              height: "100%",
+                              background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                            }}
+                          />
+                        )}
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: 48,
+                            background: "linear-gradient(to top, rgba(15, 23, 42, 0.7) 0%, transparent 100%)",
+                          }}
+                        />
+                        <Tag color="blue" style={{ position: "relative", zIndex: 1, margin: 0 }}>
+                          {room.building || "Khu A"}
+                        </Tag>
                       </div>
                     }
                     style={{ borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden" }}
@@ -2133,6 +2220,7 @@ export default function AdminPage() {
                         onClick={() => {
                           setEditingRoom(room);
                           roomForm.setFieldsValue(room);
+                          setRoomPreviewImage(room.imageUrl || "");
                           setIsRoomModalVisible(true);
                         }}
                       >
@@ -2381,85 +2469,15 @@ export default function AdminPage() {
       );
     }
 
-    if (activeTab === "settings" || activeTab === "settings-shifts") {
+    if (activeTab === "settings") {
+      return <BookingSettingsManagement />;
+    }
+
+    if (activeTab === "settings-shifts") {
       return (
         <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24, maxWidth: 840 }}>
-          {activeTab === "settings" ? (
-            <div>
-              <Title level={4} style={{ color: "#0f172a", marginBottom: 20 }}>
-                Tham Số Vận Hành & Quy Định Đặt Phòng
-              </Title>
-              <Form
-                layout="vertical"
-                initialValues={systemConfig}
-                onFinish={(values) => {
-                  setSystemConfig(values);
-                  localStorage.setItem("tbd_system_config", JSON.stringify(values));
-                  message.success("Đã lưu cấu hình quy định hệ thống thành công!");
-                }}
-              >
-                <Form.Item
-                  name="maxAdvanceDays"
-                  label="Số ngày được phép đăng ký trước tối đa"
-                  tooltip="Hệ thống sẽ hạn chế người dùng đặt phòng vượt quá mốc ngày này."
-                >
-                  <InputNumber min={1} max={90} suffix="ngày" style={{ width: "100%" }} />
-                </Form.Item>
-
-                <Form.Item
-                  name="maxHoursPerBooking"
-                  label="Thời lượng đặt phòng tối đa trong 1 lượt"
-                  tooltip="Thời lượng tối đa cho 1 buổi học hoặc sự kiện."
-                >
-                  <InputNumber min={1} max={12} suffix="giờ" style={{ width: "100%" }} />
-                </Form.Item>
-
-                <Form.Item
-                  name="cancelBeforeHours"
-                  label="Thời hạn tối thiểu cho phép hủy phòng trước giờ sử dụng"
-                  tooltip="Hạn chế việc hủy lịch sát giờ ảnh hưởng đến công tác sắp xếp phòng học."
-                >
-                  <InputNumber min={1} max={24} suffix="giờ" style={{ width: "100%" }} />
-                </Form.Item>
-
-                <Form.Item
-                  name="operatingHours"
-                  label="Khung giờ hoạt động chuẩn của các khu phòng"
-                >
-                  <Input placeholder="VD: 07:00 - 21:00" />
-                </Form.Item>
-
-                <Form.Item
-                  name="autoApproveClassroom"
-                  valuePropName="checked"
-                  label="Xác nhận trực tiếp đối với Giảng viên đăng ký phòng học thông thường"
-                >
-                  <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
-                </Form.Item>
-
-                <Form.Item
-                  name="requireSpecialJustification"
-                  valuePropName="checked"
-                  label="Bắt buộc minh chứng & lý do đối với sự kiện đặc biệt / ngoài giờ"
-                >
-                  <Switch checkedChildren="Bắt buộc" unCheckedChildren="Không" />
-                </Form.Item>
-
-                <Divider style={{ margin: "16px 0" }} />
-
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<CheckOutlined />}
-                  style={{ background: "#0284c7", borderColor: "#0284c7" }}
-                >
-                  Lưu cấu hình quy định
-                </Button>
-              </Form>
-            </div>
-          ) : (
-            <div>
-              <div style={{ marginBottom: 16 }}>
+          <div>
+            <div style={{ marginBottom: 16 }}>
                 <Title level={4} style={{ color: "#0f172a", marginBottom: 6 }}>
                   Khung Giờ Tiết Học & Ca Giảng Dạy
                 </Title>
@@ -2608,8 +2626,7 @@ export default function AdminPage() {
                 ]}
               />
             </div>
-          )}
-        </div>
+          </div>
       );
     }
 
@@ -2839,9 +2856,16 @@ export default function AdminPage() {
       <Modal
         title={editingRoom ? "Cập Nhật Thông Tin Phòng Học" : "Thêm Phòng Học Mới"}
         open={isRoomModalVisible}
-        onCancel={() => setIsRoomModalVisible(false)}
+        onCancel={() => {
+          setIsRoomModalVisible(false);
+          setRoomPreviewImage("");
+          roomForm.resetFields();
+        }}
         onOk={() => roomForm.submit()}
         confirmLoading={saveRoomMutation.isPending}
+        width={680}
+        okText={editingRoom ? "Lưu thay đổi" : "Tạo phòng"}
+        cancelText="Hủy bỏ"
       >
         <Form
           form={roomForm}
@@ -2915,8 +2939,140 @@ export default function AdminPage() {
             />
           </Form.Item>
 
-          <Form.Item name="imageUrl" label="Đường dẫn ảnh đại diện (URL)">
-            <Input placeholder="https://..." />
+          <Form.Item
+            label={<span style={{ fontWeight: 600, color: "#1e293b" }}>Ảnh đại diện phòng học</span>}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {roomPreviewImage ? (
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    maxWidth: 380,
+                    height: 200,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    border: "1.5px solid #cbd5e1",
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <img
+                    src={roomPreviewImage}
+                    alt="Ảnh phòng"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.opacity = "0.3";
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: "8px 12px",
+                      background: "linear-gradient(to top, rgba(15, 23, 42, 0.85) 0%, transparent 100%)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Upload
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      showUploadList={false}
+                      beforeUpload={async (file) => {
+                        try {
+                          const base64 = await getBase64(file);
+                          setRoomPreviewImage(base64);
+                          roomForm.setFieldValue("imageUrl", base64);
+                          message.success("Đã chọn ảnh phòng học thành công");
+                        } catch {
+                          message.error("Không thể đọc file ảnh.");
+                        }
+                        return false;
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        icon={<PictureOutlined />}
+                        style={{
+                          background: "#ffffff",
+                          borderColor: "#cbd5e1",
+                          color: "#0f172a",
+                          fontWeight: 500,
+                          borderRadius: 6,
+                        }}
+                      >
+                        Đổi ảnh khác
+                      </Button>
+                    </Upload>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => {
+                        setRoomPreviewImage("");
+                        roomForm.setFieldValue("imageUrl", "");
+                      }}
+                      style={{ fontWeight: 500, borderRadius: 6 }}
+                    >
+                      Xóa ảnh
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Upload.Dragger
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  showUploadList={false}
+                  beforeUpload={async (file) => {
+                    try {
+                      const base64 = await getBase64(file);
+                      setRoomPreviewImage(base64);
+                      roomForm.setFieldValue("imageUrl", base64);
+                      message.success("Đã tải ảnh lên thành công");
+                    } catch {
+                      message.error("Không thể đọc file ảnh.");
+                    }
+                    return false;
+                  }}
+                  style={{
+                    padding: "18px 12px",
+                    background: "#f8fafc",
+                    border: "1.5px dashed #94a3b8",
+                    borderRadius: 8,
+                  }}
+                >
+                  <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}>
+                    <InboxOutlined style={{ fontSize: 32, color: "#0284c7" }} />
+                  </p>
+                  <p style={{ margin: 0, fontWeight: 600, color: "#0f172a", fontSize: 13.5 }}>
+                    Bấm để chọn ảnh từ máy tính hoặc kéo thả file ảnh vào đây
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>
+                    Hỗ trợ định dạng .PNG, .JPG, .JPEG, .WEBP (Tự động chuyển Base64)
+                  </p>
+                </Upload.Dragger>
+              )}
+
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
+                  Hoặc dán đường link ảnh (URL):
+                </div>
+                <Form.Item name="imageUrl" noStyle>
+                  <Input
+                    placeholder="VD: https://images.unsplash.com/... hoặc data:image/..."
+                    allowClear
+                    value={roomPreviewImage}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRoomPreviewImage(val);
+                      roomForm.setFieldValue("imageUrl", val);
+                    }}
+                  />
+                </Form.Item>
+              </div>
+            </div>
           </Form.Item>
 
           <Form.Item name="description" label="Ghi chú & Trang thiết bị có sẵn">
@@ -3005,7 +3161,7 @@ export default function AdminPage() {
               <strong>{selectedBooking.roomName}</strong>
             </Descriptions.Item>
             <Descriptions.Item label="Người đăng ký">
-              {selectedBooking.userEmail} ({selectedBooking.department || "N/A"})
+              {selectedBooking.userEmail} ({normalizeDepartmentName(selectedBooking.department) || "N/A"})
             </Descriptions.Item>
             <Descriptions.Item label="Thời gian">
               {dayjs(selectedBooking.startTime).format("DD/MM/YYYY HH:mm")} -{" "}
@@ -3221,7 +3377,7 @@ export default function AdminPage() {
           </Form.Item>
 
           <Form.Item name="department" label="Khoa / Phòng ban">
-            <Input placeholder="VD: Khoa Công nghệ & Kỹ thuật / Ban Quản lý Cơ sở vật chất TBD" />
+            <Input placeholder="VD: Khoa Công nghệ thông tin và Bán dẫn / Ban Quản lý Cơ sở vật chất TBD" />
           </Form.Item>
 
           <Form.Item

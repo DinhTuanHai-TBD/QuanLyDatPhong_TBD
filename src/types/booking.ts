@@ -40,6 +40,7 @@ export interface Booking {
   classCode?: string
   lecturerName?: string
   periodInfo?: string
+  major?: string
 }
 
 export interface CreateBookingPayload {

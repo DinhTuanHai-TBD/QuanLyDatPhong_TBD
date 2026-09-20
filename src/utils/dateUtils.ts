@@ -115,4 +115,63 @@ export function isSchoolScheduleBooking(b: any): boolean {
   )
 }
 
+export interface CalendarRangeResult {
+  startVN: dayjs.Dayjs
+  endVN: dayjs.Dayjs
+  startDateUtc: string
+  endDateUtc: string
+  displayRangeLabel: string
+}
+
+/**
+ * Calculates strict Vietnam timezone boundaries for calendar modes and converts to ISO UTC.
+ * - 'room': Start of selected date to start of next day
+ * - 'week': Monday of the week containing selected date to start of Monday next week
+ * - 'list': 30 days starting from selected date
+ */
+export function getCalendarQueryRange(
+  mode: 'room' | 'week' | 'list',
+  filterDateInput: string | number | Date | dayjs.Dayjs | null | undefined
+): CalendarRangeResult {
+  const dVN = toVN(filterDateInput)
+
+  let startVN: dayjs.Dayjs
+  let endVN: dayjs.Dayjs
+
+  if (mode === 'room') {
+    startVN = dVN.startOf('day')
+    endVN = startVN.add(1, 'day')
+  } else if (mode === 'week') {
+    const dayOfWeek = (dVN.day() + 6) % 7 // 0 for Mon, 1 for Tue, ..., 6 for Sun
+    startVN = dVN.subtract(dayOfWeek, 'day').startOf('day')
+    endVN = startVN.add(7, 'day')
+  } else {
+    // 'list' mode: 30 days starting from selected date
+    startVN = dVN.startOf('day')
+    endVN = startVN.add(30, 'day')
+  }
+
+  const startDateUtc = startVN.toISOString()
+  const endDateUtc = endVN.toISOString()
+
+  let displayRangeLabel = ''
+  if (mode === 'room') {
+    displayRangeLabel = `Ngày ${startVN.format('DD/MM/YYYY')}`
+  } else if (mode === 'week') {
+    const endDisplay = endVN.subtract(1, 'day')
+    displayRangeLabel = `Tuần từ Thứ 2 (${startVN.format('DD/MM')}) đến Chủ nhật (${endDisplay.format('DD/MM/YYYY')})`
+  } else {
+    const endDisplay = endVN.subtract(1, 'day')
+    displayRangeLabel = `30 ngày (từ ${startVN.format('DD/MM/YYYY')} đến ${endDisplay.format('DD/MM/YYYY')})`
+  }
+
+  return {
+    startVN,
+    endVN,
+    startDateUtc,
+    endDateUtc,
+    displayRangeLabel
+  }
+}
+
 export default dayjs

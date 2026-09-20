@@ -8,30 +8,17 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { http } from '../../api/http'
 import type { Room } from '../../types/room'
-import { getOfficialRooms, cleanupLocalStorageRooms, isFakeOrDisallowedRoom } from '../../utils/roomUtils'
+import { getOfficialRooms } from '../../utils/roomUtils'
 
 async function fetchRooms(): Promise<Room[]> {
-  cleanupLocalStorageRooms()
-  try {
-    const res = await http.get<Room[]>('/api/rooms')
-    if (Array.isArray(res.data) && res.data.length > 0) {
-      return res.data.filter((r) => !isFakeOrDisallowedRoom(r))
-    }
-  } catch {
-    // fallback
+  const res = await http.get<Room[]>('/api/rooms')
+  if (Array.isArray(res.data)) {
+    return res.data
   }
-  const localStr = localStorage.getItem('tbd_admin_rooms')
-  if (localStr) {
-    try {
-      const parsed = JSON.parse(localStr)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((r: any) => !isFakeOrDisallowedRoom(r))
-      }
-    } catch {
-      // ignore
-    }
+  if (res.data && Array.isArray((res.data as any).data)) {
+    return (res.data as any).data
   }
-  return getOfficialRooms()
+  return []
 }
 
 const getRoomImageUrl = (room: any) => {
@@ -87,9 +74,8 @@ function RoomsPage() {
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
     queryFn: async () => {
-      const localStr = localStorage.getItem('tbd_admin_equipments')
-      if (localStr) return JSON.parse(localStr)
-      return []
+      const res = await http.get<any[]>('/api/equipments')
+      return Array.isArray(res.data) ? res.data : []
     }
   })
   const apiRooms = roomsQuery.data ?? []
@@ -330,8 +316,13 @@ function RoomsPage() {
         <Alert 
           showIcon 
           type="error" 
-          title="Không thể kết nối máy chủ để lấy danh sách phòng" 
-          description="Vui lòng xác minh máy chủ backend đang hoạt động trên hệ thống và thử lại." 
+          message="Không thể kết nối máy chủ để lấy danh sách phòng" 
+          description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau." 
+          action={
+            <Button danger type="primary" onClick={() => roomsQuery.refetch()}>
+              Thử lại
+            </Button>
+          }
           style={{ borderRadius: 8 }}
         />
       ) : filteredRooms.length ? (

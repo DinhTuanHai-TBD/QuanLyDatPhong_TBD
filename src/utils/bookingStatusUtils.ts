@@ -16,22 +16,34 @@ export function isPendingBooking(status: any): boolean {
 }
 
 /**
- * Checks if a booking was pending but its start time has passed now
+ * Checks if a booking was pending but its start time has passed now,
+ * or if it was Approved but exceeded the check-in grace period (No-show).
  */
-export function isBookingExpired(b: Partial<Booking>, now = dayjs()): boolean {
+export function isBookingExpired(b: Partial<Booking>, now = dayjs(), checkInGraceMinutes = 15): boolean {
   if (!b || !b.startTime) return false
-  if (!isPendingBooking(b.status)) {
-    // If it's already marked as Expired
-    return String(b.status).toLowerCase() === 'expired'
+  const s = String(b.status).toLowerCase().trim()
+  if (s === '3' || s === 'expired') return true
+
+  if (isPendingBooking(b.status)) {
+    const start = dayjs(b.startTime)
+    return now.isSameOrAfter(start)
   }
-  const start = dayjs(b.startTime)
-  return now.isSameOrAfter(start)
+
+  // Approved booking with no check-in after grace period (No-show)
+  if (s === '1' || s === 'approved') {
+    if (!b.actualStartTime) {
+      const start = dayjs(b.startTime)
+      return now.diff(start, 'minute', true) > checkInGraceMinutes
+    }
+  }
+
+  return false
 }
 
 /**
- * Checks if a booking is pending and starts within 2 hours from now (0 < startTime - now <= 2 hours)
+ * Checks if a booking is pending and starts within reminder window (default: 1.0 hour, 0 < startTime - now <= 60 mins)
  */
-export function isBookingUrgent(b: Partial<Booking>, now = dayjs()): boolean {
+export function isBookingUrgent(b: Partial<Booking>, now = dayjs(), reminderHours = 1.0): boolean {
   if (!b || !b.startTime) return false
   // Must be pending and NOT expired yet
   if (!isPendingBooking(b.status)) return false
@@ -39,7 +51,7 @@ export function isBookingUrgent(b: Partial<Booking>, now = dayjs()): boolean {
 
   const start = dayjs(b.startTime)
   const diffMinutes = start.diff(now, 'minute', true)
-  return diffMinutes > 0 && diffMinutes <= 120
+  return diffMinutes > 0 && diffMinutes <= reminderHours * 60
 }
 
 /**
@@ -58,15 +70,36 @@ export function getUrgentRemainingText(b: Partial<Booking>, now = dayjs()): stri
 }
 
 /**
+ * Checks if a booking is currently eligible for check-in:
+ * - Status is Approved (1)
+ * - Has not checked in yet (actualStartTime == null)
+ * - Current time is within [startTime - 15m, startTime + checkInGraceMinutes]
+ */
+export function canCheckInBooking(b: Partial<Booking>, now = dayjs(), checkInGraceMinutes = 15): boolean {
+  if (!b || !b.startTime) return false
+  const s = String(b.status).toLowerCase().trim()
+  if (s !== '1' && s !== 'approved') return false
+  if (b.actualStartTime) return false
+
+  const start = dayjs(b.startTime)
+  const checkInWindowOpen = start.subtract(15, 'minute')
+  const checkInWindowClose = start.add(checkInGraceMinutes, 'minute')
+
+  return now.isSameOrAfter(checkInWindowOpen) && now.isSameOrBefore(checkInWindowClose)
+}
+
+/**
  * Returns a booking with its effective real-time status computed:
  * - If pending and start time has passed -> 'Expired'
- * - If approved and time passed end time -> 'Completed'
- * - If approved and between start and end -> 'Using'
+ * - If approved and past grace period without check-in -> 'Expired' (No-show)
+ * - If using or checked in:
+ *     - If past end time -> 'Completed'
+ *     - Else -> 'Using'
  */
-export function getEffectiveBooking(b: Booking, now = dayjs()): Booking {
+export function getEffectiveBooking(b: Booking, now = dayjs(), checkInGraceMinutes = 15): Booking {
   // If pending and current time is at or past startTime -> Expire
   if (isPendingBooking(b.status)) {
-    if (isBookingExpired(b, now)) {
+    if (isBookingExpired(b, now, checkInGraceMinutes)) {
       return {
         ...b,
         status: 'Expired',
@@ -76,15 +109,38 @@ export function getEffectiveBooking(b: Booking, now = dayjs()): Booking {
     return b
   }
 
-  const s = String(b.status).toLowerCase()
-  if (s === '1' || s === 'approved' || s === 'using') {
+  const s = String(b.status).toLowerCase().trim()
+
+  // Approved booking
+  if (s === '1' || s === 'approved') {
     const start = dayjs(b.startTime)
+    const end = dayjs(b.endTime)
+
+    // No-show auto expiration: 15 minutes after start time with no check-in
+    if (!b.actualStartTime && now.diff(start, 'minute', true) > checkInGraceMinutes) {
+      return {
+        ...b,
+        status: 'Expired',
+        rejectReason: b.rejectReason || 'Hủy tự động do quá hạn nhận phòng (No-show: không check-in trong vòng 15 phút sau giờ bắt đầu).'
+      }
+    }
+
+    // Has checked in
+    if (b.actualStartTime) {
+      if (now.isSameOrAfter(end)) {
+        return { ...b, status: 'Completed' }
+      }
+      return { ...b, status: 'Using' }
+    }
+  }
+
+  // Currently using
+  if (s === '4' || s === 'using') {
     const end = dayjs(b.endTime)
     if (now.isSameOrAfter(end)) {
       return { ...b, status: 'Completed' }
-    } else if (now.isSameOrAfter(start) && now.isBefore(end)) {
-      return { ...b, status: 'Using' }
     }
+    return { ...b, status: 'Using' }
   }
 
   return b
@@ -93,18 +149,18 @@ export function getEffectiveBooking(b: Booking, now = dayjs()): Booking {
 /**
  * Maps a list of bookings to their effective real-time statuses
  */
-export function mapEffectiveBookings(bookings: Booking[], now = dayjs()): Booking[] {
-  return bookings.map(b => getEffectiveBooking(b, now))
+export function mapEffectiveBookings(bookings: Booking[], now = dayjs(), checkInGraceMinutes = 15): Booking[] {
+  return bookings.map(b => getEffectiveBooking(b, now, checkInGraceMinutes))
 }
 
 /**
- * Sorts pending bookings so urgent (< 2h) bookings appear FIRST,
+ * Sorts pending bookings so urgent (< 1h) bookings appear FIRST,
  * sorted by startTime ascending (the earliest start time first).
  */
-export function sortPendingBookingsWithUrgentFirst(bookings: Booking[], now = dayjs()): Booking[] {
+export function sortPendingBookingsWithUrgentFirst(bookings: Booking[], now = dayjs(), reminderHours = 1.0): Booking[] {
   return [...bookings].sort((a, b) => {
-    const aUrgent = isBookingUrgent(a, now)
-    const bUrgent = isBookingUrgent(b, now)
+    const aUrgent = isBookingUrgent(a, now, reminderHours)
+    const bUrgent = isBookingUrgent(b, now, reminderHours)
 
     if (aUrgent && !bUrgent) return -1
     if (!aUrgent && bUrgent) return 1
@@ -114,7 +170,7 @@ export function sortPendingBookingsWithUrgentFirst(bookings: Booking[], now = da
       return dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf()
     }
 
-    // Default sort: newest created or earliest start time
+    // Default sort: earliest start time
     return dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf()
   })
 }

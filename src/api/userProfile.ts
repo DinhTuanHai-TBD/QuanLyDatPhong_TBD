@@ -1,5 +1,6 @@
 import { http } from './http'
 import { getUserEmail, getUserRole } from './authUtils'
+import { normalizeDepartmentName } from '../utils/academicPrograms'
 
 export interface UserProfileData {
   id?: string | number
@@ -35,14 +36,17 @@ export async function fetchUserProfile(): Promise<UserProfileData> {
     const res = await http.get<UserProfileData>('/api/auth/me')
     if (res.data && typeof res.data === 'object') {
       const serverData = res.data
+      const rawDept = serverData.department
+      const normalizedDept = normalizeDepartmentName(rawDept)
       const isComplete = Boolean(
         serverData.fullName?.trim() &&
         serverData.phoneNumber?.trim() &&
-        serverData.department?.trim()
+        normalizedDept?.trim()
       )
       
       const merged: UserProfileData = {
         ...serverData,
+        department: normalizedDept,
         email: serverData.email || email,
         isProfileComplete: isComplete,
         role: serverData.role || (tokenRole === 'admin' ? 'Admin' : tokenRole === 'lecturer' ? 'Faculty' : tokenRole === 'staff' ? 'Staff' : 'Student')
@@ -60,7 +64,10 @@ export async function fetchUserProfile(): Promise<UserProfileData> {
     try {
       const parsed = JSON.parse(cached)
       if (parsed && typeof parsed === 'object') {
-        return parsed
+        return {
+          ...parsed,
+          department: normalizeDepartmentName(parsed.department)
+        }
       }
     } catch {
       // Bỏ qua lỗi parse
@@ -98,15 +105,19 @@ export async function updateUserProfile(data: Partial<UserProfileData>): Promise
     }
   }
 
+  const deptToUse = data.department !== undefined ? data.department : current.department
+  const normalizedDept = normalizeDepartmentName(deptToUse)
+
   const isComplete = Boolean(
     (data.fullName ?? current.fullName)?.trim() &&
     (data.phoneNumber ?? current.phoneNumber)?.trim() &&
-    (data.department ?? current.department)?.trim()
+    normalizedDept?.trim()
   )
 
   const updatedPayload: UserProfileData = {
     ...current,
     ...data,
+    department: normalizedDept,
     email: email || current.email || '',
     isProfileComplete: isComplete,
     role: data.role || current.role || (getUserRole() === 'admin' ? 'Admin' : 'Student')
@@ -118,6 +129,7 @@ export async function updateUserProfile(data: Partial<UserProfileData>): Promise
       const merged: UserProfileData = {
         ...updatedPayload,
         ...res.data,
+        department: normalizeDepartmentName(res.data.department || updatedPayload.department),
         isProfileComplete: isComplete
       }
       localStorage.setItem(storageKey, JSON.stringify(merged))

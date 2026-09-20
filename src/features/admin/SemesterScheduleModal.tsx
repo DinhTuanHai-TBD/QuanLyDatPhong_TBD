@@ -18,7 +18,7 @@ import {
   Typography,
   Tabs,
   Badge,
-  message
+  App
 } from 'antd'
 import {
   CalendarOutlined,
@@ -26,7 +26,8 @@ import {
   UserOutlined,
   BookOutlined,
   SafetyCertificateOutlined,
-  FileExcelOutlined
+  FileExcelOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
@@ -43,6 +44,13 @@ import {
 import { http } from '../../api/http'
 import { useQueryClient } from '@tanstack/react-query'
 import SemesterScheduleExcelImport from './SemesterScheduleExcelImport'
+import {
+  ALL_DEPARTMENT_OPTIONS,
+  getMajorsByFaculty,
+  buildNotesWithMajor,
+  cleanMajorValue,
+  normalizeDepartmentName
+} from '../../utils/academicPrograms'
 
 dayjs.extend(isBetween)
 
@@ -70,6 +78,7 @@ export default function SemesterScheduleModal({
   currentUserName = 'Quản lý Đào tạo & CSVC',
   onScheduleCreated
 }: SemesterScheduleModalProps) {
+  const { message } = App.useApp()
   const [form] = Form.useForm()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -99,6 +108,26 @@ export default function SemesterScheduleModal({
   const [isSchoolOverride, setIsSchoolOverride] = useState<boolean>(true)
   const [isSubmitHovered, setIsSubmitHovered] = useState<boolean>(false)
 
+  // Khoa / Đơn vị & Ngành học watchers
+  const selectedDepartment = Form.useWatch('department', form)
+  const availableMajors = useMemo(() => {
+    return getMajorsByFaculty(selectedDepartment)
+  }, [selectedDepartment])
+
+  const departmentOptions = useMemo(() => {
+    return ALL_DEPARTMENT_OPTIONS.map(d => ({
+      label: d.label,
+      value: d.value
+    }))
+  }, [])
+
+  const majorOptions = useMemo(() => {
+    return availableMajors.map(m => ({
+      label: m.label,
+      value: m.value
+    }))
+  }, [availableMajors])
+
   // Permission authorization check
   const isAuthorized = useMemo(() => {
     const role = (currentUserRole || '').toLowerCase()
@@ -125,6 +154,7 @@ export default function SemesterScheduleModal({
         semester: selectedSemester,
         academicYear: selectedAcademicYear,
         daysOfWeek: selectedDays,
+        department: normalizeDepartmentName(form.getFieldValue('department')) || 'Khoa Công nghệ thông tin và Bán dẫn',
       })
     }
   }, [open, selectedSemester, selectedAcademicYear])
@@ -223,9 +253,6 @@ export default function SemesterScheduleModal({
       const roomName = selectedRoom?.name || `Phòng ${selectedRoomId}`
 
       // 1. If Override is enabled, cancel/reject conflicting bookings
-      const localBookingsStr = localStorage.getItem('tbd_admin_bookings')
-      let localBookingsList: Booking[] = localBookingsStr ? JSON.parse(localBookingsStr) : []
-
       if (isSchoolOverride && conflictResult.allConflictingBookings.length > 0) {
         for (const conflict of conflictResult.allConflictingBookings) {
           const cancelReason = `Ưu tiên Thời khóa biểu chính khóa Nhà trường: ${values.subjectName} (${values.classCode || 'Lớp HP'}) - ${semesterPreset.shortLabel}`
@@ -235,30 +262,21 @@ export default function SemesterScheduleModal({
               reason: cancelReason
             })
           } catch {
-            // Fallback for API failure
-          }
-
-          // Update in local array
-          const idx = localBookingsList.findIndex(b => b.id === conflict.id)
-          if (idx > -1) {
-            localBookingsList[idx] = {
-              ...localBookingsList[idx],
-              status: 'Cancelled',
-              rejectReason: cancelReason,
-              rejectionReason: cancelReason,
-              adminNotes: 'Điều chỉnh ưu tiên theo Thời khóa biểu chính khóa của Nhà trường'
-            }
+            // Log rejection failure
           }
         }
       }
 
       // 2. Create academic sessions
       const createdBookings: Booking[] = []
-      const baseId = Date.now()
+      const cleanMajor = cleanMajorValue(values.major)
+      const userNotes = (values.notes || '').trim()
 
       for (let i = 0; i < sessionsToCreate.length; i++) {
         const session = sessionsToCreate[i]
-        const bookingId = baseId + i + Math.floor(Math.random() * 1000)
+
+        const defaultNote = `Lịch học chính khóa | Môn: ${values.subjectName} | Mã HP: ${values.subjectCode || 'N/A'} | Lớp: ${values.classCode || 'N/A'} | ${periodDisplayLabel} | ${session.dayOfWeekLabel}`
+        const sessionNotes = buildNotesWithMajor(userNotes || defaultNote, cleanMajor)
 
         const payload: CreateBookingPayload = {
           roomId: selectedRoomId,
@@ -267,9 +285,9 @@ export default function SemesterScheduleModal({
           purpose: `[TKB ${semesterPreset.shortLabel}] ${values.subjectName} (${values.classCode || 'HP'}) - GV: ${values.lecturerName || 'Bộ môn'}`,
           status: 'Approved',
           participantCount: values.participantCount || selectedRoom?.capacity || 40,
-          department: values.department || 'Phòng Quản lý Đào tạo & CSVC',
+          department: normalizeDepartmentName(values.department) || 'Phòng Quản lý Đào tạo & CSVC',
           personInCharge: values.lecturerName || currentUserName,
-          notes: `Lịch học chính khóa | Môn: ${values.subjectName} | Mã HP: ${values.subjectCode || 'N/A'} | Lớp: ${values.classCode || 'N/A'} | ${periodDisplayLabel} | ${session.dayOfWeekLabel}`,
+          notes: sessionNotes,
           isSchoolOverride: true,
           IsSchoolOverride: true,
           semester: semesterPreset.shortLabel,
@@ -284,56 +302,18 @@ export default function SemesterScheduleModal({
           adminNotes: 'Thời khóa biểu chính khóa do Phòng Quản lý Đào tạo sắp xếp.'
         }
 
-        let apiSuccess = false
-        try {
-          const res = await http.post<Booking>('/api/bookings', payload)
-          if (res.data && res.data.id) {
-            createdBookings.push(res.data)
-            apiSuccess = true
-          }
-        } catch {
-          // Handled below
-        }
-
-        if (!apiSuccess) {
-          const localItem: Booking = {
-            id: bookingId,
-            roomId: selectedRoomId,
-            roomName: roomName,
-            startTime: session.startTime,
-            endTime: session.endTime,
-            purpose: payload.purpose,
-            status: 'Approved',
-            participantCount: payload.participantCount,
-            department: payload.department,
-            personInCharge: payload.personInCharge,
-            notes: payload.notes,
-            isSchoolOverride: true,
-            IsSchoolOverride: true,
-            semester: payload.semester,
-            academicYear: payload.academicYear,
-            subjectCode: payload.subjectCode,
-            subjectName: payload.subjectName,
-            classCode: payload.classCode,
-            lecturerName: payload.lecturerName,
-            periodInfo: payload.periodInfo,
-            approvedBy: currentUserName,
-            approvedAt: new Date().toISOString(),
-            adminNotes: payload.adminNotes,
-            userEmail: currentUserEmail || 'quanly@tbd.edu.vn'
-          }
-          createdBookings.push(localItem)
+        const res = await http.post<Booking>('/api/bookings', payload)
+        if (res.data) {
+          createdBookings.push(res.data)
         }
       }
-
-      // Merge newly created bookings into localStorage
-      const mergedList = [...createdBookings, ...localBookingsList]
-      localStorage.setItem('tbd_admin_bookings', JSON.stringify(mergedList))
 
       // Refresh react-query caches
       await queryClient.invalidateQueries({ queryKey: ['bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
+      await queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
 
       message.success({
         content: `Đã lưu thành công Thời khóa biểu chính khóa: ${createdBookings.length} buổi học tại ${roomName} (${semesterLabel}).`,
@@ -476,6 +456,7 @@ export default function SemesterScheduleModal({
                 id="btn-confirm-semester-schedule"
                 key="submit"
                 type="primary"
+                icon={<CheckCircleOutlined />}
                 loading={isSubmitting}
                 onClick={() => form.submit()}
                 style={{
@@ -517,7 +498,7 @@ export default function SemesterScheduleModal({
         <Alert
           type="error"
           showIcon
-          message="Không có quyền truy cập chức năng này"
+          title="Không có quyền truy cập chức năng này"
           description="Chỉ tài khoản Quản lý Đào tạo & CSVC (quanly@tbd.edu.vn) và Quản trị viên (admin@tbd.edu.vn) mới có quyền tạo Thời khóa biểu định kỳ và phân bổ phòng học theo học kỳ."
           style={{ marginBottom: 16 }}
         />
@@ -551,7 +532,9 @@ export default function SemesterScheduleModal({
                   fromPeriod: 1,
                   toPeriod: 3,
                   isSchoolOverride: true,
-                  participantCount: 45
+                  participantCount: 45,
+                  department: 'Khoa Công nghệ thông tin và Bán dẫn',
+                  major: undefined
                 }}
               >
         <Row gutter={16} align="stretch">
@@ -982,9 +965,9 @@ export default function SemesterScheduleModal({
                   </Col>
                 </Row>
 
-                {/* Giảng viên phụ trách & Khoa/Bộ môn (2 ô song song) */}
-                <Row gutter={8}>
-                  <Col span={12}>
+                {/* Giảng viên phụ trách */}
+                <Row gutter={8} style={{ marginBottom: 8 }}>
+                  <Col span={24}>
                     <Form.Item
                       label={<span style={{ fontSize: 12, fontWeight: 600 }}>Giảng viên phụ trách</span>}
                       name="lecturerName"
@@ -994,13 +977,67 @@ export default function SemesterScheduleModal({
                       <Input placeholder="VD: TS. Nguyễn Văn A" prefix={<UserOutlined style={{ color: '#94a3b8' }} />} />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                </Row>
+
+                {/* Khoa / Đơn vị & Ngành học (2 ô riêng biệt có tìm kiếm, đổi khoa xóa ngành, khóa khi không có ngành) */}
+                <Row gutter={8} style={{ marginBottom: 8 }}>
+                  <Col xs={24} sm={12}>
                     <Form.Item
-                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Khoa / Bộ môn</span>}
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Khoa / Đơn vị</span>}
                       name="department"
+                      rules={[{ required: true, message: 'Vui lòng chọn Khoa hoặc Đơn vị!' }]}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="VD: Khoa CNTT" />
+                      <Select
+                        showSearch
+                        placeholder="Chọn Khoa / Đơn vị"
+                        options={departmentOptions}
+                        filterOption={(input, option) =>
+                          ((option?.label as string) || '').toLowerCase().includes(input.toLowerCase())
+                        }
+                        onChange={() => {
+                          // Đổi khoa xóa ngành cũ đã chọn
+                          form.setFieldsValue({ major: undefined })
+                        }}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Ngành học</span>}
+                      name="major"
+                      style={{ marginBottom: 0 }}
+                      tooltip="Chỉ hiển thị các ngành thuộc khoa đã chọn. Bỏ trống nếu không áp dụng."
+                    >
+                      <Select
+                        showSearch
+                        allowClear
+                        disabled={!selectedDepartment || availableMajors.length === 0}
+                        placeholder={
+                          !selectedDepartment
+                            ? 'Chọn Khoa trước'
+                            : availableMajors.length === 0
+                            ? 'Đơn vị không có ngành'
+                            : 'Chọn ngành học (tùy chọn)'
+                        }
+                        options={majorOptions}
+                        filterOption={(input, option) =>
+                          ((option?.label as string) || '').toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                {/* Ghi chú học phần */}
+                <Row gutter={8}>
+                  <Col span={24}>
+                    <Form.Item
+                      label={<span style={{ fontSize: 12, fontWeight: 600 }}>Ghi chú học phần (tùy chọn)</span>}
+                      name="notes"
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="VD: Lớp chất lượng cao, thực hành phòng Lab..." />
                     </Form.Item>
                   </Col>
                 </Row>

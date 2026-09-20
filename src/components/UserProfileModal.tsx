@@ -11,6 +11,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateUserProfile, type UserProfileData } from '../api/userProfile'
 import { getUserEmail } from '../api/authUtils'
+import { normalizeDepartmentName } from '../utils/academicPrograms'
 
 interface UserProfileModalProps {
   open: boolean
@@ -36,7 +37,7 @@ export default function UserProfileModal({
     if (open) {
       form.setFieldsValue({
         fullName: userProfile?.fullName || '',
-        department: userProfile?.department || '',
+        department: normalizeDepartmentName(userProfile?.department) || '',
         phoneNumber: userProfile?.phoneNumber || '',
         userCode: userProfile?.userCode || '',
       })
@@ -62,7 +63,7 @@ export default function UserProfileModal({
       setIsSubmitting(true)
       await updateMutation.mutateAsync({
         fullName: values.fullName?.trim(),
-        department: values.department?.trim(),
+        department: normalizeDepartmentName(values.department),
         phoneNumber: values.phoneNumber?.trim(),
         userCode: values.userCode?.trim(),
       })
@@ -155,7 +156,7 @@ export default function UserProfileModal({
           >
             <Input 
               prefix={<BankOutlined style={{ color: '#94a3b8' }} />} 
-              placeholder="Ví dụ: Khoa Công nghệ & Kỹ thuật, Phòng Quản trị thiết bị, Lớp 21CNTT..." 
+              placeholder="Ví dụ: Khoa Công nghệ thông tin và Bán dẫn, Phòng Quản lý Đào tạo & CSVC, Lớp 21CNTT..." 
               size="large"
             />
           </Form.Item>

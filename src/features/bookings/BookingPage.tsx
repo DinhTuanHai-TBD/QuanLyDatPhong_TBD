@@ -1,7 +1,7 @@
 import { Alert, Button, Card, DatePicker, Form, Input, Select, Typography, App, Row, Col, InputNumber, Checkbox, Modal, Tag, Space, Steps } from 'antd'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { 
-  ThunderboltOutlined, 
+  CheckCircleOutlined, 
   EnvironmentOutlined, 
   TeamOutlined, 
   LeftOutlined, 
@@ -26,12 +26,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { http } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
-import { getOfficialRooms, cleanupLocalStorageRooms, isFakeOrDisallowedRoom } from '../../utils/roomUtils'
+import { getOfficialRooms } from '../../utils/roomUtils'
 import type { Booking, CreateBookingPayload } from '../../types/booking'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
-import { fetchUserProfile, type UserProfileData } from '../../api/userProfile'
+import { type UserProfileData } from '../../api/userProfile'
 import type { EquipmentItem } from '../admin/AdminPage'
 import { EquipmentSelector } from './EquipmentSelector'
+import { normalizeDepartmentName } from '../../utils/academicPrograms'
+import {
+  useBookingSettings,
+  validateBookingAgainstSettings,
+  generateOperatingSlots,
+  checkClosedPeriodOverlap,
+} from '../../api/bookingSettings'
+import { toVN } from '../../utils/dateUtils'
 
 
 
@@ -70,80 +78,14 @@ interface SubmitFormValues {
 }
 
 async function fetchRooms(): Promise<Room[]> {
-  cleanupLocalStorageRooms()
-  try {
-    const res = await http.get<Room[]>('/api/rooms')
-    if (Array.isArray(res.data) && res.data.length > 0) {
-      return res.data.filter((r) => !isFakeOrDisallowedRoom(r))
-    }
-  } catch (err) {
-    console.warn('GET /api/rooms failed, using fallback/local storage', err)
+  const res = await http.get<Room[]>('/api/rooms')
+  if (Array.isArray(res.data)) {
+    return res.data
   }
-
-  const localStr = localStorage.getItem('tbd_admin_rooms')
-  if (localStr) {
-    try {
-      const parsed = JSON.parse(localStr)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((r: any) => !isFakeOrDisallowedRoom(r))
-      }
-    } catch {
-      // ignore
-    }
+  if (res.data && Array.isArray((res.data as any).data)) {
+    return (res.data as any).data
   }
-  return getOfficialRooms()
-}
-
-
-function checkTimeLimits(
-  selectedDate: dayjs.Dayjs,
-  startTime: string | null,
-  endTime: string | null,
-  role: string,
-  roomType: string | number
-): string[] {
-  const violations: string[] = []
-  if (!startTime || !endTime) return violations
-
-  const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
-  const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
-  
-  if (et.isSameOrBefore(st)) return violations
-
-  const durationHours = et.diff(st, 'hour', true)
-  const hoursAhead = st.diff(dayjs(), 'hour', true)
-  const daysAhead = st.diff(dayjs().startOf('day'), 'day', true)
-
-  const isEvent = roomType === 'LectureHall'
-  
-  if (isEvent) {
-    if (daysAhead < 2) violations.push('Phải đặt phòng trước ít nhất 2 ngày (Hội trường/Sự kiện).')
-    if (daysAhead > 120) violations.push('Chỉ được đặt phòng trước tối đa 120 ngày (Hội trường/Sự kiện).')
-    if (durationHours > 14) violations.push(`Thời gian sử dụng tối đa là 14 giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
-  } else {
-    if (role === 'student') {
-      if (hoursAhead < 12) violations.push('Sinh viên phải đặt phòng trước ít nhất 12 giờ.')
-      if (daysAhead > 30) violations.push('Sinh viên chỉ được đặt phòng trước tối đa 30 ngày.')
-      if (durationHours > 5) violations.push(`Thời gian sử dụng tối đa của sinh viên là 5 giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
-    } else { 
-      if (hoursAhead < 2) violations.push('Phải đặt phòng trước ít nhất 2 giờ.')
-      if (daysAhead > 60) violations.push('Chỉ được đặt phòng trước tối đa 60 ngày.')
-      if (durationHours > 8) violations.push(`Thời gian sử dụng tối đa là 8 giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
-    }
-  }
-
-  const dayOfWeek = st.day()
-  if (dayOfWeek === 0) {
-    violations.push('Đặt phòng vào Chủ nhật.')
-  }
-  
-  const startHour = st.hour() + st.minute() / 60
-  const endHour = et.hour() + et.minute() / 60
-  if (startHour < 7 || endHour > 21) {
-    violations.push('Thời gian đặt phòng ngoài giờ hoạt động thông thường (07:00 - 21:00).')
-  }
-
-  return violations
+  return []
 }
 
 const ADMIN_EVENT_SUGGESTIONS = [
@@ -170,20 +112,15 @@ const STAFF_EVENT_SUGGESTIONS = [
 ]
 
 function BookingPage() {
-  const userRole = (localStorage.getItem('testRole') || localStorage.getItem('userRole') || getUserRole() || '').toLowerCase();
-  const userEmail = (localStorage.getItem('userEmail') || getUserEmail() || '').toLowerCase();
+  const userRole = (getUserRole() || '').toLowerCase();
+  const userEmail = (getUserEmail() || '').toLowerCase();
 
   // 1. Trích xuất thông tin người dùng thực tế từ API GET /api/auth/me
   const { data: userProfile } = useQuery<UserProfileData>({
     queryKey: ['user-profile'],
     queryFn: async () => {
-      try {
-        const res = await http.get('/api/auth/me');
-        if (res.data) return res.data;
-      } catch (err) {
-        console.warn('API /api/auth/me chưa phản hồi, dùng bộ nhớ cache', err);
-      }
-      return fetchUserProfile();
+      const res = await http.get('/api/auth/me');
+      return res.data;
     }
   });
 
@@ -220,7 +157,7 @@ function BookingPage() {
 
       const nextValues: any = {};
       if (!currentDept) {
-        nextValues.department = userProfile.department || (isAdmin ? 'Phòng Quản trị thiết bị & Ban Quản trị' : '');
+        nextValues.department = normalizeDepartmentName(userProfile.department) || (isAdmin ? 'Phòng Quản trị thiết bị & Ban Quản trị' : '');
       }
       if (!currentPerson) {
         nextValues.personName = userProfile.fullName || (isAdmin ? 'Ban Quản trị Cơ sở vật chất' : '');
@@ -302,128 +239,53 @@ function BookingPage() {
 
 
   const roomsQuery = useQuery({ queryKey: ['rooms'], queryFn: fetchRooms })
-  
-  const DEFAULT_EQUIPMENTS: EquipmentItem[] = [
-    {
-      id: 101,
-      code: 'EQ-MC-001',
-      name: 'Micro không dây Shure (Bộ 2 mic)',
-      type: 'Microphone',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 10,
-      status: 'Active',
-    },
-    {
-      id: 102,
-      code: 'EQ-SP-002',
-      name: 'Loa kéo công suất lớn 500W',
-      type: 'Sound System',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 5,
-      status: 'Active',
-    },
-    {
-      id: 103,
-      code: 'EQ-PJ-003',
-      name: 'Máy chiếu di động Panasonic PT-LB386',
-      type: 'Projector',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 4,
-      status: 'Active',
-    },
-    {
-      id: 104,
-      code: 'EQ-CAM-004',
-      name: 'Webcam/Camera họp & giảng dạy trực tuyến HD',
-      type: 'Camera',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 6,
-      status: 'Active',
-    },
-    {
-      id: 105,
-      code: 'EQ-BO-005',
-      name: 'Bảng di động Flipchart / Bảng phụ',
-      type: 'Board',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 8,
-      status: 'Active',
-    },
-    {
-      id: 106,
-      code: 'EQ-EXT-006',
-      name: 'Ổ cắm điện kéo dài (Dây 10m)',
-      type: 'Extension Cord',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 12,
-      status: 'Active',
-    },
-    {
-      id: 107,
-      code: 'EQ-PRES-007',
-      name: 'Bút trình chiếu Laser (Presenter)',
-      type: 'Presenter',
-      roomId: null,
-      roomName: 'Kho thiết bị dùng chung',
-      quantity: 15,
-      status: 'Active',
-    },
-  ];
 
+  const {
+    data: bookingSettings,
+    isError: isSettingsError,
+    refetch: refetchSettings
+  } = useBookingSettings()
+  
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
     queryFn: async () => {
-      try {
-        const response = await http.get<EquipmentItem[]>('/api/equipments')
-        if (Array.isArray(response.data) && response.data.length > 0) {
-          return response.data
-        }
-      } catch {
-        // Fallback to default equipments if endpoint error
+      const response = await http.get<EquipmentItem[]>('/api/equipments')
+      if (Array.isArray(response.data)) {
+        return response.data
       }
-      return DEFAULT_EQUIPMENTS
+      return []
     }
   })
 
   const bookingsQuery = useQuery({ 
      queryKey: ['all-bookings-validation'], 
      queryFn: async () => {
+      const response = await http.get('/api/bookings')
       let list: Booking[] = []
-      try {
-        const response = await http.get('/api/bookings')
-        if (Array.isArray(response.data)) {
-          list = response.data
-        } else if (response.data && Array.isArray((response.data as any).data)) {
-          list = (response.data as any).data
-        }
-      } catch {
-        // network or server error fallback
+      if (Array.isArray(response.data)) {
+        list = response.data
+      } else if (response.data && Array.isArray((response.data as any).data)) {
+        list = (response.data as any).data
       }
 
-      const localStr = localStorage.getItem('tbd_admin_bookings')
-      if (localStr) {
-        try {
-          const localList: Booking[] = JSON.parse(localStr)
-          localList.forEach((local) => {
-            const idx = list.findIndex((b) => b.id === local.id)
-            if (idx > -1) {
-              list[idx] = { ...list[idx], ...local }
-            } else {
-              list.push(local)
-            }
-          })
-        } catch {}
-      }
-
-      return list
+      return list.map(b => ({
+        ...b,
+        department: normalizeDepartmentName(b.department)
+      }))
     }
   })
+
+  const isServerDataReady =
+    !roomsQuery.isLoading &&
+    !roomsQuery.isError &&
+    !bookingsQuery.isLoading &&
+    !bookingsQuery.isError &&
+    !equipmentsQuery.isLoading &&
+    !equipmentsQuery.isError &&
+    !isSettingsError &&
+    !!bookingSettings
+  const hasServerDataError =
+    roomsQuery.isError || bookingsQuery.isError || equipmentsQuery.isError || isSettingsError
 
   const rooms = getOfficialRooms(roomsQuery.data || [])
   const selectedRoomId = Form.useWatch('roomId', form)
@@ -448,9 +310,30 @@ function BookingPage() {
   }, [selectedDate, startTime, endTime])
 
   const limitViolations = useMemo(() => {
-    if (isAdmin || !selectedRoom || !startTime || !endTime) return []
-    return checkTimeLimits(selectedDate, startTime, endTime, userRole, selectedRoom!.roomType)
-  }, [isAdmin, selectedDate, startTime, endTime, userRole, selectedRoom])
+    if (!bookingSettings || !selectedRoom || !startTime || !endTime) return []
+    const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
+    const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
+    if (et.isSameOrBefore(st)) return []
+
+    return validateBookingAgainstSettings({
+      bookingDate: selectedDate,
+      startTime: st,
+      endTime: et,
+      roomId: selectedRoom.id,
+      settings: bookingSettings,
+    })
+  }, [bookingSettings, selectedRoom, selectedDate, startTime, endTime])
+
+  const isDateDisabled = (current: dayjs.Dayjs) => {
+    if (!current) return false
+    if (!bookingSettings) return false
+    const today = toVN().startOf('day')
+    const cur = toVN(current).startOf('day')
+    if (cur.isBefore(today)) return true
+    if (cur.diff(today, 'day') > bookingSettings.maxAdvanceDays) return true
+    if (!bookingSettings.workingDays.includes(cur.day())) return true
+    return false
+  }
 
   const department = Form.useWatch('department', form)
   const personName = Form.useWatch('personName', form)
@@ -462,10 +345,18 @@ function BookingPage() {
   const specialRequestReason = Form.useWatch('specialRequestReason', form)
 
   const handleGoToStep2 = async () => {
+    if (hasServerDataError || !isServerDataReady) {
+      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      return
+    }
     try {
       await form.validateFields(['roomId', 'date'])
       if (!selectedRoom) {
         message.warning('Vui lòng chọn phòng học trước khi tiếp tục!')
+        return
+      }
+      if (isDateDisabled(selectedDate)) {
+        message.error('Ngày đã chọn không hợp lệ theo quy định (ngày nghỉ hoặc vượt quá số ngày đặt trước).')
         return
       }
       setCurrentStep(1)
@@ -476,8 +367,12 @@ function BookingPage() {
   }
 
   const handleGoToStep3 = async () => {
+    if (hasServerDataError || !isServerDataReady) {
+      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      return
+    }
     if (!startTime || !endTime) {
-      message.warning('Vui lòng chọn đầy đủ giờ bắt đầu và giờ kết thúc trên lưới 30 phút!')
+      message.warning('Vui lòng chọn đầy đủ giờ bắt đầu và giờ kết thúc trên lưới!')
       return
     }
     const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
@@ -487,12 +382,8 @@ function BookingPage() {
       return
     }
     if (limitViolations.length > 0) {
-      try {
-        await form.validateFields(['specialRequestReason'])
-      } catch {
-        message.error('Vui lòng nhập lý do phê duyệt đặc biệt!')
-        return
-      }
+      message.error('Khung giờ bạn chọn không đáp ứng quy định đặt phòng của Nhà trường. Vui lòng điều chỉnh lại!')
+      return
     }
     setCurrentStep(2)
     scrollToTop()
@@ -538,24 +429,29 @@ function BookingPage() {
     form.setFieldValue('date', selectedDate)
   }, [selectedDate, form])
 
-  // Generated slots from 07:00 to 21:00
+  // Generated slots from dynamic openTime to closeTime from API settings
+  const openTime = bookingSettings?.openTime || '07:00'
+  const closeTime = bookingSettings?.closeTime || '20:00'
+
   const slots = useMemo(() => {
-    const arr = []
-    for (let i = 7; i <= 20; i++) {
-      arr.push(`${i.toString().padStart(2, '0')}:00`)
-      arr.push(`${i.toString().padStart(2, '0')}:30`)
-    }
-    arr.push('21:00')
-    return arr
-  }, [])
+    return generateOperatingSlots(openTime, closeTime, 30)
+  }, [openTime, closeTime])
 
   const getSlotStatus = (slot: string) => {
-    if (!selectedRoom) return 'disabled'
+    if (!selectedRoom || !isServerDataReady) return 'disabled'
     const now = dayjs()
     const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
     
     if (slotTime.isBefore(now)) return 'past'
     if (String(selectedRoom.status) !== '0' && selectedRoom.status !== 'Active') return 'inactive'
+
+    // Check closed / maintenance periods
+    if (bookingSettings?.closedPeriods && bookingSettings.closedPeriods.length > 0) {
+      const slotStart = slotTime
+      const slotEnd = slotTime.add(30, 'minute')
+      const closedHit = checkClosedPeriodOverlap(selectedRoom.id, slotStart, slotEnd, bookingSettings.closedPeriods)
+      if (closedHit) return 'maintenance'
+    }
 
     const bookings = bookingsQuery.data || []
     const roomBookings = bookings.filter(b => b.roomId === selectedRoom.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
@@ -568,7 +464,7 @@ function BookingPage() {
       const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
       if (slotTime.isAfter(st) && slotTime.isBefore(et)) return 'in-between'
       
-      if (slot === '21:00') return 'available'
+      if (slot === closeTime) return 'available'
       const blockEnd = slotTime.add(30, 'minute')
       for (const b of roomBookings) {
         const bStart = dayjs(b.startTime)
@@ -586,7 +482,7 @@ function BookingPage() {
       const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
       
       if (slotTime.isBefore(st)) {
-        if (slot === '21:00') return 'disabled'
+        if (slot === closeTime) return 'disabled'
         const blockEnd = slotTime.add(30, 'minute')
         for (const b of roomBookings) {
           const bStart = dayjs(b.startTime)
@@ -613,7 +509,7 @@ function BookingPage() {
       return 'available'
 
     } else {
-      if (slot === '21:00') return 'disabled'
+      if (slot === closeTime) return 'disabled'
       
       const blockEnd = slotTime.add(30, 'minute')
       for (const b of roomBookings) {
@@ -629,7 +525,28 @@ function BookingPage() {
   }
 
   const handleSlotClick = (slot: string) => {
+    if (!isServerDataReady) {
+      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      return
+    }
     const status = getSlotStatus(slot)
+    if (status === 'disabled') {
+      if (hasServerDataError || !isServerDataReady) {
+        message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      }
+      return
+    }
+    if (status === 'maintenance') {
+      const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
+      const slotEnd = slotTime.add(30, 'minute')
+      const closedHit = checkClosedPeriodOverlap(selectedRoom?.id, slotTime, slotEnd, bookingSettings?.closedPeriods)
+      message.warning({
+        content: `Khung giờ ${slot} thuộc khoảng thời gian tạm ngưng hoạt động / bảo trì (${closedHit?.reason || 'Bảo trì'}). Vui lòng chọn khung giờ khác!`,
+        duration: 3.5,
+      })
+      return
+    }
+
     if (status === 'past' || status === 'inactive' || status === 'pending' || status === 'approved') {
       const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
       const blockEnd = slotTime.add(30, 'minute')
@@ -651,8 +568,8 @@ function BookingPage() {
     }
 
     if (!startTime || (startTime && endTime)) {
-      if (slot === '21:00') {
-        message.warning('Không thể chọn 21:00 làm giờ bắt đầu.')
+      if (slot === closeTime) {
+        message.warning(`Không thể chọn giờ đóng cửa (${closeTime}) làm giờ bắt đầu.`)
         return
       }
       setStartTime(slot)
@@ -663,15 +580,14 @@ function BookingPage() {
       const clickTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
       
       if (clickTime.isBefore(st) || clickTime.isSame(st)) {
-        message.warning('Giờ kết thúc phải sau giờ bắt đầu. Đã đặt lại giờ bắt đầu.')
-        if (slot === '21:00') {
-          setStartTime(null)
-          form.setFieldsValue({ startTime: undefined })
-        } else {
-          setStartTime(slot)
-          setEndTime(null)
-          form.setFieldsValue({ startTime: slot, endTime: undefined })
+        if (slot === closeTime) {
+          message.warning(`Không thể chọn ${closeTime} làm giờ bắt đầu.`)
+          return
         }
+        message.warning('Giờ kết thúc phải sau giờ bắt đầu. Đã đặt lại giờ bắt đầu.')
+        setStartTime(slot)
+        setEndTime(null)
+        form.setFieldsValue({ startTime: slot, endTime: undefined })
       } else {
         // check conflict in between
         const proposedEnd = clickTime
@@ -689,10 +605,18 @@ function BookingPage() {
             break
           }
         }
+
+        // Also check maintenance periods in proposed range
+        if (!hasConflict && bookingSettings?.closedPeriods) {
+          const closedHit = checkClosedPeriodOverlap(selectedRoom?.id, st, proposedEnd, bookingSettings.closedPeriods)
+          if (closedHit) {
+            hasConflict = true
+          }
+        }
         
         if (hasConflict) {
-          message.error('Khoảng thời gian này đã có người đặt, vui lòng chọn lại!')
-          if (slot !== '21:00') {
+          message.error('Khoảng thời gian này đã có người đặt hoặc vướng lịch bảo trì, vui lòng chọn lại!')
+          if (slot !== closeTime) {
             setStartTime(slot)
             setEndTime(null)
             form.setFieldsValue({ startTime: slot, endTime: undefined })
@@ -716,11 +640,24 @@ function BookingPage() {
   }
 
   const handlePrevDay = () => {
-    setSelectedDate(prev => prev.subtract(1, 'day'))
+    const prev = selectedDate.subtract(1, 'day')
+    if (isDateDisabled(prev)) {
+      message.warning('Ngày trước đó không nằm trong khoảng thời gian hợp lệ hoặc đã qua.')
+      return
+    }
+    setSelectedDate(prev)
+    form.setFieldValue('date', prev)
     handleResetTime()
   }
+
   const handleNextDay = () => {
-    setSelectedDate(prev => prev.add(1, 'day'))
+    const next = selectedDate.add(1, 'day')
+    if (isDateDisabled(next)) {
+      message.warning('Ngày tiếp theo không nằm trong khoảng thời gian hợp lệ hoặc vượt quá số ngày đặt trước.')
+      return
+    }
+    setSelectedDate(next)
+    form.setFieldValue('date', next)
     handleResetTime()
   }
 
@@ -820,51 +757,26 @@ function BookingPage() {
 
   const createMutation = useMutation({
     mutationFn: async (payload: CreateBookingPayload) => {
-      let createdBooking: Booking | null = null
-      try {
-        const response = await http.post<Booking>('/api/bookings', payload)
-        createdBooking = response.data
-      } catch (err) {
-        console.warn("API /api/bookings failed, falling back to local state", err)
+      const response = await http.post<Booking>('/api/bookings', payload)
+      return response.data
+    },
+    onError: (err: any) => {
+      const isNetworkError = !err?.response || err?.code === 'ERR_NETWORK' || !window.navigator.onLine
+      if (isNetworkError) {
+        message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      } else {
+        const backendError = err?.response?.data?.message || err?.response?.data?.error || (typeof err?.response?.data === 'string' ? err.response.data : null) || err?.message || 'Thất bại khi gửi yêu cầu đặt phòng'
+        message.error('Gửi yêu cầu thất bại: ' + backendError)
       }
-
-      const bookingItem: Booking = createdBooking || {
-        id: Date.now(),
-        roomId: payload.roomId,
-        roomName: selectedRoom?.name || 'Phòng học',
-        startTime: payload.startTime,
-        endTime: payload.endTime,
-        purpose: payload.purpose,
-        status: payload.status || 'Pending',
-        participantCount: payload.participantCount,
-        requestedEquipments: payload.requestedEquipments,
-        department: payload.department,
-        personInCharge: payload.personInCharge,
-        notes: payload.notes,
-        isSpecialRequest: payload.isSpecialRequest,
-        specialRequestReason: payload.specialRequestReason,
-        agreedToRules: payload.agreedToRules,
-        userEmail: userEmail || 'hai.230057@tbd.edu.vn',
-        approvedBy: payload.approvedBy,
-        approvedAt: payload.approvedAt
-      }
-
-      try {
-        const localStr = localStorage.getItem('tbd_admin_bookings')
-        const currentList: Booking[] = localStr ? JSON.parse(localStr) : []
-        const exists = currentList.some(b => b.id === bookingItem.id)
-        if (!exists) {
-          localStorage.setItem('tbd_admin_bookings', JSON.stringify([bookingItem, ...currentList]))
-        }
-      } catch (e) {
-        console.warn("Could not save booking to localStorage", e)
-      }
-
-      return bookingItem
     }
   })
 
   const submitBooking = (values: SubmitFormValues) => {
+    if (hasServerDataError || !isServerDataReady) {
+      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+      return
+    }
+
     if (!isStaffOrFaculty && !values.agreedToRules) {
       message.error('Vui lòng đồng ý với nội quy sử dụng phòng.');
       return;
@@ -896,7 +808,30 @@ function BookingPage() {
       return
     }
 
-    const limitViolations = isAdmin ? [] : checkTimeLimits(values.date, startTime, endTime, userRole, selectedRoom.roomType);
+    const violations = validateBookingAgainstSettings({
+      bookingDate: values.date,
+      startTime: st,
+      endTime: et,
+      roomId: selectedRoom.id,
+      settings: bookingSettings,
+    })
+
+    if (violations.length > 0) {
+      Modal.error({
+        title: 'Yêu cầu không thể thực hiện do vi phạm quy định',
+        content: (
+          <div>
+            <p>Khung giờ hoặc phòng bạn chọn không đáp ứng quy định của Nhà trường:</p>
+            <ul style={{ paddingLeft: 18, color: '#dc2626' }}>
+              {violations.map((v, idx) => (
+                <li key={idx} style={{ marginBottom: 4 }}>{v}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      })
+      return
+    }
 
     let finalStatus: Booking['status'] = 'Pending';
     let finalNotes = values.notes;
@@ -910,8 +845,6 @@ function BookingPage() {
         : (isWalkInBooking ? '[Hệ thống]: Tiếp nhận đặt trực tiếp tại quầy và phê duyệt bởi Quản trị viên' : '[Hệ thống]: Đặt và duyệt trực tiếp bởi Quản trị viên');
       finalApprovedBy = userEmail || 'admin@tbd.edu.vn';
       finalApprovedAt = new Date().toISOString();
-    } else {
-      finalStatus = limitViolations.length > 0 ? 'PendingSpecial' : 'Pending';
     }
 
     const personInChargeFormatted = values.phoneNumber 
@@ -925,27 +858,29 @@ function BookingPage() {
       purpose: values.purpose,
       participantCount: values.participantCount,
       requestedEquipments: values.requestedEquipments || [],
-      department: values.department,
+      department: normalizeDepartmentName(values.department),
       personInCharge: personInChargeFormatted,
-      isSpecialRequest: !isAdmin && limitViolations.length > 0,
-      specialRequestReason: values.specialRequestReason,
+      isSpecialRequest: false,
+      specialRequestReason: undefined,
       agreedToRules: isStaffOrFaculty ? true : values.agreedToRules,
       notes: finalNotes,
       status: finalStatus,
       approvedBy: finalApprovedBy,
       approvedAt: finalApprovedAt,
     }, {
-      onSuccess: () => {
+      onSuccess: (createdBooking: any) => {
         triggerConfetti()
+        const realStatus = createdBooking?.status != null ? String(createdBooking.status) : finalStatus
         setSuccessBookingInfo({
-          roomName: selectedRoom.name || 'Phòng học',
+          roomName: createdBooking?.roomName || selectedRoom.name || 'Phòng học',
           dateStr: values.date.format('DD/MM/YYYY'),
           timeRange: `${startTime} - ${endTime}`,
-          purpose: values.purpose,
-          participantCount: values.participantCount,
-          status: finalStatus
+          purpose: createdBooking?.purpose || values.purpose,
+          participantCount: createdBooking?.participantCount || values.participantCount,
+          status: realStatus
         })
         setSuccessModalVisible(true)
+        const isApproved = realStatus === '1' || realStatus === 'Approved'
         if (isAdmin) {
           if (isWalkInBooking) {
             message.success(`Đã tiếp nhận và duyệt đặt phòng trực tiếp tại quầy cho ${values.personName}! Lịch phòng đã được cập nhật.`)
@@ -953,11 +888,11 @@ function BookingPage() {
             message.success("Đặt phòng và phê duyệt trực tiếp thành công! Lịch phòng đã được cập nhật.")
           }
         } else if (isFaculty) {
-          message.success("Đã gửi yêu cầu đặt phòng giảng dạy! Đơn được xếp ưu tiên xét duyệt cấp 1.")
+          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng giảng dạy! Đơn được xếp ưu tiên xét duyệt cấp 1.")
         } else if (isStaff) {
-          message.success("Đã gửi yêu cầu đặt phòng làm việc! Đơn được xếp ưu tiên xét duyệt cấp 1.")
+          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng làm việc! Đơn được xếp ưu tiên xét duyệt cấp 1.")
         } else {
-          message.success("Gửi yêu cầu đặt phòng thành công! Vui lòng chờ phê duyệt.")
+          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Gửi yêu cầu đặt phòng thành công! Vui lòng chờ phê duyệt.")
         }
         form.resetFields(['purpose', 'participantCount', 'requestedEquipments', 'notes', 'agreedToRules', 'specialRequestReason'])
         if (isWalkInBooking) {
@@ -974,10 +909,19 @@ function BookingPage() {
         queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
         queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
         queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
+        queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
+        queryClient.invalidateQueries({ queryKey: ['bookings'] })
+        queryClient.invalidateQueries({ queryKey: ['room-bookings'] })
+        queryClient.invalidateQueries({ queryKey: ['rooms'] })
       },
       onError: (err: any) => {
-        const backendError = err.response?.data?.error || err.response?.data?.message || err.message || 'Thất bại khi đặt phòng';
-        message.error('Gửi yêu cầu thất bại: ' + backendError);
+        const isNetworkError = !err?.response || err?.code === 'ERR_NETWORK' || !window.navigator.onLine
+        if (isNetworkError) {
+          message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+        } else {
+          const backendError = err.response?.data?.error || err.response?.data?.message || (typeof err.response?.data === 'string' ? err.response.data : null) || err.message || 'Thất bại khi đặt phòng';
+          message.error('Gửi yêu cầu thất bại: ' + backendError);
+        }
       }
     })
   }
@@ -1021,6 +965,25 @@ function BookingPage() {
             </Card>
           </div>
         </div>
+      </main>
+    )
+  }
+
+  if (roomsQuery.isError) {
+    return (
+      <main className="app-content" style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
+        <Alert
+          type="error"
+          showIcon
+          message="Không thể kết nối máy chủ để tải danh sách phòng"
+          description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
+          action={
+            <Button danger type="primary" onClick={() => roomsQuery.refetch()}>
+              Thử lại
+            </Button>
+          }
+          style={{ borderRadius: 12, padding: 24 }}
+        />
       </main>
     )
   }
@@ -1146,6 +1109,33 @@ function BookingPage() {
                   </Typography.Text>
                 </div>
 
+                {hasServerDataError && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="Không thể kết nối với máy chủ"
+                    description={
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        <span>Dữ liệu phòng, thiết bị hoặc quy định chưa thể tải từ máy chủ. Vui lòng kiểm tra lại kết nối mạng.</span>
+                        <Button
+                          size="small"
+                          danger
+                          onClick={() => {
+                            roomsQuery.refetch()
+                            bookingsQuery.refetch()
+                            equipmentsQuery.refetch()
+                            refetchSettings()
+                          }}
+                          icon={<ReloadOutlined />}
+                        >
+                          Thử lại
+                        </Button>
+                      </div>
+                    }
+                    style={{ marginBottom: 16, borderRadius: 8 }}
+                  />
+                )}
+
                 <Row gutter={20}>
                   <Col xs={24} md={12}>
                     <Form.Item 
@@ -1181,7 +1171,7 @@ function BookingPage() {
                                 handleResetTime()
                               }
                             }}
-                            disabledDate={current => current && current < dayjs().startOf('day')}
+                            disabledDate={isDateDisabled}
                           />
                         </Form.Item>
                         <Button 
@@ -1343,7 +1333,7 @@ function BookingPage() {
                           handleResetTime()
                         }
                       }}
-                      disabledDate={current => current && current < dayjs().startOf('day')}
+                      disabledDate={isDateDisabled}
                     />
                     <Button 
                       size="small"
@@ -1354,14 +1344,58 @@ function BookingPage() {
                   </div>
                 </div>
 
+                {hasServerDataError && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="Không thể tải dữ liệu lịch đặt từ máy chủ"
+                    description={
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        <span>Trạng thái phòng và các khung giờ đã đặt chưa thể xác thực do mất kết nối. Vui lòng bấm thử lại.</span>
+                        <Button
+                          size="small"
+                          danger
+                          onClick={() => {
+                            bookingsQuery.refetch()
+                            refetchSettings()
+                          }}
+                          icon={<ReloadOutlined />}
+                        >
+                          Thử lại
+                        </Button>
+                      </div>
+                    }
+                    style={{ marginBottom: 14, borderRadius: 8 }}
+                  />
+                )}
+
+                {/* Hiển thị giờ mở/đóng cửa và cảnh báo ngày nghỉ nếu có */}
+                {bookingSettings && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: 13, color: '#475569' }}>
+                    <span>Giờ mở cửa theo quy định: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
+                    <span>Đặt trước tối đa: <strong>{bookingSettings.maxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{bookingSettings.maxHoursPerBooking} giờ</strong></span>
+                  </div>
+                )}
+
+                {!bookingSettings?.workingDays?.includes(toVN(selectedDate).day()) && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 14, borderRadius: 8 }}
+                    title="Ngày không hoạt động theo quy định"
+                    description={`Ngày ${selectedDate.format('DD/MM/YYYY')} là ngày nghỉ theo quy định của nhà trường. Vui lòng chọn ngày làm việc khác.`}
+                  />
+                )}
+
                 {/* Bảng chú thích màu sắc trạng thái */}
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 14, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Còn trống</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#0d2e5c', borderRadius: 4 }}></div> Đang chọn</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef08a', border: '1px solid #facc15', borderRadius: 4 }}></div> Chờ duyệt</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#86efac', border: '1px solid #4ade80', borderRadius: 4 }}></div> Đã đặt</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef3c7', border: '1px dashed #f59e0b', borderRadius: 4 }}></div> Tạm ngưng/Bảo trì</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Đã qua/Đóng</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fee2e2', border: '1px solid #f87171', borderRadius: 4 }}></div> Không thể đặt</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fee2e2', border: '1px solid #f87171', borderRadius: 4 }}></div> Trùng lịch</div>
                 </div>
 
                 {/* Banner hướng dẫn và thông báo khung giờ đã chọn */}
@@ -1387,6 +1421,11 @@ function BookingPage() {
                     if (status === 'past' || status === 'inactive') {
                       bg = '#e2e8f0'
                       color = '#94a3b8'
+                      cursor = 'not-allowed'
+                    } else if (status === 'maintenance') {
+                      bg = '#fef3c7'
+                      color = '#92400e'
+                      border = '1px dashed #f59e0b'
                       cursor = 'not-allowed'
                     } else if (status === 'conflict') {
                       bg = '#fee2e2'
@@ -1456,6 +1495,11 @@ function BookingPage() {
                             Kết thúc
                           </span>
                         )}
+                        {status === 'maintenance' && (
+                          <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
+                            Bảo trì
+                          </span>
+                        )}
                         {status === 'in-between' && (
                           <span style={{ fontSize: 10, color: '#4338ca', marginTop: 2, fontWeight: 700 }}>
                             •••
@@ -1470,26 +1514,21 @@ function BookingPage() {
                 {limitViolations.length > 0 && (
                   <div style={{ marginBottom: 16 }}>
                     <Alert
-                      type="warning"
+                      type="error"
                       showIcon
-                      title={<strong style={{ color: '#9a3412' }}>Yêu cầu phê duyệt đặc biệt</strong>}
+                      title={<strong style={{ color: '#b91c1c' }}>Khung giờ chọn không hợp lệ theo quy định</strong>}
                       description={
                         <div>
-                          <div style={{ marginBottom: 6, color: '#9a3412' }}>Thời gian bạn chọn đã vượt quy định chuẩn:</div>
-                          <ul style={{ margin: 0, paddingLeft: 20, color: '#9a3412', fontSize: 13 }}>
+                          <div style={{ marginBottom: 6, color: '#b91c1c' }}>Yêu cầu đặt phòng của bạn không thỏa mãn các quy định sau:</div>
+                          <ul style={{ margin: 0, paddingLeft: 20, color: '#b91c1c', fontSize: 13 }}>
                             {limitViolations.map((v, i) => <li key={i}>{v}</li>)}
                           </ul>
+                          <div style={{ marginTop: 6, fontSize: 12.5, color: '#7f1d1d' }}>
+                            Vui lòng chọn lại khung giờ hoặc ngày khác thỏa mãn quy định để tiếp tục.
+                          </div>
                         </div>
                       }
                     />
-                    <Form.Item
-                      label={<strong style={{ color: '#334155' }}>Lý do đề xuất phê duyệt đặc biệt (Bắt buộc)</strong>}
-                      name="specialRequestReason"
-                      rules={[{ required: true, message: 'Vui lòng nhập lý do phê duyệt đặc biệt!' }]}
-                      style={{ marginTop: 14, marginBottom: 0 }}
-                    >
-                      <Input.TextArea rows={2} placeholder="Trình bày lý do cần đặt phòng vượt khung quy định thông thường..." />
-                    </Form.Item>
                   </div>
                 )}
 
@@ -1507,10 +1546,10 @@ function BookingPage() {
                     type="primary" 
                     size="large" 
                     onClick={handleGoToStep3}
-                    disabled={!startTime || !endTime}
+                    disabled={!startTime || !endTime || limitViolations.length > 0}
                     icon={<ArrowRightOutlined />}
                     style={{ 
-                      background: (startTime && endTime) ? '#0d2e5c' : undefined, 
+                      background: (startTime && endTime && limitViolations.length === 0) ? '#0d2e5c' : undefined, 
                       height: 44, 
                       borderRadius: 8, 
                       fontWeight: 600, 
@@ -1634,7 +1673,7 @@ function BookingPage() {
                           isAdmin 
                             ? (isWalkInBooking ? "Ví dụ: Lớp 21CNTT, Khoa Công nghệ, CLB Tiếng Anh..." : "Ví dụ: Phòng Đào tạo, Khoa CNTT, Phòng QTTB...") 
                             : isFaculty 
-                              ? "Ví dụ: Khoa Công nghệ & Kỹ thuật, Khoa Kinh tế - Quản trị..." 
+                              ? "Ví dụ: Khoa Công nghệ thông tin và Bán dẫn, Khoa Du lịch..." 
                               : isStaff 
                                 ? "Ví dụ: Phòng Đào tạo, Phòng Quản trị thiết bị, Ban CTSV..." 
                                 : "Ví dụ: Khoa CNTT, CLB Lập trình..."
@@ -2033,7 +2072,7 @@ function BookingPage() {
                               : 'Khoa / Đơn vị / Lớp:'}
                       </span>
                       <span className="summary-data-value">
-                        {department || '-'}
+                        {normalizeDepartmentName(department) || '-'}
                       </span>
                     </div>
 
@@ -2239,7 +2278,7 @@ function BookingPage() {
                         : false
                     } 
                     loading={createMutation.isPending || checkLimitQuery.isFetching} 
-                    icon={<ThunderboltOutlined />} 
+                    icon={<CheckCircleOutlined />} 
                     style={{ 
                       minWidth: 260,
                       height: 48, 

@@ -24,7 +24,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { http } from "./api/http";
 import { fetchUserProfile, type UserProfileData } from "./api/userProfile";
 import UserProfileModal from "./components/UserProfileModal";
@@ -38,6 +38,7 @@ import ApprovalsPage from "./features/approvals/ApprovalsPage";
 import CalendarPage from "./features/calendar/CalendarPage";
 import ReportIssuePage from "./features/issues/ReportIssuePage";
 import NotificationsPage from "./features/notifications/NotificationsPage";
+import { useBookingMaintenanceWorker } from "./services/BookingMaintenanceWorker";
 
 const { Content } = Layout;
 
@@ -140,6 +141,7 @@ function ScrollToTop() {
 }
 
 function App() {
+  const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -147,6 +149,9 @@ function App() {
   const isLoggedIn = Boolean(localStorage.getItem("accessToken"));
   const isLoginPage = location.pathname === "/login";
   const isHomePage = location.pathname === "/";
+
+  // Tác vụ nền kiểm tra hạn nhận phòng (No-show auto expire) và nhắc duyệt khẩn cấp
+  useBookingMaintenanceWorker();
 
   // 1. Trích xuất thông tin người dùng thực tế từ API GET /api/auth/me
   const { data: userProfile } = useQuery<UserProfileData>({
@@ -239,9 +244,13 @@ function App() {
   }, []);
 
   const logout = () => {
+    queryClient.clear();
     localStorage.removeItem("accessToken");
-    localStorage.removeItem("testRole"); // Clean test role on logout
-    navigate("/");
+    localStorage.removeItem("testRole");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("tbd_admin_bookings");
+    localStorage.removeItem("tbd_admin_rooms");
+    navigate("/login");
   };
 
   const activePath = location.pathname;
@@ -430,7 +439,16 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/rooms" element={<RoomsPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
+          <Route
+            path="/calendar"
+            element={
+              isLoggedIn ? (
+                <CalendarPage />
+              ) : (
+                <Navigate to="/login?redirect=/calendar" replace />
+              )
+            }
+          />
           <Route
             path="/bookings"
             element={
