@@ -920,7 +920,7 @@ function BookingHistoryPage() {
   const filteredBookings = bookingsData.filter((booking) => {
     const q = searchText.trim().toLowerCase()
     const matchesSearch = !q || 
-      booking.roomName.toLowerCase().includes(q) || 
+      (booking.roomName || '').toLowerCase().includes(q) || 
       (booking.purpose ?? '').toLowerCase().includes(q) ||
       (booking.personInCharge ?? '').toLowerCase().includes(q) ||
       `#tbd-${booking.id}`.toLowerCase().includes(q)
@@ -1157,7 +1157,7 @@ function BookingHistoryPage() {
           <Alert
             type="error"
             showIcon
-            message="Không thể kết nối máy chủ để tải lịch sử đặt phòng"
+            title="Không thể kết nối máy chủ để tải lịch sử đặt phòng"
             description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
             action={
               <Button danger type="primary" onClick={() => bookingsQuery.refetch()}>

@@ -48,6 +48,7 @@ import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBookin
 import { getOfficialRooms } from "../../utils/roomUtils";
 import { normalizeDepartmentName } from "../../utils/academicPrograms";
 import BookingSettingsManagement from "./BookingSettingsManagement";
+import IssueResolutionModal from "./IssueResolutionModal";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -100,6 +101,8 @@ export interface EquipmentIssue {
   roomName: string;
   equipmentId: number | null;
   equipmentName: string;
+  issueType?: string;
+  priority?: string;
   userEmail: string;
   description: string;
   imageUrl: string | null;
@@ -256,7 +259,6 @@ export default function AdminPage() {
 
   const [isIssueResolveModalVisible, setIsIssueResolveModalVisible] = useState(false);
   const [editingIssue, setEditingIssue] = useState<EquipmentIssue | null>(null);
-  const [issueResolveForm] = Form.useForm();
 
   const [isUserModalVisible, setIsUserModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<AccountItem | null>(null);
@@ -520,23 +522,6 @@ export default function AdminPage() {
     },
   });
 
-  // Issue Resolution Mutation
-  const saveIssueMutation = useMutation({
-    mutationFn: async (values: Partial<EquipmentIssue>) => {
-      if (editingIssue) {
-        await http.put(`/api/issues/${editingIssue.id}`, values);
-      }
-    },
-    onSuccess: () => {
-      message.success("Đã cập nhật xử lý sự cố thiết bị thành công");
-      setIsIssueResolveModalVisible(false);
-      queryClient.invalidateQueries({ queryKey: ["equipment-issues"] });
-    },
-    onError: (err: any) => {
-      message.error(err?.response?.data?.message || "Có lỗi xảy ra khi cập nhật sự cố.");
-    },
-  });
-
   // User Accounts Mutations
   const saveUserMutation = useMutation({
     mutationFn: async (values: AccountItem & { password?: string }) => {
@@ -612,7 +597,7 @@ export default function AdminPage() {
     }
 
     const matchSearch =
-      r.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
+      ((r.name || '').toLowerCase().includes(roomSearch.toLowerCase())) ||
       (r.building && r.building.toLowerCase().includes(roomSearch.toLowerCase()));
     const matchType =
       roomTypeFilter === "all" || String(r.roomType) === roomTypeFilter;
@@ -740,18 +725,24 @@ export default function AdminPage() {
   });
 
   const equipmentsData = (equipmentsQuery.data || []).filter((e: EquipmentItem) => {
+    const q = (equipmentSearch || '').trim().toLowerCase();
+    if (!q) return true;
     return (
-      e.name.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      e.code.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      (e.roomName && e.roomName.toLowerCase().includes(equipmentSearch.toLowerCase()))
+      (e.name ? e.name.toLowerCase().includes(q) : false) ||
+      (e.code ? e.code.toLowerCase().includes(q) : false) ||
+      (e.roomName ? e.roomName.toLowerCase().includes(q) : false)
     );
   });
 
   const issuesData = (issuesQuery.data || []).filter((i: EquipmentIssue) => {
+    const q = (equipmentSearch || '').trim().toLowerCase();
     const matchSearch =
-      i.equipmentName.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      i.roomName.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      i.description.toLowerCase().includes(equipmentSearch.toLowerCase());
+      !q ||
+      (i.equipmentName ? i.equipmentName.toLowerCase().includes(q) : false) ||
+      (i.roomName ? i.roomName.toLowerCase().includes(q) : false) ||
+      (i.description ? i.description.toLowerCase().includes(q) : false) ||
+      (i.issueType ? i.issueType.toLowerCase().includes(q) : false) ||
+      (i.userEmail ? i.userEmail.toLowerCase().includes(q) : false);
 
     const matchStatus =
       issueStatusFilter === "all" || i.status === issueStatusFilter;
@@ -1446,11 +1437,6 @@ export default function AdminPage() {
           className="academic-action-btn"
           onClick={() => {
             setEditingIssue(record);
-            issueResolveForm.setFieldsValue({
-              status: record.status,
-              assignedTo: record.assignedTo,
-              repairNotes: record.repairNotes,
-            });
             setIsIssueResolveModalVisible(true);
           }}
         >
@@ -3291,42 +3277,20 @@ export default function AdminPage() {
         </Form>
       </Modal>
 
-      {/* MODAL: Issue Resolve */}
-      <Modal
-        title="Cập Nhật Xử Lý Sự Cố Thiết Bị"
+      {/* MODAL: Issue Resolution Popup */}
+      <IssueResolutionModal
         open={isIssueResolveModalVisible}
-        onCancel={() => setIsIssueResolveModalVisible(false)}
-        onOk={() => issueResolveForm.submit()}
-      >
-        <Form
-          form={issueResolveForm}
-          layout="vertical"
-          onFinish={(values) => saveIssueMutation.mutate(values)}
-        >
-          <Form.Item name="status" label="Trạng thái xử lý" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: "Pending", label: "Chờ tiếp nhận" },
-                { value: "Assigned", label: "Đã phân công kỹ thuật viên" },
-                { value: "Fixing", label: "Đang sửa chữa" },
-                { value: "Resolved", label: "Đã khắc phục hoàn tất" },
-                { value: "Rejected", label: "Không đủ điều kiện xử lý" },
-              ]}
-            />
-          </Form.Item>
-
-          <Form.Item name="assignedTo" label="Cán bộ / Kỹ thuật viên phụ trách">
-            <Input placeholder="VD: Kỹ thuật viên Nguyễn Văn Bình" />
-          </Form.Item>
-
-          <Form.Item name="repairNotes" label="Ghi chú kết quả / Tiến độ sửa chữa">
-            <Input.TextArea
-              rows={3}
-              placeholder="VD: Đã thay thế linh kiện bóng đèn mới, đã kiểm tra vận hành tốt..."
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+        issue={editingIssue}
+        onClose={() => {
+          setIsIssueResolveModalVisible(false);
+          setEditingIssue(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["equipment-issues"] });
+        }}
+        accounts={accountsData}
+        canUpdate={isAdmin || isApprover}
+      />
 
       {/* MODAL: User Add/Edit */}
       <Modal

@@ -62,10 +62,24 @@ export default function ApprovalsPage() {
     return rawBookings.map(b => getEffectiveBooking(b))
   }, [rawBookings])
 
-  // Urgent pending bookings (starts in < 2 hours)
-  const urgentBookings = useMemo(() => {
-    return bookings.filter(b => isBookingUrgent(b))
+  // Hàm kiểm tra bản ghi có phải là thời khóa biểu / lịch đè trường học (isSchoolOverride)
+  // Chỉ kiểm tra thuộc tính isSchoolOverride === true, không suy đoán dựa vào từ "học"
+  const isSchoolOverrideRecord = (b: Booking): boolean => {
+    if (!b) return false
+    const overrideVal = b.isSchoolOverride ?? (b as any).IsSchoolOverride ?? (b as any).is_school_override
+    return overrideVal === true || overrideVal === 1 || String(overrideVal).toLowerCase() === 'true'
+  }
+
+  // Danh sách các đơn đặt phòng thông thường: loại bỏ tất cả bản ghi có isSchoolOverride === true, bất kể trạng thái.
+  // Áp dụng bộ lọc này trước khi tính số lượng và phân trang.
+  const regularBookings = useMemo(() => {
+    return bookings.filter(b => !isSchoolOverrideRecord(b))
   }, [bookings])
+
+  // Urgent pending bookings (starts in < 2 hours) chỉ áp dụng cho đơn thông thường
+  const urgentBookings = useMemo(() => {
+    return regularBookings.filter(b => isBookingUrgent(b))
+  }, [regularBookings])
 
   // Toast warning for urgent bookings when visiting ApprovalsPage
   useEffect(() => {
@@ -339,13 +353,13 @@ export default function ApprovalsPage() {
   };
 
   const filteredBookings = useMemo(() => {
-    return bookings.filter(b => {
+    return regularBookings.filter(b => {
       if (filterDate) {
         const bDate = dayjs(b.startTime);
         if (!bDate.isSame(filterDate, 'day')) return false;
       }
       if (filterRoom && b.roomId !== filterRoom) return false;
-      if (filterUser && b.userEmail && !b.userEmail.toLowerCase().includes(filterUser.toLowerCase())) return false;
+      if (filterUser && (!b.userEmail || !b.userEmail.toLowerCase().includes(filterUser.toLowerCase()))) return false;
       
       if (!matchStatus(b.status, filterStatus, b.rejectReason || b.rejectionReason || b.adminNotes || '')) return false;
       return true;
@@ -361,10 +375,13 @@ export default function ApprovalsPage() {
 
       return dayjs(b.startTime).valueOf() - dayjs(a.startTime).valueOf()
     });
-  }, [bookings, filterDate, filterRoom, filterUser, filterStatus]);
+  }, [regularBookings, filterDate, filterRoom, filterUser, filterStatus]);
 
   
   const getPriority = (b: Booking) => {
+    if (isSchoolOverrideRecord(b)) {
+      return { level: 0, label: 'Thời khóa biểu chính khóa (Ưu tiên tuyệt đối)' };
+    }
     const purpose = (b.purpose || '').toLowerCase();
     if (purpose.includes('thi') || purpose.includes('đào tạo')) return { level: 1, label: 'Lịch thi & Đào tạo' };
     if (purpose.includes('sự kiện') || purpose.includes('trường')) return { level: 2, label: 'Sự kiện cấp trường' };
@@ -875,7 +892,7 @@ export default function ApprovalsPage() {
                           {dayjs(b.startTime).format('HH:mm')} - {dayjs(b.endTime).format('HH:mm')} | {b.purpose || 'Không ghi rõ'} | {getStatusLabel(b.status)}
                         </div>
                       </div>
-                      {b.id !== processingBooking.id && (String(b.status) === 'Pending' || String(b.status) === 'PendingSpecial' || String(b.status) === '0') && (
+                      {b.id !== processingBooking.id && !isSchoolOverrideRecord(b) && (String(b.status) === 'Pending' || String(b.status) === 'PendingSpecial' || String(b.status) === '0') && (
                         <Popconfirm
                           title="Duyệt yêu cầu này?"
                           description="Điều này có thể sẽ khiến các yêu cầu khác cùng giờ (kể cả yêu cầu hiện tại) không thể thực hiện."
@@ -885,6 +902,9 @@ export default function ApprovalsPage() {
                         >
                           <Button size="small">Chọn xử lý</Button>
                         </Popconfirm>
+                      )}
+                      {b.id !== processingBooking.id && isSchoolOverrideRecord(b) && (
+                        <Tag color="purple">Thời khóa biểu</Tag>
                       )}
                       {b.id === processingBooking.id && (
                         <Tag color="blue">Đang xử lý</Tag>

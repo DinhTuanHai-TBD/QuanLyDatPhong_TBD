@@ -8,7 +8,7 @@ const replaceFn = `
 const getRoomImageUrl = (room: any) => {
   if (!room.imageUrl) return '';
   if (room.imageUrl.startsWith('http')) return room.imageUrl;
-  const baseUrl = import.meta.env.VITE_API_URL ?? 'https://tartness-empathy-gambling.ngrok-free.dev';
+  const baseUrl = import.meta.env.VITE_API_URL ?? 'https://skyrocket-humorous-that.ngrok-free.dev';
   return baseUrl + room.imageUrl;
 };
 `;

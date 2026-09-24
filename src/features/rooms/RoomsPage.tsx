@@ -97,9 +97,11 @@ function RoomsPage() {
     const nameStr = room.name ?? ''
     const buildingStr = room.building ?? ''
     const descStr = room.description ?? ''
-    const matchesSearch = nameStr.toLowerCase().includes(searchText.toLowerCase()) || 
-      buildingStr.toLowerCase().includes(searchText.toLowerCase()) ||
-      descStr.toLowerCase().includes(searchText.toLowerCase())
+    const q = (searchText || '').trim().toLowerCase()
+    const matchesSearch = !q ||
+      nameStr.toLowerCase().includes(q) || 
+      buildingStr.toLowerCase().includes(q) ||
+      descStr.toLowerCase().includes(q)
     
     let matchesQuickTab = true
     if (quickTab === 'khu-a') {
@@ -316,7 +318,7 @@ function RoomsPage() {
         <Alert 
           showIcon 
           type="error" 
-          message="Không thể kết nối máy chủ để lấy danh sách phòng" 
+          title="Không thể kết nối máy chủ để lấy danh sách phòng" 
           description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau." 
           action={
             <Button danger type="primary" onClick={() => roomsQuery.refetch()}>

@@ -26,7 +26,7 @@ import {
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { http } from '../../api/http'
+import { http, shouldRetryQuery } from '../../api/http'
 import { getUserId, getUserRole, getUserEmail, isAuthenticated } from '../../api/authUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
@@ -60,14 +60,15 @@ const localizer = momentLocalizer(moment)
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
 
-async function fetchRooms(): Promise<Room[]> {
-  try {
-    const res = await http.get<Room[]>('/api/rooms')
-    return res.data || []
-  } catch (err) {
-    console.error('Không thể tải danh sách phòng từ /api/rooms:', err)
-    return []
+async function fetchRooms(signal?: AbortSignal): Promise<Room[]> {
+  const res = await http.get<Room[]>('/api/rooms', { signal })
+  if (Array.isArray(res.data)) {
+    return res.data
   }
+  if (res.data && Array.isArray((res.data as any).data)) {
+    return (res.data as any).data
+  }
+  return []
 }
 
 export type EventStatusGroup =
@@ -257,12 +258,13 @@ export default function CalendarPage() {
 
   const roomsQuery = useQuery({
     queryKey: ['rooms'],
-    queryFn: fetchRooms,
+    queryFn: ({ signal }) => fetchRooms(signal),
     staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error: any) => shouldRetryQuery(failureCount, error),
     refetchOnWindowFocus: false,
   })
 
-  // Query key: incorporates userEmail and userRole to prevent cache leaking across user accounts, and time range
+  // Query key: incorporates userEmail/userId, userRole, mode, date range and selectedRoomId
   const bookingsQueryKey = useMemo(() => [
     'calendar-bookings',
     userEmail || userId || 'guest',
@@ -270,7 +272,8 @@ export default function CalendarPage() {
     mode,
     startDateUtc,
     endDateUtc,
-  ], [userEmail, userId, userRole, mode, startDateUtc, endDateUtc])
+    selectedRoomId,
+  ], [userEmail, userId, userRole, mode, startDateUtc, endDateUtc, selectedRoomId])
 
   const bookingsQuery = useQuery({
     queryKey: bookingsQueryKey,
@@ -278,6 +281,9 @@ export default function CalendarPage() {
       const params: Record<string, string | number> = {
         startDate: startDateUtc,
         endDate: endDateUtc,
+      }
+      if (selectedRoomId && selectedRoomId !== 'all') {
+        params.roomId = selectedRoomId
       }
       const res = await http.get<Booking[]>('/api/bookings', {
         params,
@@ -294,11 +300,7 @@ export default function CalendarPage() {
     staleTime: 10 * 1000, // 10 seconds
     refetchInterval: 60 * 1000, // 60 seconds auto-refresh
     refetchIntervalInBackground: false, // Do not poll when tab is hidden
-    retry: (failureCount, error: any) => {
-      const status = error?.response?.status
-      if (status === 401 || status === 403) return false
-      return failureCount < 1 // Retry at most once for transient network errors
-    },
+    retry: (failureCount, error: any) => shouldRetryQuery(failureCount, error),
     enabled: isAuthed,
     refetchOnWindowFocus: true,
   })
@@ -409,12 +411,12 @@ export default function CalendarPage() {
   }, [dayBookings])
 
   const handleSlotClick = (room: Room, startHour: number, startMinute: number) => {
-    if (bookingsQuery.isLoading || bookingsQuery.isFetching) {
-      message.warning('Dữ liệu lịch đang được tải hoặc cập nhật, vui lòng đợi trong giây lát trước khi chọn đặt phòng.')
+    if (bookingsQuery.isLoading || bookingsQuery.isFetching || roomsQuery.isLoading || !bookingSettings) {
+      message.warning('Dữ liệu lịch phòng hoặc quy định chưa tải xong. Vui lòng đợi trong giây lát.')
       return
     }
-    if (bookingsQuery.isError) {
-      message.error('Không thể chọn đặt phòng do dữ liệu lịch chưa được tải thành công. Vui lòng bấm "Thử lại".')
+    if (bookingsQuery.isError || roomsQuery.isError) {
+      message.error('Không thể tải lịch phòng. Vui lòng thử lại.')
       return
     }
 
@@ -917,12 +919,12 @@ export default function CalendarPage() {
           date={currentDate}
           onNavigate={(newDate) => setFilterDate(toVN(newDate))}
           onSelectSlot={(slotInfo) => {
-            if (bookingsQuery.isLoading || bookingsQuery.isFetching) {
-              message.warning('Dữ liệu lịch đang được tải hoặc cập nhật, vui lòng đợi trong giây lát trước khi chọn đặt phòng.')
+            if (bookingsQuery.isLoading || bookingsQuery.isFetching || roomsQuery.isLoading || !bookingSettings) {
+              message.warning('Dữ liệu lịch phòng hoặc quy định chưa tải xong. Vui lòng đợi trong giây lát.')
               return
             }
-            if (bookingsQuery.isError) {
-              message.error('Không thể chọn đặt phòng do dữ liệu lịch chưa được tải thành công. Vui lòng bấm "Thử lại".')
+            if (bookingsQuery.isError || roomsQuery.isError) {
+              message.error('Không thể tải lịch phòng. Vui lòng thử lại.')
               return
             }
             if (dayjs(slotInfo.start).isBefore(toVN())) {
@@ -1246,9 +1248,9 @@ export default function CalendarPage() {
         </div>
       </Card>
 
-      {bookingsQuery.isError ? (
+      {bookingsQuery.isError || roomsQuery.isError ? (
         (() => {
-          const err = bookingsQuery.error as any
+          const err = (bookingsQuery.error || roomsQuery.error) as any
           const status = err?.response?.status
 
           if (status === 401) {
@@ -1256,7 +1258,7 @@ export default function CalendarPage() {
               <Alert
                 type="error"
                 showIcon
-                title="Phiên đăng nhập đã hết hạn (Lỗi 401)"
+                title="Hết phiên đăng nhập"
                 description="Phiên làm việc của bạn đã hết hạn hoặc chưa được xác thực. Vui lòng đăng nhập lại để tiếp tục xem lịch phòng."
                 action={
                   <Button type="primary" danger onClick={() => navigate('/login?redirect=/calendar')}>
@@ -1273,10 +1275,15 @@ export default function CalendarPage() {
               <Alert
                 type="warning"
                 showIcon
-                title="Không có quyền truy cập (Lỗi 403)"
-                description="Tài khoản của bạn không có quyền truy cập vào dữ liệu lịch phòng này."
+                title="Không đủ quyền"
+                description="Tài khoản của bạn không có đủ quyền truy cập vào dữ liệu lịch phòng này."
                 action={
-                  <Button onClick={() => bookingsQuery.refetch()}>
+                  <Button
+                    onClick={() => {
+                      bookingsQuery.refetch()
+                      roomsQuery.refetch()
+                    }}
+                  >
                     Thử lại
                   </Button>
                 }
@@ -1295,7 +1302,7 @@ export default function CalendarPage() {
             <Alert
               type="error"
               showIcon
-              title="Không thể tải lịch phòng từ máy chủ"
+              title="Không thể tải lịch phòng. Vui lòng thử lại."
               description={
                 <div>
                   <div style={{ marginBottom: 8, color: '#1e293b' }}>{errorMsg}</div>
@@ -1320,7 +1327,7 @@ export default function CalendarPage() {
             />
           )
         })()
-      ) : bookingsQuery.isLoading || roomsQuery.isLoading ? (
+      ) : bookingsQuery.isLoading || roomsQuery.isLoading || (bookingsQuery.isFetching && !bookingsQuery.data) ? (
         <Card style={{ borderRadius: 12, padding: '64px 24px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0' }}>
           <Spin size="large" />
           <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600, color: '#0d2e5c' }}>

@@ -123,8 +123,8 @@ export default function SemesterScheduleExcelImport({
   }, [currentUserRole, currentUserEmail])
 
   // Helper: Normalize room query string
-  const normalizeRoomKey = (str: string) => {
-    return str
+  const normalizeRoomKey = (str?: string | null) => {
+    return (str || '')
       .toLowerCase()
       .replace(/phòng|phong|p\./gi, '')
       .replace(/[-\s_]/g, '')
@@ -137,7 +137,7 @@ export default function SemesterScheduleExcelImport({
     const q = normalizeRoomKey(rawRoomStr)
     return rooms.find((r) => {
       const roomNorm = normalizeRoomKey(r.name)
-      return roomNorm === q || r.name.toLowerCase() === rawRoomStr.toLowerCase().trim()
+      return roomNorm === q || (r.name || '').toLowerCase() === (rawRoomStr || '').toLowerCase().trim()
     })
   }
 

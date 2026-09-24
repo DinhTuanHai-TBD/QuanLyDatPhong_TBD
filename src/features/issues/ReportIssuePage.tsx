@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
-import { Form, Input, Button, Select, Card, App, Row, Col, Typography, Table, Modal, Empty, Upload, Tabs } from 'antd'
+import { Form, Input, Button, Select, Card, App, Row, Col, Typography, Table, Modal, Empty, Upload, Tabs, Tag } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { http } from '../../api/http'
+import { getUserId, getUserEmail } from '../../api/authUtils'
 import type { IssueReport, CreateIssuePayload } from '../../types/issue'
 import type { Room } from '../../types/room'
 import type { Booking } from '../../types/booking'
@@ -30,13 +32,16 @@ const PRIORITY_CONFIG: Record<string, { label: string; bg: string; text: string;
   Urgent: { label: 'Khẩn cấp', bg: '#ffe4e6', text: '#991b1b', border: '#fecdd3' },
 }
 
-const STATUS_CONFIG: Record<string, { label: string; dotColor: string }> = {
-  Pending: { label: 'Mới gửi', dotColor: '#3b82f6' },
-  Received: { label: 'Đã tiếp nhận', dotColor: '#6366f1' },
-  InProgress: { label: 'Đang xử lý', dotColor: '#f59e0b' },
-  Resolved: { label: 'Đã khắc phục', dotColor: '#10b981' },
-  Closed: { label: 'Đã đóng', dotColor: '#64748b' },
-}
+const STATUS_LABELS: Record<string, { label: string, color: string }> = {
+  'Pending': { label: 'Chờ tiếp nhận', color: 'warning' },
+  'Assigned': { label: 'Đã phân công', color: 'processing' },
+  'Fixing': { label: 'Đang sửa chữa', color: 'purple' },
+  'InProgress': { label: 'Đang sửa chữa', color: 'purple' },
+  'Received': { label: 'Đã tiếp nhận', color: 'processing' },
+  'Resolved': { label: 'Đã khắc phục', color: 'success' },
+  'Rejected': { label: 'Không xử lý', color: 'default' },
+  'Closed': { label: 'Đã đóng', color: 'default' },
+};
 
 export default function ReportIssuePage() {
   const [form] = Form.useForm()
@@ -91,17 +96,61 @@ export default function ReportIssuePage() {
     )
   }, [myBookings, watchRoomId])
 
-  const { data: myIssues = [], isLoading: isLoadingIssues } = useQuery({
-    queryKey: ['my-issues'],
+  const userId = getUserId()
+  const userEmail = getUserEmail()
+
+  const {
+    data: myIssues = [],
+    isLoading: isLoadingIssues,
+    refetch: refetchIssues,
+    isRefetching,
+  } = useQuery({
+    queryKey: ['my-issues', userId, userEmail],
     queryFn: async () => {
+      // 1. Endpoint chuẩn: GET /api/issues/mine
       try {
         const res = await http.get<IssueReport[]>('/api/issues/mine')
-        return res.data
+        if (Array.isArray(res.data)) {
+          return res.data
+        }
       } catch (e: any) {
-        console.warn('API /api/issues/mine fallback:', e.message)
-        return []
+        console.warn('GET /api/issues/mine:', e?.response?.status || e.message)
       }
-    }
+
+      // 2. Thử alias: GET /api/issues/my
+      try {
+        const res = await http.get<IssueReport[]>('/api/issues/my')
+        if (Array.isArray(res.data)) {
+          return res.data
+        }
+      } catch (e: any) {
+        console.warn('GET /api/issues/my fallback:', e?.response?.status || e.message)
+      }
+
+      // 3. Fallback dự phòng: Gọi GET /api/issues và lọc theo userId / userEmail
+      try {
+        const res = await http.get<any[]>('/api/issues')
+        if (Array.isArray(res.data)) {
+          const uId = userId.toLowerCase().trim()
+          const uEmail = userEmail.toLowerCase().trim()
+
+          return res.data
+            .filter((item: any) => {
+              const itemUserId = item.userId ? String(item.userId).toLowerCase().trim() : ''
+              const itemEmail = item.userEmail ? String(item.userEmail).toLowerCase().trim() : ''
+
+              if (uId && uId !== 'anonymous' && itemUserId === uId) return true
+              if (uEmail && itemEmail === uEmail) return true
+              return false
+            })
+            .sort((a: any, b: any) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf())
+        }
+      } catch (e: any) {
+        console.warn('GET /api/issues fallback:', e?.response?.status || e.message)
+      }
+
+      return []
+    },
   })
 
   const createIssueMutation = useMutation({
@@ -114,6 +163,7 @@ export default function ReportIssuePage() {
       form.resetFields()
       setFileList([])
       queryClient.invalidateQueries({ queryKey: ['my-issues'] })
+      refetchIssues()
       setActiveTab('list')
     },
     onError: (error: any) => {
@@ -204,25 +254,11 @@ export default function ReportIssuePage() {
       dataIndex: 'status', 
       key: 'status', 
       render: (val: string) => {
-        const st = STATUS_CONFIG[val] || { label: val || 'Mới gửi', dotColor: '#3b82f6' }
+        const st = STATUS_LABELS[val] || { label: val || 'Chờ tiếp nhận', color: 'warning' }
         return (
-          <span style={{ 
-            display: 'inline-flex', 
-            alignItems: 'center', 
-            gap: 6, 
-            fontSize: 13, 
-            fontWeight: 500,
-            color: '#334155' 
-          }}>
-            <span style={{ 
-              width: 7, 
-              height: 7, 
-              borderRadius: '50%', 
-              backgroundColor: st.dotColor, 
-              display: 'inline-block' 
-            }} />
+          <Tag color={st.color} style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
             {st.label}
-          </span>
+          </Tag>
         )
       }
     },
@@ -443,6 +479,18 @@ export default function ReportIssuePage() {
         <div style={{ paddingTop: 16 }}>
           <Card 
             variant="borderless" 
+            title={<span style={{ fontWeight: 600, color: '#0d2e5c' }}>Lịch sử báo cáo sự cố</span>}
+            extra={
+              <Button 
+                icon={<ReloadOutlined spin={isRefetching} />} 
+                size="middle" 
+                onClick={() => refetchIssues()}
+                loading={isLoadingIssues || isRefetching}
+                style={{ borderRadius: 6, fontWeight: 500 }}
+              >
+                Làm mới
+              </Button>
+            }
             style={{ 
               backgroundColor: '#ffffff',
               borderRadius: 12, 
@@ -487,7 +535,12 @@ export default function ReportIssuePage() {
       {/* Tabs học thuật tối giản */}
       <Tabs 
         activeKey={activeTab} 
-        onChange={setActiveTab} 
+        onChange={(key) => {
+          setActiveTab(key)
+          if (key === 'list') {
+            refetchIssues()
+          }
+        }} 
         items={tabItems}
         size="large"
       />
@@ -512,124 +565,81 @@ export default function ReportIssuePage() {
         ]}
       >
         {selectedIssue && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 6 }}>
             <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Mã phiếu:</Col>
-              <Col span={16}>
-                <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0d2e5c' }}>
-                  #INC-{selectedIssue.id}
-                </span>
-              </Col>
-            </Row>
-            <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Ngày gửi:</Col>
-              <Col span={16}>
-                <span style={{ color: '#1e293b' }}>{dayjs(selectedIssue.createdAt).format('DD/MM/YYYY HH:mm')}</span>
-              </Col>
+              <Col span={8} style={{ color: '#64748b' }}>Ngày báo cáo:</Col>
+              <Col span={16}>{dayjs(selectedIssue.createdAt).format('DD/MM/YYYY HH:mm')}</Col>
             </Row>
             <Row>
               <Col span={8} style={{ color: '#64748b' }}>Phòng học:</Col>
               <Col span={16}>
-                <strong style={{ color: '#1e293b' }}>
-                  {selectedIssue.roomName || rooms.find(r => r.id === selectedIssue.roomId)?.name || `Phòng ID ${selectedIssue.roomId}`}
-                </strong>
+                <strong>{selectedIssue.roomName || rooms.find(r => r.id === selectedIssue.roomId)?.name || `Phòng ID ${selectedIssue.roomId}`}</strong>
               </Col>
             </Row>
             <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Thiết bị / Hạng mục:</Col>
-              <Col span={16}>
-                <span style={{ color: '#1e293b', fontWeight: 500 }}>{selectedIssue.issueType}</span>
-              </Col>
-            </Row>
-            <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Mức độ ảnh hưởng:</Col>
-              <Col span={16}>
-                {(() => {
-                  const pri = PRIORITY_CONFIG[selectedIssue.priority] || { label: selectedIssue.priority, bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' }
-                  return (
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      borderRadius: 4,
-                      backgroundColor: pri.bg,
-                      color: pri.text,
-                      border: `1px solid ${pri.border}`
-                    }}>
-                      {pri.label}
-                    </span>
-                  )
-                })()}
-              </Col>
+              <Col span={8} style={{ color: '#64748b' }}>Loại sự cố:</Col>
+              <Col span={16}><strong>{selectedIssue.issueType}</strong></Col>
             </Row>
             <Row>
               <Col span={8} style={{ color: '#64748b' }}>Trạng thái xử lý:</Col>
               <Col span={16}>
-                {(() => {
-                  const st = STATUS_CONFIG[selectedIssue.status] || { label: selectedIssue.status, dotColor: '#3b82f6' }
-                  return (
-                    <span style={{ 
-                      display: 'inline-flex', 
-                      alignItems: 'center', 
-                      gap: 6, 
-                      fontSize: 13, 
-                      fontWeight: 500,
-                      color: '#334155' 
-                    }}>
-                      <span style={{ 
-                        width: 7, 
-                        height: 7, 
-                        borderRadius: '50%', 
-                        backgroundColor: st.dotColor, 
-                        display: 'inline-block' 
-                      }} />
-                      {st.label}
-                    </span>
-                  )
-                })()}
+                <Tag color={STATUS_LABELS[selectedIssue.status]?.color || 'default'} style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
+                  {STATUS_LABELS[selectedIssue.status]?.label || selectedIssue.status}
+                </Tag>
               </Col>
             </Row>
             <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Mô tả cụ thể:</Col>
-              <Col span={16} style={{ color: '#1e293b', lineHeight: 1.5 }}>
-                {selectedIssue.description}
-              </Col>
+              <Col span={8} style={{ color: '#64748b' }}>Mô tả lỗi ban đầu:</Col>
+              <Col span={16} style={{ color: '#1e293b', lineHeight: 1.5 }}>{selectedIssue.description}</Col>
             </Row>
             {selectedIssue.bookingId && (
               <Row>
                 <Col span={8} style={{ color: '#64748b' }}>Lượt đặt phòng:</Col>
-                <Col span={16} style={{ color: '#0d2e5c', fontWeight: 500 }}>
-                  #{selectedIssue.bookingId}
-                </Col>
+                <Col span={16} style={{ color: '#0d2e5c', fontWeight: 500 }}>#{selectedIssue.bookingId}</Col>
               </Row>
             )}
             {selectedIssue.imageUrl && (
               <Row>
-                <Col span={8} style={{ color: '#64748b' }}>Ảnh minh chứng:</Col>
+                <Col span={8} style={{ color: '#64748b' }}>Hình ảnh hiện trường:</Col>
                 <Col span={16}>
-                  <img 
-                    src={selectedIssue.imageUrl} 
-                    alt="Hiện trạng sự cố" 
-                    style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 6, border: '1px solid #e2e8f0' }} 
+                  <img
+                    src={selectedIssue.imageUrl}
+                    alt="Sự cố"
+                    style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, border: '1px solid #e2e8f0' }}
                   />
                 </Col>
               </Row>
             )}
+            {selectedIssue.assignedTo && (
+              <Row>
+                <Col span={8} style={{ color: '#64748b' }}>Kỹ thuật viên phụ trách:</Col>
+                <Col span={16}>
+                  <Tag color="cyan" style={{ margin: 0, fontWeight: 600 }}>
+                    {selectedIssue.assignedTo}
+                  </Tag>
+                </Col>
+              </Row>
+            )}
             <Row>
-              <Col span={8} style={{ color: '#64748b' }}>Phản hồi từ kỹ thuật:</Col>
-              <Col span={16}>
-                {selectedIssue.adminNotes ? (
-                  <div style={{ padding: '8px 12px', backgroundColor: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', color: '#334155', fontSize: 13 }}>
-                    {selectedIssue.adminNotes}
-                  </div>
-                ) : (
-                  <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 13 }}>
-                    Chưa có phản hồi từ bộ phận kỹ thuật
-                  </span>
-                )}
+              <Col span={8} style={{ color: '#64748b' }}>Tiến độ / Ghi chú sửa chữa:</Col>
+              <Col span={16} style={{ color: selectedIssue.repairNotes ? '#0f172a' : '#94a3b8', lineHeight: 1.5 }}>
+                {selectedIssue.repairNotes || <em>Chưa có ghi chú sửa chữa</em>}
               </Col>
             </Row>
+            <Row>
+              <Col span={8} style={{ color: '#64748b' }}>Ghi chú của Quản trị viên:</Col>
+              <Col span={16} style={{ color: selectedIssue.adminNotes ? '#0f172a' : '#94a3b8', lineHeight: 1.5 }}>
+                {selectedIssue.adminNotes || <em>Chưa có ghi chú quản trị</em>}
+              </Col>
+            </Row>
+            {selectedIssue.updatedAt && (
+              <Row>
+                <Col span={8} style={{ color: '#64748b' }}>Cập nhật lần cuối:</Col>
+                <Col span={16} style={{ color: '#64748b', fontSize: 13 }}>
+                  {dayjs(selectedIssue.updatedAt).format('DD/MM/YYYY HH:mm')}
+                </Col>
+              </Row>
+            )}
           </div>
         )}
       </Modal>

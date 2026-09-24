@@ -1,4 +1,4 @@
-import { Alert, Button, Card, DatePicker, Form, Input, Select, Typography, App, Row, Col, InputNumber, Checkbox, Modal, Tag, Space, Steps } from 'antd'
+import { Alert, Button, Card, DatePicker, Form, Input, Select, Typography, App, Row, Col, InputNumber, Checkbox, Modal, Tag, Space, Steps, Spin } from 'antd'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { 
   CheckCircleOutlined, 
@@ -23,7 +23,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import isBetween from 'dayjs/plugin/isBetween'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { http } from '../../api/http'
+import { http, shouldRetryQuery } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
@@ -77,8 +77,8 @@ interface SubmitFormValues {
   agreedToRules: boolean
 }
 
-async function fetchRooms(): Promise<Room[]> {
-  const res = await http.get<Room[]>('/api/rooms')
+async function fetchRooms(signal?: AbortSignal): Promise<Room[]> {
+  const res = await http.get<Room[]>('/api/rooms', { signal })
   if (Array.isArray(res.data)) {
     return res.data
   }
@@ -139,7 +139,7 @@ function BookingPage() {
   
   const [form] = Form.useForm<SubmitFormValues>()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
 
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs().startOf('day'))
   const [startTime, setStartTime] = useState<string | null>(null)
@@ -238,7 +238,16 @@ function BookingPage() {
 
 
 
-  const roomsQuery = useQuery({ queryKey: ['rooms'], queryFn: fetchRooms })
+  const selectedRoomId = Form.useWatch('roomId', form)
+  const participantCount = Form.useWatch('participantCount', form)
+
+  const roomsQuery = useQuery({
+    queryKey: ['rooms'],
+    queryFn: ({ signal }) => fetchRooms(signal),
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => shouldRetryQuery(failureCount, error),
+    refetchOnWindowFocus: false,
+  })
 
   const {
     data: bookingSettings,
@@ -248,19 +257,49 @@ function BookingPage() {
   
   const equipmentsQuery = useQuery({
     queryKey: ['equipments'],
-    queryFn: async () => {
-      const response = await http.get<EquipmentItem[]>('/api/equipments')
+    queryFn: async ({ signal }) => {
+      const response = await http.get<EquipmentItem[]>('/api/equipments', { signal })
       if (Array.isArray(response.data)) {
         return response.data
       }
       return []
-    }
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => shouldRetryQuery(failureCount, error),
   })
 
+  const { startDateUtc, endDateUtc } = useMemo(() => {
+    const startVN = toVN(selectedDate).startOf('day')
+    const endVN = startVN.add(1, 'day')
+    return {
+      startDateUtc: startVN.toISOString(),
+      endDateUtc: endVN.toISOString(),
+    }
+  }, [selectedDate])
+
+  const bookingsQueryKey = useMemo(() => [
+    'booking-page-schedule',
+    userEmail || 'guest',
+    userRole || 'student',
+    startDateUtc,
+    endDateUtc,
+    selectedRoomId ?? 'no-room',
+  ], [userEmail, userRole, startDateUtc, endDateUtc, selectedRoomId])
+
   const bookingsQuery = useQuery({ 
-     queryKey: ['all-bookings-validation'], 
-     queryFn: async () => {
-      const response = await http.get('/api/bookings')
+    queryKey: bookingsQueryKey, 
+    queryFn: async ({ signal }) => {
+      const params: Record<string, string | number> = {
+        startDate: startDateUtc,
+        endDate: endDateUtc,
+      }
+      if (selectedRoomId) {
+        params.roomId = selectedRoomId
+      }
+      const response = await http.get('/api/bookings', {
+        params,
+        signal,
+      })
       let list: Booking[] = []
       if (Array.isArray(response.data)) {
         list = response.data
@@ -272,29 +311,45 @@ function BookingPage() {
         ...b,
         department: normalizeDepartmentName(b.department)
       }))
-    }
+    },
+    staleTime: 10 * 1000,
+    retry: (failureCount, error: any) => shouldRetryQuery(failureCount, error),
+    refetchOnWindowFocus: true,
   })
+
+  const isScheduleFetching = bookingsQuery.isLoading || (bookingsQuery.isFetching && !bookingsQuery.data)
 
   const isServerDataReady =
     !roomsQuery.isLoading &&
     !roomsQuery.isError &&
-    !bookingsQuery.isLoading &&
+    !isScheduleFetching &&
     !bookingsQuery.isError &&
     !equipmentsQuery.isLoading &&
     !equipmentsQuery.isError &&
     !isSettingsError &&
     !!bookingSettings
+
   const hasServerDataError =
     roomsQuery.isError || bookingsQuery.isError || equipmentsQuery.isError || isSettingsError
 
+  const isSubmittingRef = useRef(false)
+  const [isSubmissionUncertain, setIsSubmissionUncertain] = useState(false)
+
   const rooms = getOfficialRooms(roomsQuery.data || [])
-  const selectedRoomId = Form.useWatch('roomId', form)
-  const participantCount = Form.useWatch('participantCount', form)
   
   const selectedRoom = useMemo(() => {
     if (!selectedRoomId) return null
     return rooms.find((r: Room) => r.id === selectedRoomId) || null
   }, [selectedRoomId, rooms])
+
+  const dayBookingsForSelectedRoom = useMemo(() => {
+    if (!selectedRoom || !bookingsQuery.data) return []
+    return bookingsQuery.data.filter(b => {
+      if (b.roomId !== selectedRoom.id) return false
+      const s = String(b.status).toLowerCase()
+      return s !== 'cancelled' && s !== 'rejected' && s !== '-1' && s !== '2' && s !== 'expired' && s !== '3'
+    })
+  }, [selectedRoom, bookingsQuery.data])
 
   const isOverCapacity = useMemo(() => {
     if (!selectedRoom || !participantCount) return false
@@ -525,15 +580,12 @@ function BookingPage() {
   }
 
   const handleSlotClick = (slot: string) => {
-    if (!isServerDataReady) {
-      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+    if (isScheduleFetching || !isServerDataReady || hasServerDataError || !bookingSettings) {
+      message.warning('Dữ liệu lịch phòng hoặc quy định chưa tải xong. Vui lòng đợi trong giây lát.')
       return
     }
     const status = getSlotStatus(slot)
     if (status === 'disabled') {
-      if (hasServerDataError || !isServerDataReady) {
-        message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
-      }
       return
     }
     if (status === 'maintenance') {
@@ -760,42 +812,55 @@ function BookingPage() {
       const response = await http.post<Booking>('/api/bookings', payload)
       return response.data
     },
-    onError: (err: any) => {
-      const isNetworkError = !err?.response || err?.code === 'ERR_NETWORK' || !window.navigator.onLine
-      if (isNetworkError) {
-        message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
-      } else {
-        const backendError = err?.response?.data?.message || err?.response?.data?.error || (typeof err?.response?.data === 'string' ? err.response.data : null) || err?.message || 'Thất bại khi gửi yêu cầu đặt phòng'
-        message.error('Gửi yêu cầu thất bại: ' + backendError)
-      }
-    }
+    retry: false, // Không tự động thử lại POST tạo đơn đặt phòng
   })
 
   const submitBooking = (values: SubmitFormValues) => {
-    if (hasServerDataError || !isServerDataReady) {
-      message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
+    // Chặn gửi khi dữ liệu cần thiết đang tải, tải lỗi hoặc chưa có
+    if (isScheduleFetching || !isServerDataReady || hasServerDataError || !selectedRoom || !bookingSettings) {
+      message.error('Dữ liệu phòng, lịch hoặc quy định chưa sẵn sàng. Vui lòng kiểm tra lại kết nối.')
       return
     }
 
+    // Chặn gửi lại trong trạng thái chưa xác nhận
+    if (isSubmissionUncertain) {
+      message.warning('Chưa xác nhận được kết quả đặt phòng. Vui lòng kiểm tra Lịch sử đặt trước khi gửi lại.')
+      return
+    }
+
+    // Chặn bấm gửi nhiều lần bằng khóa đồng bộ và trạng thái loading
+    if (isSubmittingRef.current || createMutation.isPending) {
+      return
+    }
+    isSubmittingRef.current = true
+
     if (!isStaffOrFaculty && !values.agreedToRules) {
+      isSubmittingRef.current = false
       message.error('Vui lòng đồng ý với nội quy sử dụng phòng.');
       return;
     }
     if (!isAdmin && checkLimitQuery.data && !checkLimitQuery.data.canBook) {
+      isSubmittingRef.current = false
       message.error('Vượt quá giới hạn đặt phòng, không thể gửi yêu cầu.');
       return;
     }
     if (!isAdmin && checkLimitQuery.error) {
+      isSubmittingRef.current = false
       message.error('Không thể kiểm tra giới hạn đặt phòng, không thể gửi yêu cầu.');
       return;
     }
 
-    if (!selectedRoom) return
+    if (!selectedRoom) {
+      isSubmittingRef.current = false
+      return
+    }
     if (values.participantCount > selectedRoom.capacity) {
+      isSubmittingRef.current = false
       message.error(`Số lượng người (${values.participantCount}) vượt quá sức chứa tối đa của phòng ${selectedRoom.name} (${selectedRoom.capacity} người). Vui lòng điều chỉnh lại.`);
       return;
     }
     if (!startTime || !endTime) {
+      isSubmittingRef.current = false
       message.error('Vui lòng chọn đầy đủ thời gian bắt đầu và kết thúc trên bảng.')
       return
     }
@@ -804,6 +869,7 @@ function BookingPage() {
     const et = dayjs(`${values.date.format('YYYY-MM-DD')} ${endTime}`)
 
     if (et.isSameOrBefore(st)) {
+      isSubmittingRef.current = false
       message.error('Giờ kết thúc phải lớn hơn giờ bắt đầu.')
       return
     }
@@ -817,6 +883,7 @@ function BookingPage() {
     })
 
     if (violations.length > 0) {
+      isSubmittingRef.current = false
       Modal.error({
         title: 'Yêu cầu không thể thực hiện do vi phạm quy định',
         content: (
@@ -869,6 +936,8 @@ function BookingPage() {
       approvedAt: finalApprovedAt,
     }, {
       onSuccess: (createdBooking: any) => {
+        isSubmittingRef.current = false
+        setIsSubmissionUncertain(false)
         triggerConfetti()
         const realStatus = createdBooking?.status != null ? String(createdBooking.status) : finalStatus
         setSuccessBookingInfo({
@@ -908,20 +977,64 @@ function BookingPage() {
         setCurrentStep(0)
         queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
         queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
-        queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
-        queryClient.invalidateQueries({ queryKey: ['all-bookings'] })
+        queryClient.invalidateQueries({ queryKey: ['booking-page-schedule'] })
+        queryClient.invalidateQueries({ queryKey: ['calendar-bookings'] })
         queryClient.invalidateQueries({ queryKey: ['bookings'] })
-        queryClient.invalidateQueries({ queryKey: ['room-bookings'] })
         queryClient.invalidateQueries({ queryKey: ['rooms'] })
       },
       onError: (err: any) => {
+        isSubmittingRef.current = false
+        const status = err?.response?.status
+        const isTimeoutOrAborted = err?.code === 'ECONNABORTED' || err?.message?.toLowerCase().includes('timeout')
         const isNetworkError = !err?.response || err?.code === 'ERR_NETWORK' || !window.navigator.onLine
-        if (isNetworkError) {
-          message.error('Không thể kết nối với máy chủ. Vui lòng thử lại sau.')
-        } else {
-          const backendError = err.response?.data?.error || err.response?.data?.message || (typeof err.response?.data === 'string' ? err.response.data : null) || err.message || 'Thất bại khi đặt phòng';
-          message.error('Gửi yêu cầu thất bại: ' + backendError);
+        const isServerAmbiguous = status && [500, 502, 503, 504].includes(status)
+
+        // Nếu POST mất kết nối, timeout hoặc lỗi máy chủ khiến kết quả lưu không chắc chắn
+        if (isTimeoutOrAborted || isNetworkError || isServerAmbiguous) {
+          setIsSubmissionUncertain(true)
+          modal.warning({
+            title: 'Chưa xác nhận được kết quả đặt phòng. Vui lòng kiểm tra Lịch sử đặt trước khi gửi lại.',
+            content: (
+              <div>
+                <p style={{ color: '#475569', fontSize: 13.5, lineHeight: 1.6, marginBottom: 12 }}>
+                  Kết nối tới máy chủ bị gián đoạn hoặc phản hồi bị quá thời gian trong lúc xử lý yêu cầu lưu đơn.
+                  Hệ thống không thể xác định đơn đặt phòng đã được ghi nhận vào cơ sở dữ liệu hay chưa.
+                </p>
+                <p style={{ color: '#0f172a', fontWeight: 600, fontSize: 13.5, marginBottom: 4 }}>
+                  Để tránh bị trùng lặp đơn:
+                </p>
+                <ol style={{ paddingLeft: 18, color: '#334155', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                  <li>Vui lòng kiểm tra trang <strong>Lịch sử đặt</strong> để xem đơn đã xuất hiện hay chưa.</li>
+                  <li>Nội dung biểu mẫu của bạn vẫn được giữ nguyên đầy đủ.</li>
+                  <li>Chức năng gửi lại tạm thời được khóa để bảo vệ dữ liệu.</li>
+                </ol>
+              </div>
+            ),
+            okText: 'Kiểm tra Lịch sử đặt',
+            cancelText: 'Đóng và giữ đơn',
+            okButtonProps: { style: { background: '#0d2e5c' } },
+            onOk: () => {
+              navigate(isAdmin ? '/admin?tab=bookings' : '/booking-history')
+            }
+          })
+          return
         }
+
+        // Nếu backend từ chối do trùng lịch/quy định (400, 409, 422...)
+        setIsSubmissionUncertain(false)
+        const backendError =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          (typeof err?.response?.data === 'string' ? err.response.data : null) ||
+          err?.message ||
+          'Yêu cầu đặt phòng bị từ chối do vi phạm quy định hoặc trùng lịch.'
+
+        message.error('Gửi yêu cầu thất bại: ' + backendError)
+
+        // Tải lại dữ liệu liên quan
+        bookingsQuery.refetch()
+        checkLimitQuery.refetch()
+        refetchSettings()
       }
     })
   }
@@ -970,17 +1083,40 @@ function BookingPage() {
   }
 
   if (roomsQuery.isError) {
+    const err = roomsQuery.error as any
+    const status = err?.response?.status
+    const is401 = status === 401
+    const is403 = status === 403
+
     return (
       <main className="app-content" style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
         <Alert
-          type="error"
+          type={is403 ? 'warning' : 'error'}
           showIcon
-          message="Không thể kết nối máy chủ để tải danh sách phòng"
-          description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
+          title={
+            is401
+              ? 'Hết phiên đăng nhập'
+              : is403
+                ? 'Không đủ quyền'
+                : 'Không thể tải lịch phòng. Vui lòng thử lại.'
+          }
+          description={
+            is401
+              ? 'Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại để tiếp tục sử dụng hệ thống.'
+              : is403
+                ? 'Tài khoản của bạn không có đủ quyền xem dữ liệu phòng học.'
+                : (err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Không thể kết nối máy chủ để tải danh sách phòng. Vui lòng kiểm tra lại kết nối mạng.')
+          }
           action={
-            <Button danger type="primary" onClick={() => roomsQuery.refetch()}>
-              Thử lại
-            </Button>
+            is401 ? (
+              <Button danger type="primary" onClick={() => navigate('/login?redirect=/bookings')}>
+                Đăng nhập lại
+              </Button>
+            ) : (
+              <Button type="primary" onClick={() => roomsQuery.refetch()} style={{ background: '#0d2e5c' }}>
+                Thử lại
+              </Button>
+            )
           }
           style={{ borderRadius: 12, padding: 24 }}
         />
@@ -1113,7 +1249,7 @@ function BookingPage() {
                   <Alert
                     type="error"
                     showIcon
-                    message="Không thể kết nối với máy chủ"
+                    title="Không thể kết nối với máy chủ"
                     description={
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
                         <span>Dữ liệu phòng, thiết bị hoặc quy định chưa thể tải từ máy chủ. Vui lòng kiểm tra lại kết nối mạng.</span>
@@ -1344,192 +1480,255 @@ function BookingPage() {
                   </div>
                 </div>
 
-                {hasServerDataError && (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message="Không thể tải dữ liệu lịch đặt từ máy chủ"
-                    description={
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                        <span>Trạng thái phòng và các khung giờ đã đặt chưa thể xác thực do mất kết nối. Vui lòng bấm thử lại.</span>
-                        <Button
-                          size="small"
-                          danger
-                          onClick={() => {
-                            bookingsQuery.refetch()
-                            refetchSettings()
-                          }}
-                          icon={<ReloadOutlined />}
-                        >
-                          Thử lại
-                        </Button>
-                      </div>
-                    }
-                    style={{ marginBottom: 14, borderRadius: 8 }}
-                  />
-                )}
+                {hasServerDataError ? (
+                  (() => {
+                    const activeError = (bookingsQuery.error || roomsQuery.error || equipmentsQuery.error || (isSettingsError ? { response: { status: 500 } } : null)) as any
+                    const status = activeError?.response?.status
+                    const is401 = status === 401
+                    const is403 = status === 403
 
-                {/* Hiển thị giờ mở/đóng cửa và cảnh báo ngày nghỉ nếu có */}
-                {bookingSettings && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: 13, color: '#475569' }}>
-                    <span>Giờ mở cửa theo quy định: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
-                    <span>Đặt trước tối đa: <strong>{bookingSettings.maxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{bookingSettings.maxHoursPerBooking} giờ</strong></span>
-                  </div>
-                )}
-
-                {!bookingSettings?.workingDays?.includes(toVN(selectedDate).day()) && (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    style={{ marginBottom: 14, borderRadius: 8 }}
-                    title="Ngày không hoạt động theo quy định"
-                    description={`Ngày ${selectedDate.format('DD/MM/YYYY')} là ngày nghỉ theo quy định của nhà trường. Vui lòng chọn ngày làm việc khác.`}
-                  />
-                )}
-
-                {/* Bảng chú thích màu sắc trạng thái */}
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 14, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Còn trống</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#0d2e5c', borderRadius: 4 }}></div> Đang chọn</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef08a', border: '1px solid #facc15', borderRadius: 4 }}></div> Chờ duyệt</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#86efac', border: '1px solid #4ade80', borderRadius: 4 }}></div> Đã đặt</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef3c7', border: '1px dashed #f59e0b', borderRadius: 4 }}></div> Tạm ngưng/Bảo trì</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Đã qua/Đóng</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fee2e2', border: '1px solid #f87171', borderRadius: 4 }}></div> Trùng lịch</div>
-                </div>
-
-                {/* Banner hướng dẫn và thông báo khung giờ đã chọn */}
-                {renderSelectionBanner()}
-
-                {/* Lưới chọn khung giờ 30 phút */}
-                <div 
-                  className="booking-time-slots-grid"
-                  style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', 
-                    gap: 8,
-                    marginBottom: 20
-                  }}
-                >
-                  {slots.map(slot => {
-                    const status = getSlotStatus(slot)
-                    let bg = '#f8fafc'
-                    let color = '#475569'
-                    let border = '1px solid #cbd5e1'
-                    let cursor = 'pointer'
-
-                    if (status === 'past' || status === 'inactive') {
-                      bg = '#e2e8f0'
-                      color = '#94a3b8'
-                      cursor = 'not-allowed'
-                    } else if (status === 'maintenance') {
-                      bg = '#fef3c7'
-                      color = '#92400e'
-                      border = '1px dashed #f59e0b'
-                      cursor = 'not-allowed'
-                    } else if (status === 'conflict') {
-                      bg = '#fee2e2'
-                      color = '#991b1b'
-                      border = '1px solid #f87171'
-                      cursor = 'not-allowed'
-                    } else if (status === 'pending') {
-                      bg = '#fef08a'
-                      color = '#854d0e'
-                      border = '1px solid #facc15'
-                      cursor = 'not-allowed'
-                    } else if (status === 'approved') {
-                      bg = '#86efac'
-                      color = '#166534'
-                      border = '1px solid #4ade80'
-                      cursor = 'not-allowed'
-                    } else if (status === 'start') {
-                      bg = '#0d2e5c'
-                      color = '#fff'
-                      border = '1px solid #0d2e5c'
-                    } else if (status === 'end') {
-                      bg = '#0d2e5c'
-                      color = '#fff'
-                      border = '2px solid #f59e0b'
-                    } else if (status === 'in-between') {
-                      bg = '#e0e7ff'
-                      color = '#3730a3'
-                      border = '1px solid #c7d2fe'
-                    } else if (status === 'disabled') {
-                      bg = '#e2e8f0'
-                      color = '#94a3b8'
-                      cursor = 'not-allowed'
-                    }
-
-                    const isSelected = status === 'start' || status === 'end'
                     return (
-                      <div 
-                        key={slot}
-                        onClick={() => handleSlotClick(slot)}
-                        className={`time-slot-btn ${isSelected ? 'selected' : ''}`}
-                        style={{
-                          background: bg,
-                          color: color,
-                          border: border,
-                          borderRadius: 8,
-                          padding: '6px 4px',
-                          textAlign: 'center',
-                          cursor: cursor,
-                          fontWeight: 600,
-                          fontSize: 13,
-                          userSelect: 'none',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          minHeight: 52,
-                        }}
-                      >
-                        <div>{slot}</div>
-                        {status === 'start' && (
-                          <span style={{ fontSize: 9.5, background: '#3b82f6', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
-                            Bắt đầu
-                          </span>
-                        )}
-                        {status === 'end' && (
-                          <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
-                            Kết thúc
-                          </span>
-                        )}
-                        {status === 'maintenance' && (
-                          <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
-                            Bảo trì
-                          </span>
-                        )}
-                        {status === 'in-between' && (
-                          <span style={{ fontSize: 10, color: '#4338ca', marginTop: 2, fontWeight: 700 }}>
-                            •••
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Cảnh báo vi phạm quy định giờ mượn phòng (nếu có) */}
-                {limitViolations.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <Alert
-                      type="error"
-                      showIcon
-                      title={<strong style={{ color: '#b91c1c' }}>Khung giờ chọn không hợp lệ theo quy định</strong>}
-                      description={
-                        <div>
-                          <div style={{ marginBottom: 6, color: '#b91c1c' }}>Yêu cầu đặt phòng của bạn không thỏa mãn các quy định sau:</div>
-                          <ul style={{ margin: 0, paddingLeft: 20, color: '#b91c1c', fontSize: 13 }}>
-                            {limitViolations.map((v, i) => <li key={i}>{v}</li>)}
-                          </ul>
-                          <div style={{ marginTop: 6, fontSize: 12.5, color: '#7f1d1d' }}>
-                            Vui lòng chọn lại khung giờ hoặc ngày khác thỏa mãn quy định để tiếp tục.
+                      <Alert
+                        type={is403 ? 'warning' : 'error'}
+                        showIcon
+                        title={
+                          is401
+                            ? 'Hết phiên đăng nhập'
+                            : is403
+                              ? 'Không đủ quyền'
+                              : 'Không thể tải lịch phòng. Vui lòng thử lại.'
+                        }
+                        description={
+                          <div>
+                            <div style={{ marginBottom: 6, color: '#1e293b' }}>
+                              {is401
+                                ? 'Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại để tiếp tục tải lịch phòng.'
+                                : is403
+                                  ? 'Tài khoản của bạn không có đủ quyền xem dữ liệu lịch phòng.'
+                                  : (activeError?.response?.data?.message || activeError?.response?.data?.error || activeError?.message || 'Không thể kết nối máy chủ để tải lịch phòng.')}
+                            </div>
+                            <span style={{ fontSize: 12.5, color: '#64748b' }}>
+                              Bảng khung giờ tạm thời không hiển thị để đảm bảo tính chính xác và tránh chọn nhầm phòng khi dữ liệu chưa được xác thực.
+                            </span>
                           </div>
-                        </div>
-                      }
-                    />
-                  </div>
+                        }
+                        action={
+                          is401 ? (
+                            <Button danger type="primary" onClick={() => navigate('/login?redirect=/bookings')}>
+                              Đăng nhập lại
+                            </Button>
+                          ) : (
+                            <Button
+                              type="primary"
+                              onClick={() => {
+                                bookingsQuery.refetch()
+                                refetchSettings()
+                                roomsQuery.refetch()
+                              }}
+                              style={{ background: '#0d2e5c' }}
+                            >
+                              Thử lại
+                            </Button>
+                          )
+                        }
+                        style={{ marginBottom: 20, borderRadius: 10, padding: 16 }}
+                      />
+                    )
+                  })()
+                ) : (isScheduleFetching || !bookingSettings) ? (
+                  <Card style={{ textAlign: 'center', padding: '48px 24px', borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}>
+                    <Spin size="large" />
+                    <div style={{ marginTop: 16, fontSize: 15, fontWeight: 600, color: '#0d2e5c' }}>
+                      Đang tải lịch phòng và quy định...
+                    </div>
+                    <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
+                      Vui lòng đợi trong giây lát để hệ thống kiểm tra tình trạng phòng của ngày {selectedDate.format('DD/MM/YYYY')}.
+                    </Typography.Text>
+                  </Card>
+                ) : (
+                  <>
+                    {/* Hiển thị giờ mở/đóng cửa và cảnh báo ngày nghỉ nếu có */}
+                    {bookingSettings && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: 13, color: '#475569' }}>
+                        <span>Giờ mở cửa theo quy định: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
+                        <span>Đặt trước tối đa: <strong>{bookingSettings.maxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{bookingSettings.maxHoursPerBooking} giờ</strong></span>
+                      </div>
+                    )}
+
+                    {!bookingSettings?.workingDays?.includes(toVN(selectedDate).day()) && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 14, borderRadius: 8 }}
+                        title="Ngày không hoạt động theo quy định"
+                        description={`Ngày ${selectedDate.format('DD/MM/YYYY')} là ngày nghỉ theo quy định của nhà trường. Vui lòng chọn ngày làm việc khác.`}
+                      />
+                    )}
+
+                    {/* Không có lịch chỉ được hiển thị sau khi tất cả dữ liệu cần thiết tải thành công */}
+                    {dayBookingsForSelectedRoom.length === 0 && (
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 14, borderRadius: 8, background: '#f0fdf4', borderColor: '#bbf7d0' }}
+                        title={
+                          <span style={{ color: '#166534', fontWeight: 600 }}>
+                            Không có lịch đặt trước nào trong ngày {selectedDate.format('DD/MM/YYYY')}
+                          </span>
+                        }
+                        description={
+                          <span style={{ color: '#15803d', fontSize: 12.5 }}>
+                            Phòng {selectedRoom?.name} hiện chưa có lịch sử dụng trong ngày này. Bạn có thể tự do chọn khung giờ hoạt động.
+                          </span>
+                        }
+                      />
+                    )}
+
+                    {/* Bảng chú thích màu sắc trạng thái */}
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 14, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Còn trống</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#0d2e5c', borderRadius: 4 }}></div> Đang chọn</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef08a', border: '1px solid #facc15', borderRadius: 4 }}></div> Chờ duyệt</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#86efac', border: '1px solid #4ade80', borderRadius: 4 }}></div> Đã đặt</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef3c7', border: '1px dashed #f59e0b', borderRadius: 4 }}></div> Tạm ngưng/Bảo trì</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Đã qua/Đóng</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fee2e2', border: '1px solid #f87171', borderRadius: 4 }}></div> Trùng lịch</div>
+                    </div>
+
+                    {/* Banner hướng dẫn và thông báo khung giờ đã chọn */}
+                    {renderSelectionBanner()}
+
+                    {/* Lưới chọn khung giờ 30 phút */}
+                    <div 
+                      className="booking-time-slots-grid"
+                      style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', 
+                        gap: 8,
+                        marginBottom: 20
+                      }}
+                    >
+                      {slots.map(slot => {
+                        const status = getSlotStatus(slot)
+                        let bg = '#f8fafc'
+                        let color = '#475569'
+                        let border = '1px solid #cbd5e1'
+                        let cursor = 'pointer'
+
+                        if (status === 'past' || status === 'inactive') {
+                          bg = '#e2e8f0'
+                          color = '#94a3b8'
+                          cursor = 'not-allowed'
+                        } else if (status === 'maintenance') {
+                          bg = '#fef3c7'
+                          color = '#92400e'
+                          border = '1px dashed #f59e0b'
+                          cursor = 'not-allowed'
+                        } else if (status === 'conflict') {
+                          bg = '#fee2e2'
+                          color = '#991b1b'
+                          border = '1px solid #f87171'
+                          cursor = 'not-allowed'
+                        } else if (status === 'pending') {
+                          bg = '#fef08a'
+                          color = '#854d0e'
+                          border = '1px solid #facc15'
+                          cursor = 'not-allowed'
+                        } else if (status === 'approved') {
+                          bg = '#86efac'
+                          color = '#166534'
+                          border = '1px solid #4ade80'
+                          cursor = 'not-allowed'
+                        } else if (status === 'start') {
+                          bg = '#0d2e5c'
+                          color = '#fff'
+                          border = '1px solid #0d2e5c'
+                        } else if (status === 'end') {
+                          bg = '#0d2e5c'
+                          color = '#fff'
+                          border = '2px solid #f59e0b'
+                        } else if (status === 'in-between') {
+                          bg = '#e0e7ff'
+                          color = '#3730a3'
+                          border = '1px solid #c7d2fe'
+                        } else if (status === 'disabled') {
+                          bg = '#e2e8f0'
+                          color = '#94a3b8'
+                          cursor = 'not-allowed'
+                        }
+
+                        const isSelected = status === 'start' || status === 'end'
+                        return (
+                          <div 
+                            key={slot}
+                            onClick={() => handleSlotClick(slot)}
+                            className={`time-slot-btn ${isSelected ? 'selected' : ''}`}
+                            style={{ 
+                              background: bg,
+                              color: color,
+                              border: border,
+                              borderRadius: 8,
+                              padding: '6px 4px',
+                              textAlign: 'center',
+                              cursor: cursor,
+                              fontWeight: 600,
+                              fontSize: 13,
+                              userSelect: 'none',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: 52,
+                            }}
+                          >
+                            <div>{slot}</div>
+                            {status === 'start' && (
+                              <span style={{ fontSize: 9.5, background: '#3b82f6', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
+                                Bắt đầu
+                              </span>
+                            )}
+                            {status === 'end' && (
+                              <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
+                                Kết thúc
+                              </span>
+                            )}
+                            {status === 'maintenance' && (
+                              <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
+                                Bảo trì
+                              </span>
+                            )}
+                            {status === 'in-between' && (
+                              <span style={{ fontSize: 10, color: '#4338ca', marginTop: 2, fontWeight: 700 }}>
+                                •••
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Cảnh báo vi phạm quy định giờ mượn phòng (nếu có) */}
+                    {limitViolations.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <Alert
+                          type="error"
+                          showIcon
+                          title={<strong style={{ color: '#b91c1c' }}>Khung giờ chọn không hợp lệ theo quy định</strong>}
+                          description={
+                            <div>
+                              <div style={{ marginBottom: 6, color: '#b91c1c' }}>Yêu cầu đặt phòng của bạn không thỏa mãn các quy định sau:</div>
+                              <ul style={{ margin: 0, paddingLeft: 20, color: '#b91c1c', fontSize: 13 }}>
+                                {limitViolations.map((v, i) => <li key={i}>{v}</li>)}
+                              </ul>
+                              <div style={{ marginTop: 6, fontSize: 12.5, color: '#7f1d1d' }}>
+                                Vui lòng chọn lại khung giờ hoặc ngày khác thỏa mãn quy định để tiếp tục.
+                              </div>
+                            </div>
+                          }
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Nút chuyển bước */}
@@ -1546,10 +1745,10 @@ function BookingPage() {
                     type="primary" 
                     size="large" 
                     onClick={handleGoToStep3}
-                    disabled={!startTime || !endTime || limitViolations.length > 0}
+                    disabled={!startTime || !endTime || limitViolations.length > 0 || isScheduleFetching || hasServerDataError || !isServerDataReady}
                     icon={<ArrowRightOutlined />}
                     style={{ 
-                      background: (startTime && endTime && limitViolations.length === 0) ? '#0d2e5c' : undefined, 
+                      background: (startTime && endTime && limitViolations.length === 0 && !isScheduleFetching && !hasServerDataError && isServerDataReady) ? '#0d2e5c' : undefined, 
                       height: 44, 
                       borderRadius: 8, 
                       fontWeight: 600, 
@@ -2257,6 +2456,37 @@ function BookingPage() {
                   </>
                 )}
 
+                {isSubmissionUncertain && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 20, borderRadius: 10, padding: '16px 20px' }}
+                    title={<strong style={{ color: '#92400e', fontSize: 14 }}>Chưa xác nhận được kết quả đặt phòng. Vui lòng kiểm tra Lịch sử đặt trước khi gửi lại.</strong>}
+                    description={
+                      <div style={{ marginTop: 6 }}>
+                        <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+                          Yêu cầu trước đó gặp sự cố mạng hoặc máy chủ phản hồi quá thời gian. Để tránh đặt trùng lặp phòng học, vui lòng kiểm tra danh sách đơn trước khi quyết định gửi lại. Biểu mẫu của bạn đã được giữ nguyên.
+                        </p>
+                        <Space wrap>
+                          <Button
+                            type="primary"
+                            icon={<HistoryOutlined />}
+                            onClick={() => navigate(isAdmin ? '/admin?tab=bookings' : '/booking-history')}
+                            style={{ background: '#0d2e5c' }}
+                          >
+                            Mở Lịch sử đặt phòng
+                          </Button>
+                          <Button
+                            onClick={() => setIsSubmissionUncertain(false)}
+                          >
+                            Tôi đã kiểm tra, cho phép gửi lại
+                          </Button>
+                        </Space>
+                      </div>
+                    }
+                  />
+                )}
+
                 {/* Nút gửi đơn */}
                 <div className="step-navigation-bar">
                   <Button 
@@ -2273,9 +2503,14 @@ function BookingPage() {
                     htmlType="submit" 
                     size="large" 
                     disabled={
-                      !isStaffOrFaculty 
+                      createMutation.isPending ||
+                      isSubmissionUncertain ||
+                      !isServerDataReady ||
+                      hasServerDataError ||
+                      isScheduleFetching ||
+                      (!isStaffOrFaculty 
                         ? (!agreedToRules || (checkLimitQuery.data && !checkLimitQuery.data.canBook) || checkLimitQuery.isFetching)
-                        : false
+                        : false)
                     } 
                     loading={createMutation.isPending || checkLimitQuery.isFetching} 
                     icon={<CheckCircleOutlined />} 

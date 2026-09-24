@@ -474,7 +474,7 @@ export default function BookingSettingsManagement() {
         <Alert
           type="error"
           showIcon
-          message="Không thể kết nối với máy chủ. Không thể tải quy định đặt phòng. Vui lòng thử lại sau."
+          title="Không thể kết nối với máy chủ. Không thể tải quy định đặt phòng. Vui lòng thử lại sau."
           description={
             <div style={{ marginTop: 8 }}>
               <Button
@@ -500,7 +500,7 @@ export default function BookingSettingsManagement() {
         <Alert
           type="error"
           showIcon
-          message="Chưa lưu được vào máy chủ"
+          title="Chưa lưu được vào máy chủ"
           description={saveErrorMessage}
           style={{ marginBottom: 16 }}
           closable
@@ -514,7 +514,7 @@ export default function BookingSettingsManagement() {
           type="warning"
           showIcon
           icon={<WarningOutlined />}
-          message="Phát hiện xung đột phiên bản cấu hình"
+          title="Phát hiện xung đột phiên bản cấu hình"
           description={
             <div>
               <p style={{ margin: '4px 0 8px' }}>{conflictError}</p>
@@ -541,7 +541,7 @@ export default function BookingSettingsManagement() {
         <Alert
           type="info"
           showIcon
-          message="Bạn đang có thay đổi chưa lưu"
+          title="Bạn đang có thay đổi chưa lưu"
           description="Các thông số bạn chỉnh sửa đang nằm trên biểu mẫu. Bấm nút 'Lưu quy định đặt phòng' ở cuối form để lưu vào hệ thống."
           style={{ marginBottom: 16 }}
         />

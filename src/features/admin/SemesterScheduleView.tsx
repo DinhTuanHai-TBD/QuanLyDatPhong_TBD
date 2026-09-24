@@ -165,8 +165,8 @@ export default function SemesterScheduleView({
   const filteredCourses = useMemo(() => {
     return courseGroups.filter((g) => {
       if (semesterFilter !== 'all') {
-        const sem = g.semester.toLowerCase()
-        if (!sem.includes(semesterFilter.toLowerCase())) return false
+        const sem = (g.semester || '').toLowerCase()
+        if (!sem.includes((semesterFilter || '').toLowerCase())) return false
       }
       if (roomFilter !== 'all' && g.roomId !== roomFilter) {
         return false
@@ -174,11 +174,11 @@ export default function SemesterScheduleView({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const match =
-          g.subjectName.toLowerCase().includes(q) ||
-          g.subjectCode.toLowerCase().includes(q) ||
-          g.classCode.toLowerCase().includes(q) ||
-          g.lecturerName.toLowerCase().includes(q) ||
-          g.roomName.toLowerCase().includes(q)
+          (g.subjectName || '').toLowerCase().includes(q) ||
+          (g.subjectCode || '').toLowerCase().includes(q) ||
+          (g.classCode || '').toLowerCase().includes(q) ||
+          (g.lecturerName || '').toLowerCase().includes(q) ||
+          (g.roomName || '').toLowerCase().includes(q)
         if (!match) return false
       }
       return true

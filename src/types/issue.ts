@@ -7,7 +7,9 @@ export interface IssueReport {
   description: string;
   imageUrl?: string;
   bookingId?: number;
-  status: 'Pending' | 'Received' | 'InProgress' | 'Resolved' | 'Closed' | string;
+  status: 'Pending' | 'Assigned' | 'Fixing' | 'InProgress' | 'Received' | 'Resolved' | 'Closed' | 'Rejected' | string;
+  assignedTo?: string;
+  repairNotes?: string;
   adminNotes?: string;
   createdAt: string;
   updatedAt: string;
