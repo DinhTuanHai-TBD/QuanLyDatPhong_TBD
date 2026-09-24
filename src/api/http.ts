@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'https://skyrocket-humorous-that.ngrok-free.dev',
+  baseURL: import.meta.env.VITE_API_URL ?? 'https://subsector-unholy-compacter.ngrok-free.dev',
   timeout: 10000,
   headers: {
     'ngrok-skip-browser-warning': 'true'
