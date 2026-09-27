@@ -26,7 +26,7 @@ import {
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { http, shouldRetryQuery } from '../../api/http'
+import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { getUserId, getUserRole, getUserEmail, isAuthenticated } from '../../api/authUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
@@ -1292,11 +1292,7 @@ export default function CalendarPage() {
             )
           }
 
-          const errorMsg =
-            err?.response?.data?.message ||
-            err?.response?.data?.error ||
-            err?.message ||
-            'Không thể kết nối tới máy chủ để tải lịch.'
+          const errorMsg = formatApiError(err)
 
           return (
             <Alert

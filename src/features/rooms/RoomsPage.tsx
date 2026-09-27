@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Empty, Row, Typography, Input, Select, Modal, Descriptions } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { http } from '../../api/http'
+import { http, formatApiError } from '../../api/http'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
 
@@ -318,8 +318,8 @@ function RoomsPage() {
         <Alert 
           showIcon 
           type="error" 
-          title="Không thể kết nối máy chủ để lấy danh sách phòng" 
-          description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau." 
+          title={formatApiError(roomsQuery.error)} 
+          description="Hệ thống tạm thời không thể hiển thị danh sách phòng do lỗi máy chủ hoặc đường truyền. Vui lòng kiểm tra lại kết nối hoặc bấm Thử lại." 
           action={
             <Button danger type="primary" onClick={() => roomsQuery.refetch()}>
               Thử lại

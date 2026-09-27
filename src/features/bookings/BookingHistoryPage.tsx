@@ -5,7 +5,7 @@ import dayjs from 'dayjs'
 import { HomeOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
-import { http } from '../../api/http'
+import { http, formatApiError } from '../../api/http'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
@@ -966,8 +966,8 @@ function BookingHistoryPage() {
         <Alert
           type="error"
           showIcon
-          title="Không thể tải lịch sử đặt phòng"
-          description="Vui lòng kiểm tra lại kết nối máy chủ hoặc thử đăng xuất rồi đăng nhập lại."
+          title={formatApiError(bookingsQuery.error)}
+          description="Hệ thống tạm thời không thể hiển thị danh sách đơn đặt phòng. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
           action={<Button size="small" type="dashed" onClick={() => bookingsQuery.refetch()}>Thử lại</Button>}
           style={{ marginBottom: 24, borderRadius: 8 }}
         />
@@ -1157,7 +1157,7 @@ function BookingHistoryPage() {
           <Alert
             type="error"
             showIcon
-            title="Không thể kết nối máy chủ để tải lịch sử đặt phòng"
+            title={formatApiError(bookingsQuery.error)}
             description="Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
             action={
               <Button danger type="primary" onClick={() => bookingsQuery.refetch()}>

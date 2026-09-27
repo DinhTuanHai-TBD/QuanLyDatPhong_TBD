@@ -23,7 +23,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import isBetween from 'dayjs/plugin/isBetween'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { http, shouldRetryQuery } from '../../api/http'
+import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
@@ -1249,10 +1249,14 @@ function BookingPage() {
                   <Alert
                     type="error"
                     showIcon
-                    title="Không thể kết nối với máy chủ"
+                    title={
+                      (bookingsQuery.error || roomsQuery.error || equipmentsQuery.error)
+                        ? formatApiError(bookingsQuery.error || roomsQuery.error || equipmentsQuery.error)
+                        : "Không thể kết nối với máy chủ"
+                    }
                     description={
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                        <span>Dữ liệu phòng, thiết bị hoặc quy định chưa thể tải từ máy chủ. Vui lòng kiểm tra lại kết nối mạng.</span>
+                        <span>Dữ liệu phòng, thiết bị hoặc quy định chưa thể tải từ máy chủ. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.</span>
                         <Button
                           size="small"
                           danger
@@ -1268,7 +1272,7 @@ function BookingPage() {
                         </Button>
                       </div>
                     }
-                    style={{ marginBottom: 16, borderRadius: 8 }}
+                    style={{ marginBottom: 20, borderRadius: 8 }}
                   />
                 )}
 
@@ -1496,7 +1500,7 @@ function BookingPage() {
                             ? 'Hết phiên đăng nhập'
                             : is403
                               ? 'Không đủ quyền'
-                              : 'Không thể tải lịch phòng. Vui lòng thử lại.'
+                              : formatApiError(activeError)
                         }
                         description={
                           <div>
@@ -1505,7 +1509,7 @@ function BookingPage() {
                                 ? 'Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại để tiếp tục tải lịch phòng.'
                                 : is403
                                   ? 'Tài khoản của bạn không có đủ quyền xem dữ liệu lịch phòng.'
-                                  : (activeError?.response?.data?.message || activeError?.response?.data?.error || activeError?.message || 'Không thể kết nối máy chủ để tải lịch phòng.')}
+                                  : formatApiError(activeError)}
                             </div>
                             <span style={{ fontSize: 12.5, color: '#64748b' }}>
                               Bảng khung giờ tạm thời không hiển thị để đảm bảo tính chính xác và tránh chọn nhầm phòng khi dữ liệu chưa được xác thực.

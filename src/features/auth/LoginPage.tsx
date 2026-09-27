@@ -3,7 +3,7 @@ import { LockOutlined, MailOutlined, SafetyOutlined, ArrowLeftOutlined } from '@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Form, Input, App } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { http } from '../../api/http'
+import { http, formatApiError } from '../../api/http'
 
 interface AuthFormValues {
   email: string
@@ -72,41 +72,12 @@ export default function LoginPage() {
   const getLoginErrorDetails = () => {
     if (!loginMutation.isError) return null
     const err = loginMutation.error as any
-    const serverMessage = err?.response?.data?.message || err?.response?.data?.title || err?.response?.data?.error
-    const status = err?.response?.status
-    const isNetworkError = err?.code === 'ERR_NETWORK' || !err?.response
-
-    if (isNetworkError) {
-      return {
-        title: 'Không thể kết nối đến máy chủ xác thực. Vui lòng kiểm tra đường truyền mạng hoặc thử lại sau.',
-        isNetwork: true,
-      }
-    }
-
-    if (serverMessage) {
-      const lower = String(serverMessage).toLowerCase()
-      if (lower.includes('mật khẩu') || lower.includes('password')) {
-        return {
-          title: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại (chú ý phím Caps Lock).',
-          isNetwork: false,
-        }
-      }
-      return {
-        title: serverMessage,
-        isNetwork: false,
-      }
-    }
-
-    if (status === 401 || status === 400 || status === 404) {
-      return {
-        title: 'Tài khoản không tồn tại trong hệ thống Đại học Thái Bình Dương hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.',
-        isNetwork: false,
-      }
-    }
+    const title = formatApiError(err, { context: 'login' })
+    const isNetwork = err?.code === 'ERR_NETWORK' || (!err?.response && Boolean(err?.request))
 
     return {
-      title: 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.',
-      isNetwork: false,
+      title,
+      isNetwork,
     }
   }
 
