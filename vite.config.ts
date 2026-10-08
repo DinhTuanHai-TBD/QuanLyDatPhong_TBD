@@ -9,4 +9,7 @@ export default defineConfig({
     port: 3000,
     allowedHosts: true,
   },
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify('https://cos-arrangement-sperm-magnitude.trycloudflare.com'),
+  },
 })

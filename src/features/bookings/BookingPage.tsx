@@ -27,6 +27,7 @@ import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
+import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 import type { Booking, CreateBookingPayload } from '../../types/booking'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
 import { type UserProfileData } from '../../api/userProfile'
@@ -1373,8 +1374,9 @@ function BookingPage() {
                     <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                       {selectedRoom.imageUrl ? (
                         <img 
-                          src={selectedRoom.imageUrl} 
+                          src={getStorageImageUrl(selectedRoom.imageUrl)} 
                           alt={selectedRoom.name} 
+                          onError={(e) => handleImageFallback(e, selectedRoom.imageUrl || undefined)}
                           style={{ width: 88, height: 68, objectFit: 'cover', borderRadius: 8, border: '1px solid #cbd5e1' }} 
                         />
                       ) : (

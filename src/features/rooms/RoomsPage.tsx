@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { http, formatApiError } from '../../api/http'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
+import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 
 async function fetchRooms(): Promise<Room[]> {
   const res = await http.get<Room[]>('/api/rooms')
@@ -23,7 +24,7 @@ async function fetchRooms(): Promise<Room[]> {
 
 const getRoomImageUrl = (room: any) => {
   if (!room.imageUrl) return '';
-  return room.imageUrl;
+  return getStorageImageUrl(room.imageUrl);
 };
 
 const getFormattedRoomType = (room: any) => {
@@ -362,6 +363,7 @@ function RoomsPage() {
                         <img 
                           src={getRoomImageUrl(room)} 
                           alt={`Phòng ${room.name}`} 
+                          onError={(e) => handleImageFallback(e, room.imageUrl || undefined)}
                           style={{ 
                             width: '100%', 
                             height: '100%', 
@@ -546,7 +548,12 @@ function RoomsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {selectedRoom.imageUrl && (
               <div style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden' }}>
-                <img src={selectedRoom.imageUrl} alt={selectedRoom.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img 
+                  src={getRoomImageUrl(selectedRoom)} 
+                  alt={selectedRoom.name} 
+                  onError={(e) => handleImageFallback(e, selectedRoom.imageUrl || undefined)}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
               </div>
             )}
             <Descriptions bordered column={1} size="small">

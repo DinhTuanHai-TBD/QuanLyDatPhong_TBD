@@ -39,6 +39,7 @@ import CalendarPage from "./features/calendar/CalendarPage";
 import ReportIssuePage from "./features/issues/ReportIssuePage";
 import NotificationsPage from "./features/notifications/NotificationsPage";
 import { useBookingMaintenanceWorker } from "./services/BookingMaintenanceWorker";
+import { STATIC_IMAGES, handleImageFallback } from "./utils/storageUtils";
 
 const { Content } = Layout;
 
@@ -271,7 +272,11 @@ function App() {
         className={`tbd-navbar ${isHomePage && !scrolled ? "tbd-navbar--overlay" : "tbd-navbar--solid"}`}
       >
         <Link to="/" className="tbd-brand" aria-label="Đại học Thái Bình Dương">
-          <img src="/images/logo.png" alt="Logo Đại học Thái Bình Dương" />
+          <img 
+            src={STATIC_IMAGES.logo} 
+            alt="Logo Đại học Thái Bình Dương" 
+            onError={(e) => handleImageFallback(e, "/images/logo.png")}
+          />
           <span>
             <strong>
               Đại học
@@ -310,13 +315,14 @@ function App() {
                     alignItems: 'center',
                     flexShrink: 0,
                     whiteSpace: 'nowrap',
-                    maxWidth: 140,
+                    maxWidth: 280,
                   }}
                 >
                   <span
                     className="user-email-text"
+                    title={displayName}
                     style={{
-                      maxWidth: 90,
+                      maxWidth: 220,
                       textOverflow: 'ellipsis',
                       overflow: 'hidden',
                       whiteSpace: 'nowrap',

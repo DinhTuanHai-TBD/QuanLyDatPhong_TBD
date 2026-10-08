@@ -25,7 +25,6 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   EyeOutlined,
-  LockOutlined,
   ScheduleOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -308,10 +307,7 @@ export default function SemesterScheduleView({
       key: 'status',
       width: 130,
       render: () => (
-        <div>
-          <Tag color="success" icon={<CheckCircleOutlined />}>Đã duyệt</Tag>
-          <Tag color="gold" icon={<LockOutlined />} style={{ marginTop: 4 }}>IsOverride</Tag>
-        </div>
+        <Tag color="success" icon={<CheckCircleOutlined />}>Đã duyệt</Tag>
       )
     },
     {

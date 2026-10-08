@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Form, Input, App } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { http, formatApiError } from '../../api/http'
+import { STATIC_IMAGES, handleImageFallback } from '../../utils/storageUtils'
 
 interface AuthFormValues {
   email: string
@@ -126,8 +127,9 @@ export default function LoginPage() {
           
           {/* 1. Logo Trường Đại học Thái Bình Dương (Đặt chính giữa phía trên) */}
           <img 
-            src="/images/logo.png" 
+            src={STATIC_IMAGES.logo} 
             alt="Logo Đại học Thái Bình Dương" 
+            onError={(e) => handleImageFallback(e, "/images/logo.png")}
             style={{ 
               width: 80, 
               height: 80, 
@@ -258,8 +260,9 @@ export default function LoginPage() {
           {/* Header Form */}
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
             <img 
-              src="/images/logo.png" 
+              src={STATIC_IMAGES.logo} 
               alt="Logo Đại học Thái Bình Dương" 
+              onError={(e) => handleImageFallback(e, "/images/logo.png")}
               style={{ height: 50, objectFit: 'contain' }}
             />
             <h2 style={{

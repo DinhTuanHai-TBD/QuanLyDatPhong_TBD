@@ -30,7 +30,6 @@ import {
   UserAddOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
-  CalendarOutlined,
   PictureOutlined,
   DeleteOutlined,
   InboxOutlined,
@@ -46,6 +45,7 @@ import type { Booking, BookingStatus } from "../../types/booking";
 import dayjs from "dayjs";
 import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking } from "../../utils/bookingStatusUtils";
 import { getOfficialRooms } from "../../utils/roomUtils";
+import { getStorageImageUrl, handleImageFallback } from "../../utils/storageUtils";
 import { normalizeDepartmentName } from "../../utils/academicPrograms";
 import BookingSettingsManagement from "./BookingSettingsManagement";
 import IssueResolutionModal from "./IssueResolutionModal";
@@ -1059,8 +1059,9 @@ export default function AdminPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {record.imageUrl ? (
             <img
-              src={record.imageUrl}
+              src={getStorageImageUrl(record.imageUrl)}
               alt={record.name}
+              onError={(e) => handleImageFallback(e, record.imageUrl || undefined)}
               style={{
                 width: 44,
                 height: 44,
@@ -1869,24 +1870,12 @@ export default function AdminPage() {
     }
     if (activeTab.startsWith("bookings")) {
       return (
-        <Space size="small">
-          {canManageSchedule && (
-            <Button
-              type="primary"
-              icon={<CalendarOutlined />}
-              onClick={() => setIsSemesterScheduleModalOpen(true)}
-              style={{ background: "#0284c7", borderColor: "#0284c7" }}
-            >
-              Nhập TKB Học Kỳ
-            </Button>
-          )}
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["bookings"] })}
-          >
-            Làm mới
-          </Button>
-        </Space>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["bookings"] })}
+        >
+          Làm mới
+        </Button>
       );
     }
     if (activeTab.startsWith("analytics")) {
@@ -2159,8 +2148,9 @@ export default function AdminPage() {
                       >
                         {room.imageUrl ? (
                           <img
-                            src={room.imageUrl}
+                            src={getStorageImageUrl(room.imageUrl)}
                             alt={room.name}
+                            onError={(e) => handleImageFallback(e, room.imageUrl || undefined)}
                             style={{
                               position: "absolute",
                               top: 0,
@@ -2944,10 +2934,11 @@ export default function AdminPage() {
                   }}
                 >
                   <img
-                    src={roomPreviewImage}
+                    src={getStorageImageUrl(roomPreviewImage)}
                     alt="Ảnh phòng"
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     onError={(e) => {
+                      handleImageFallback(e, roomPreviewImage || undefined);
                       (e.currentTarget as HTMLElement).style.opacity = "0.3";
                     }}
                   />

@@ -222,7 +222,7 @@ a {
   font-size: 12.5px !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
   border-radius: 6px !important;
-  padding: 6px 10px !important;
+  padding: 6px 12px !important;
   height: auto !important;
   background: rgba(255, 255, 255, 0.1) !important;
   backdrop-filter: blur(8px);
@@ -231,7 +231,7 @@ a {
   flex-shrink: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
-  max-width: 140px !important;
+  max-width: 280px !important;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
@@ -248,7 +248,7 @@ a {
 
 .user-email-text {
   display: inline-block;
-  max-width: 90px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -882,6 +882,7 @@ a {
   inset: -28px;
   background-image: 
     linear-gradient(135deg, rgba(13, 46, 92, 0.92) 0%, rgba(8, 27, 51, 0.96) 100%),
+    url("https://jpijxwxsoxrmssosgblj.supabase.co/storage/v1/object/public/project-images/hinh1.png"),
     url("/images/hinh1.png");
   background-size: cover;
   background-position: center;
@@ -1393,11 +1394,11 @@ footer,
   }
   .nav-user-button-desktop {
     display: inline-flex !important;
-    max-width: 140px !important;
+    max-width: 280px !important;
   }
   .user-email-text {
     display: inline-block !important;
-    max-width: 90px !important;
+    max-width: 220px !important;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1405,6 +1406,15 @@ footer,
   }
   .mobile-menu-button {
     display: none !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .nav-user-button-desktop {
+    max-width: 340px !important;
+  }
+  .user-email-text {
+    max-width: 280px !important;
   }
 }
 
@@ -1417,6 +1427,12 @@ footer,
   .desktop-nav .nav-item {
     font-size: 12px !important;
     padding: 3px 5px !important;
+  }
+  .nav-user-button-desktop {
+    max-width: 220px !important;
+  }
+  .user-email-text {
+    max-width: 160px !important;
   }
 }
 
@@ -1440,11 +1456,11 @@ footer,
   }
   .nav-user-button-desktop {
     display: inline-flex !important;
-    max-width: 140px !important;
+    max-width: 220px !important;
   }
   .user-email-text {
     display: inline-block !important;
-    max-width: 90px !important;
+    max-width: 160px !important;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

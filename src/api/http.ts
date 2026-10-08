@@ -1,7 +1,16 @@
 import axios from 'axios'
 
+const envUrl = import.meta.env.VITE_API_URL?.trim()
+const targetBaseUrl =
+  envUrl &&
+  !envUrl.includes('tartness') &&
+  !envUrl.includes('subsector') &&
+  !envUrl.includes('skyrocket-humorous-that')
+    ? envUrl
+    : 'https://cos-arrangement-sperm-magnitude.trycloudflare.com'
+
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL?.trim() || 'https://skyrocket-humorous-that.ngrok-free.dev',
+  baseURL: targetBaseUrl,
   timeout: 15000,
   headers: {
     'ngrok-skip-browser-warning': 'true'

@@ -13,6 +13,7 @@ import { LeftOutlined, RightOutlined, CalendarOutlined,
 import {  Button, Carousel, Col, Row, Typography } from 'antd'
 import {  useEffect, useRef, useState } from 'react'
 import {  Link, useNavigate } from 'react-router-dom'
+import { STATIC_IMAGES, handleImageFallback } from '../../utils/storageUtils'
 
 interface StatCounterProps {
   value: number
@@ -138,7 +139,7 @@ function RotatingHeroPhrase() {
 
 const slides = [
   {
-    image: '/images/hinh1.png',
+    image: STATIC_IMAGES.hinh1,
     title: (
       <>
         <span className="hero-line">Đặt phòng nhanh chóng</span>
@@ -153,7 +154,7 @@ const slides = [
     ]
   },
   {
-    image: '/images/hinh2.png',
+    image: STATIC_IMAGES.hinh2,
     title: <><span className="hero-line">Không gian phù hợp</span><br /><span className="hero-line">Thiết bị sẵn sàng</span></>,
     desc: 'Dễ dàng tìm phòng theo sức chứa, khu vực và thiết bị phục vụ học tập, giảng dạy và tổ chức sự kiện.',
     actions: [
@@ -162,7 +163,7 @@ const slides = [
     ]
   },
   {
-    image: '/images/hinh3.png',
+    image: STATIC_IMAGES.hinh3,
     title: <><span className="hero-line">Phê duyệt minh bạch</span><br /><span className="hero-line">Theo dõi thuận tiện</span></>,
     desc: 'Theo dõi trạng thái yêu cầu, nhận thông báo phê duyệt và quản lý lịch sử sử dụng phòng trong một hệ thống thống nhất.',
     actions: [
@@ -391,7 +392,12 @@ function HomePage() {
               <Typography.Paragraph>Giúp sinh viên và giảng viên chủ động tra cứu lịch, đặt phòng nhanh chóng mà không cần thủ tục giấy tờ phức tạp.</Typography.Paragraph>
             </Col>
             <Col xs={24} lg={12} data-reveal="left">
-              <img className="img-rounded-custom" src="/images/hinh5.png" alt="Hệ thống đặt phòng TBD" />
+              <img 
+                className="img-rounded-custom" 
+                src={STATIC_IMAGES.hinh5} 
+                alt="Hệ thống đặt phòng TBD" 
+                onError={(e) => handleImageFallback(e, "/images/hinh5.png")}
+              />
             </Col>
           </Row>
         </div>
