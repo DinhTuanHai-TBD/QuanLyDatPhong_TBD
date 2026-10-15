@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QuanLyDatPhong_TBD.Api/QuanLyDatPhong_TBD.Api.csproj" />
+    <Project Path="src/QuanLyDatPhong_TBD.Application/QuanLyDatPhong_TBD.Application.csproj" />
+    <Project Path="src/QuanLyDatPhong_TBD.Domain/QuanLyDatPhong_TBD.Domain.csproj" />
+    <Project Path="src/QuanLyDatPhong_TBD.Infrastructure/QuanLyDatPhong_TBD.Infrastructure.csproj" />
+  </Folder>
+</Solution>

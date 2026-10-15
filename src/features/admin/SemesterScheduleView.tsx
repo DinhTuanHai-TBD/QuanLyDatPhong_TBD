@@ -106,10 +106,52 @@ export default function SemesterScheduleView({
     const map = new Map<string, CourseScheduleGroup>()
 
     schoolBookings.forEach((b) => {
-      // Group key by subject + class + room
-      const subject = b.subjectName || (b.purpose ? b.purpose.split('-')[0].trim() : 'Lịch học chính khóa')
-      const classCode = b.classCode || ''
-      const key = `${subject}_${classCode}_${b.roomId}_${b.semester || 'HK'}`
+      let subjectName = b.subjectName || ''
+      let subjectCode = b.subjectCode || ''
+      let classCode = b.classCode || ''
+      let semester = b.semester || ''
+
+      const purpose = b.purpose || ''
+      // Extract Semester from [Học kỳ 1 (2026 - 2027)] or [HK1 ...]
+      const semesterMatch = purpose.match(/\[(Học kỳ \d|HK\d|Học kỳ Hè)[^\]]*\]/i)
+      if (semesterMatch) {
+        const semText = semesterMatch[1].toLowerCase()
+        if (semText.includes('1')) semester = 'HK1'
+        else if (semText.includes('2')) semester = 'HK2'
+        else if (semText.includes('3') || semText.includes('hè')) semester = 'HK3'
+        else semester = semesterMatch[1]
+      } else if (!semester) {
+        if (purpose.includes('Học kỳ 1') || purpose.includes('HK1')) semester = 'HK1'
+        else if (purpose.includes('Học kỳ 2') || purpose.includes('HK2')) semester = 'HK2'
+        else if (purpose.includes('Học kỳ 3') || purpose.includes('HK3') || purpose.toLowerCase().includes('hè')) semester = 'HK3'
+        else semester = 'HK1'
+      }
+
+      // Remove the [Học kỳ ...] prefix to get the subject and class part
+      const cleanPurpose = purpose.replace(/\[[^\]]+\]\s*/, '').trim()
+      if (!subjectName || !subjectCode) {
+        const parts = cleanPurpose.split('|')
+        const subjectPart = parts[0]?.trim() || ''
+        if (parts[1] && !classCode) {
+          const classMatch = parts[1].match(/Lớp:\s*([^\(]+)/i)
+          if (classMatch) classCode = classMatch[1].trim()
+        }
+
+        if (subjectPart) {
+          const dashIdx = subjectPart.indexOf('-')
+          if (dashIdx > 0) {
+            if (!subjectCode) subjectCode = subjectPart.substring(0, dashIdx).trim()
+            if (!subjectName) subjectName = subjectPart.substring(dashIdx + 1).trim()
+          } else {
+            if (!subjectName) subjectName = subjectPart
+          }
+        }
+      }
+
+      const finalSubjectName = subjectName || 'Lịch học chính khóa'
+      const finalSubjectCode = subjectCode || 'N/A'
+      const finalClassCode = classCode || 'Lớp chung'
+      const key = `${finalSubjectName}_${finalClassCode}_${b.roomId}_${semester}`
 
       const d = toVN(b.startTime)
       const dayOfWeek = d.day()
@@ -119,15 +161,15 @@ export default function SemesterScheduleView({
       if (!map.has(key)) {
         map.set(key, {
           courseKey: key,
-          subjectName: b.subjectName || subject,
-          subjectCode: b.subjectCode || 'N/A',
-          classCode: b.classCode || 'Lớp chung',
+          subjectName: finalSubjectName,
+          subjectCode: finalSubjectCode,
+          classCode: finalClassCode,
           lecturerName: b.lecturerName || b.personInCharge || 'Bộ môn',
           department: normalizeDepartmentName(b.department) || 'Đại học Thái Bình Dương',
           major: extractedMajor || undefined,
           roomId: b.roomId,
           roomName: b.roomName || `Phòng ${b.roomId}`,
-          semester: b.semester || 'Học kỳ',
+          semester: semester,
           academicYear: b.academicYear || `${dayjs().year()}-${dayjs().year() + 1}`,
           periodInfo: b.periodInfo || 'Tiết chuẩn',
           sessionCount: 1,
@@ -165,19 +207,29 @@ export default function SemesterScheduleView({
     return courseGroups.filter((g) => {
       if (semesterFilter !== 'all') {
         const sem = (g.semester || '').toLowerCase()
-        if (!sem.includes((semesterFilter || '').toLowerCase())) return false
+        const target = (semesterFilter || '').toLowerCase()
+        const isMatch =
+          sem.includes(target) ||
+          (target === 'hk1' && (sem.includes('1') || sem.includes('thu') || sem === 'hk1')) ||
+          (target === 'hk2' && (sem.includes('2') || sem.includes('xuân') || sem === 'hk2')) ||
+          (target === 'hk3' && (sem.includes('3') || sem.includes('hè') || sem === 'hk3'))
+        if (!isMatch) return false
       }
       if (roomFilter !== 'all' && g.roomId !== roomFilter) {
         return false
       }
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+        const q = searchQuery.toLowerCase().trim()
         const match =
           (g.subjectName || '').toLowerCase().includes(q) ||
           (g.subjectCode || '').toLowerCase().includes(q) ||
           (g.classCode || '').toLowerCase().includes(q) ||
           (g.lecturerName || '').toLowerCase().includes(q) ||
-          (g.roomName || '').toLowerCase().includes(q)
+          (g.roomName || '').toLowerCase().includes(q) ||
+          (g.semester || '').toLowerCase().includes(q) ||
+          (q === 'hk1' && (g.semester?.toLowerCase().includes('1') || g.semester?.toLowerCase().includes('thu'))) ||
+          (q === 'hk2' && (g.semester?.toLowerCase().includes('2') || g.semester?.toLowerCase().includes('xuân'))) ||
+          (q === 'hk3' && (g.semester?.toLowerCase().includes('3') || g.semester?.toLowerCase().includes('hè')))
         if (!match) return false
       }
       return true

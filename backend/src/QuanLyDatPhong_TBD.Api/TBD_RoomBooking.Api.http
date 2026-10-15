@@ -1,0 +1,6 @@
+@QuanLyDatPhong_TBD.Api_HostAddress = http://localhost:5250
+
+GET {{QuanLyDatPhong_TBD.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
