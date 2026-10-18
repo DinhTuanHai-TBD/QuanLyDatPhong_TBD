@@ -788,7 +788,7 @@ export default function CalendarPage() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: isHighlighted ? '#0369a1' : '#64748b', marginTop: 4 }}>
-                    Sức chứa: {room.capacity}
+                    {(room as any)._displayType || 'Phòng học'} • Sức chứa: {room.capacity}
                   </div>
                 </div>
                 <div 

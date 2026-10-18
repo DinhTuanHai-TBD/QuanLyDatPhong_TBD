@@ -586,7 +586,7 @@ export default function AdminPage() {
   }
 
   // Filtered lists
-  const roomsData = (roomsQuery.data || []).filter((r: Room) => {
+  const roomsData = getOfficialRooms(roomsQuery.data || []).filter((r: Room) => {
     let matchBuildingFilter = true;
     if (activeTab === "rooms-building-a") {
       matchBuildingFilter = r.building === "Khu A";

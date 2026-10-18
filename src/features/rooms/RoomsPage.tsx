@@ -102,7 +102,10 @@ function RoomsPage() {
 
     let matchesType = typeFilter === 'All'
     if (!matchesType) {
-      matchesType = (room as any)._displayType === typeFilter
+      const displayType = (room as any)._displayType || ''
+      matchesType = displayType === typeFilter || 
+        (typeFilter === 'Phòng học' && displayType.includes('Phòng học')) ||
+        (typeFilter === 'Phòng học lý thuyết' && displayType.includes('Phòng học'))
     }
 
     let matchesBuilding = buildingFilter === 'All'

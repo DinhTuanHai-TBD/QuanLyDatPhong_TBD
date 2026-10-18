@@ -301,6 +301,21 @@ public static class DatabaseInitializer
             await dbContext.SaveChangesAsync();
         }
 
+        // Tự động chuẩn hóa tên và khu vực nếu còn sót lại từ bản ghi cũ
+        var corruptedRooms = await dbContext.Rooms
+            .Where(r => r.Name == "A.101" || r.Building == "Tòa A" || r.Building == "Tòa B" || (r.Building != null && r.Building.Contains("T?a")))
+            .ToListAsync();
+        if (corruptedRooms.Count > 0)
+        {
+            foreach (var cr in corruptedRooms)
+            {
+                if (cr.Name == "A.101") cr.Name = "A101";
+                if (cr.Building == "Tòa A" || (cr.Building != null && cr.Building.Contains("T?a A"))) cr.Building = "Khu A";
+                if (cr.Building == "Tòa B" || (cr.Building != null && cr.Building.Contains("T?a B"))) cr.Building = "Khu B";
+            }
+            await dbContext.SaveChangesAsync();
+        }
+
         if (await dbContext.Rooms.AnyAsync())
         {
             return;
@@ -308,38 +323,27 @@ public static class DatabaseInitializer
 
         var roomA101 = new Room
         {
-            Name = "A.101",
-            Building = "Tòa A",
+            Name = "A101",
+            Building = "Khu A",
             Capacity = 45,
             RoomType = RoomType.Classroom,
             Status = RoomStatus.Active,
-            Description = "Phòng học tiêu chuẩn, phù hợp lớp học và thảo luận nhóm.",
+            Description = "Phòng học lý thuyết Tòa A",
             ImageUrl = "/images/hinh4.png"
-        };
-
-        var roomHoiTruong = new Room
-        {
-            Name = "Hội trường TBD",
-            Building = "Tòa Trung tâm",
-            Capacity = 180,
-            RoomType = RoomType.LectureHall,
-            Status = RoomStatus.Active,
-            Description = "Không gian cho hội thảo, tọa đàm và sự kiện quy mô lớn.",
-            ImageUrl = "/images/hinh5.png"
         };
 
         var roomLab204 = new Room
         {
             Name = "Lab.204",
-            Building = "Tòa B",
+            Building = "Khu B",
             Capacity = 35,
             RoomType = RoomType.Lab,
             Status = RoomStatus.Active,
-            Description = "Phòng máy phục vụ thực hành và các học phần công nghệ.",
+            Description = "Phòng máy thực hành và các học phần công nghệ Tòa B",
             ImageUrl = "/images/hinh3.png"
         };
 
-        dbContext.Rooms.AddRange(roomA101, roomHoiTruong, roomLab204);
+        dbContext.Rooms.AddRange(roomA101, roomLab204);
         await dbContext.SaveChangesAsync();
 
         // Seed Initial Equipments
@@ -359,10 +363,10 @@ public static class DatabaseInitializer
             Code = "TB-002",
             Name = "Bộ Micro không dây JBL",
             Type = "Mic",
-            RoomId = roomHoiTruong.Id,
+            RoomId = roomA101.Id,
             Quantity = 2,
             Status = "Active",
-            Description = "Micro cho hội trường"
+            Description = "Micro giảng dạy"
         };
 
         var eqAircon = new Equipment

@@ -26,7 +26,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
-import { getOfficialRooms, getRoomAvailableEquipmentList } from '../../utils/roomUtils'
+import { getOfficialRooms, getRoomAvailableEquipmentList, isRoomRestrictedForStudent } from '../../utils/roomUtils'
 import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 import type { Booking, CreateBookingPayload } from '../../types/booking'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
@@ -130,6 +130,7 @@ function BookingPage() {
   const isStaff = userRole === 'staff' || userRole === 'employee' || roleFromProfile === 'staff' || userEmail.includes('nhanvien');
   const isAdmin = userRole === 'admin' || roleFromProfile === 'admin' || userEmail.includes('admin');
   const isStaffOrFaculty = isFaculty || isStaff || isAdmin;
+  const isStudent = !isStaffOrFaculty;
 
   // 4. Chế độ Tiếp nhận Đặt phòng trực tiếp tại quầy dành riêng cho Admin
   const [isWalkInBooking, setIsWalkInBooking] = useState<boolean>(false);
@@ -377,6 +378,7 @@ function BookingPage() {
       startTime: st,
       endTime: et,
       roomId: selectedRoom.id,
+      roomType: (selectedRoom as any)?._displayType || selectedRoom.roomType,
       settings: bookingSettings,
       userRole: userRole,
       isFaculty: isFaculty || isStaff,
@@ -429,6 +431,10 @@ function BookingPage() {
       await form.validateFields(['roomId', 'date'])
       if (!selectedRoom) {
         message.warning('Vui lòng chọn phòng học trước khi tiếp tục!')
+        return
+      }
+      if (isStudent && isRoomRestrictedForStudent(selectedRoom)) {
+        message.error(`Tài khoản Sinh viên không được phép đặt phòng ${selectedRoom.name} (${(selectedRoom as any)._displayType || selectedRoom.roomType}) theo quy định của Nhà trường.`)
         return
       }
       if (isDateDisabled(selectedDate)) {
@@ -875,6 +881,11 @@ function BookingPage() {
       isSubmittingRef.current = false
       return
     }
+    if (isStudent && isRoomRestrictedForStudent(selectedRoom)) {
+      isSubmittingRef.current = false
+      message.error(`Tài khoản Sinh viên không được phép đặt phòng ${selectedRoom.name} (${(selectedRoom as any)._displayType || selectedRoom.roomType}) theo quy định của Nhà trường.`)
+      return
+    }
     if (values.participantCount > selectedRoom.capacity) {
       isSubmittingRef.current = false
       message.error(`Số lượng người (${values.participantCount}) vượt quá sức chứa tối đa của phòng ${selectedRoom.name} (${selectedRoom.capacity} người). Vui lòng điều chỉnh lại.`);
@@ -1241,8 +1252,8 @@ function BookingPage() {
                 </tr>
                 <tr style={{ background: '#fcfcfc' }}>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Phạm vi giảng đường áp dụng</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Giảng đường tiêu chuẩn, phòng học nhóm (Phòng thực hành chuyên môn và Hội trường cần phê duyệt của Khoa / Đơn vị)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đăng ký giảng đường, phòng thực hành; Hội trường cần phê duyệt của Ban Quản lý CSVC</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Giảng đường tiêu chuẩn, phòng học nhóm (Không áp dụng đối với Hội trường, Phòng Lab và Cinema)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đăng ký giảng đường tiêu chuẩn, phòng thực hành Lab, Cinema; Hội trường cần Ban Quản lý CSVC phê duyệt</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Quy trình phê duyệt</td>
@@ -1481,9 +1492,14 @@ function BookingPage() {
                         filterOption={(input, option) => (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())}
                         options={rooms.map((r: any) => {
                           const cleanName = (r.name || '').replace(/^phòng\s+/i, '')
+                          const isRestricted = isStudent && isRoomRestrictedForStudent(r)
+                          const displayType = r._displayType || 'Phòng học lý thuyết'
                           return {
                             value: r.id,
-                            label: `Phòng ${cleanName} - ${r._displayType || 'Phòng học'} - ${r.building} (${r.capacity} người)`
+                            disabled: isRestricted,
+                            label: isRestricted
+                              ? `Phòng ${cleanName} - ${displayType} - ${r.building} (${r.capacity} chỗ) [Chỉ dành cho Giảng viên]`
+                              : `Phòng ${cleanName} - ${displayType} - ${r.building} (${r.capacity} chỗ)`
                           }
                         })}
                         onChange={(val) => {
@@ -1535,6 +1551,11 @@ function BookingPage() {
                           <Tag color="geekblue" style={{ fontWeight: 600 }}>
                             <TeamOutlined /> Sức chứa: {selectedRoom.capacity} người
                           </Tag>
+                          {isStudent && isRoomRestrictedForStudent(selectedRoom) && (
+                            <Tag color="error" style={{ fontWeight: 700 }}>
+                              KHÔNG KHẢ DỤNG CHO SINH VIÊN
+                            </Tag>
+                          )}
                         </div>
                         <div style={{ fontSize: 13, color: '#475569', marginTop: 6, lineHeight: 1.6 }}>
                           <strong style={{ color: '#1e293b' }}>Thiết bị có sẵn tại phòng:</strong>{' '}
@@ -1557,16 +1578,31 @@ function BookingPage() {
                   />
                 )}
 
+                {/* Cảnh báo phòng bị hạn chế đối với sinh viên */}
+                {selectedRoom && isStudent && isRoomRestrictedForStudent(selectedRoom) && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    style={{ marginBottom: 16, borderRadius: 8 }}
+                    title={<strong style={{ color: '#b91c1c' }}>Phòng không dành cho tài khoản Sinh viên</strong>}
+                    description={
+                      <span>
+                        Theo Quy chế của Nhà trường, phòng <strong>{selectedRoom.name} ({(selectedRoom as any)._displayType || selectedRoom.roomType})</strong> chỉ dành riêng cho công tác giảng dạy của Giảng viên và sự kiện chuyên môn của Nhà trường. Sinh viên không được phép đăng ký Hội trường, Phòng Lab hoặc Cinema. Vui lòng chọn phòng học lý thuyết hoặc phòng học nhóm khác.
+                      </span>
+                    }
+                  />
+                )}
+
                 {/* Nút chuyển bước */}
                 <div className="step-navigation-bar" style={{ justifyContent: 'flex-end' }}>
                   <Button 
                     type="primary" 
                     size="large" 
                     onClick={handleGoToStep2}
-                    disabled={!selectedRoom}
+                    disabled={!selectedRoom || (isStudent && isRoomRestrictedForStudent(selectedRoom))}
                     icon={<ArrowRightOutlined />}
                     style={{ 
-                      background: selectedRoom ? '#0d2e5c' : undefined, 
+                      background: (selectedRoom && (!isStudent || !isRoomRestrictedForStudent(selectedRoom))) ? '#0d2e5c' : undefined, 
                       height: 44, 
                       borderRadius: 8, 
                       fontWeight: 600, 

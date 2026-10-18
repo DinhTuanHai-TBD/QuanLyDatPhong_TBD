@@ -172,6 +172,18 @@ internal sealed class BookingService : IBookingService
 
         var userRole = isAdmin ? "Admin" : (isFaculty ? "Faculty" : "User");
 
+        var isCinema = room.Name.Equals("A302", StringComparison.OrdinalIgnoreCase) 
+            || room.Name.Contains("cinema", StringComparison.OrdinalIgnoreCase) 
+            || (!string.IsNullOrEmpty(room.Description) && room.Description.Contains("cinema", StringComparison.OrdinalIgnoreCase));
+
+        if (!isAdmin && !isFaculty)
+        {
+            if (room.RoomType == RoomType.LectureHall || room.RoomType == RoomType.Lab || isCinema)
+            {
+                return BookingResult.Failure("Tài khoản Sinh viên không được phép đặt Hội trường, Phòng Lab hoặc Cinema theo quy định của Nhà trường.");
+            }
+        }
+
         var roleViolation = BookingPolicy.ValidateRoleAndRoomPolicy(
             settings,
             userRole,

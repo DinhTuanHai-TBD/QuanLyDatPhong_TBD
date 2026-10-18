@@ -7,16 +7,101 @@ export type ValidatedRoom = Room & {
 };
 
 /**
- * Derives user-friendly display labels for room types based exclusively on backend data.
+ * Derives user-friendly display labels for room types based on backend enum & characteristics.
+ * Backend Enum: Classroom = 0, LectureHall = 1, Lab = 2
  */
-export function getRoomTypeDisplayLabel(roomType: any): string {
-  const t = String(roomType || '').toLowerCase().trim();
-  if (t === 'lecturehall' || t === '2' || t.includes('hội trường')) return 'Hội trường';
-  if (t === 'lab' || t === 'computerlab' || t === '3' || t.includes('lab') || t.includes('máy tính')) return 'Phòng Lab';
-  if (t === 'meetingroom' || t === '1' || t.includes('họp')) return 'Phòng họp';
-  if (t.includes('cinema')) return 'Phòng Cinema';
-  if (t.includes('nhóm')) return 'Phòng học nhóm';
+export function getRoomTypeDisplayLabel(roomOrType: any, optionalRoomObj?: any): string {
+  const room = (typeof roomOrType === 'object' && roomOrType !== null) ? roomOrType : optionalRoomObj;
+  const name = String(room?.name || '').toLowerCase();
+  const desc = String(room?.description || '').toLowerCase();
+  const rawType = (typeof roomOrType === 'object' && roomOrType !== null) ? roomOrType.roomType : roomOrType;
+  const t = String(rawType ?? '').toLowerCase().trim();
+
+  // Specialized rooms detected by code / name / description
+  if (name.includes('cinema') || desc.includes('cinema') || name === 'a302') {
+    return 'Phòng Cinema';
+  }
+  if (name.includes('nhóm') || desc.includes('nhóm') || desc.includes('group') || name === 'a305') {
+    return 'Phòng học nhóm';
+  }
+
+  // Enum 1: LectureHall
+  if (t === '1' || t === 'lecturehall' || name.includes('hội trường') || desc.includes('hội trường')) {
+    return 'Hội trường';
+  }
+
+  // Enum 2: Lab / Practical rooms
+  if (
+    t === '2' ||
+    t === 'lab' ||
+    t === 'computerlab' ||
+    name.includes('lab') ||
+    desc.includes('lab') ||
+    desc.includes('máy tính') ||
+    desc.includes('nhiếp ảnh') ||
+    name === 'greenlab'
+  ) {
+    return 'Phòng Lab';
+  }
+
+  if (t.includes('họp') || desc.includes('họp')) {
+    return 'Phòng họp';
+  }
+
+  // Enum 0: Classroom
   return 'Phòng học lý thuyết';
+}
+
+/**
+ * Kiểm tra phòng có bị chặn đặt đối với tài khoản Sinh viên hay không.
+ * Các loại phòng bị chặn gồm:
+ * 1. Hội trường (Lecture Hall)
+ * 2. Phòng Lab / Thực hành / Máy tính
+ * 3. Cinema (Phòng A302 / Phòng chiếu phim)
+ */
+export function isRoomRestrictedForStudent(room: any): boolean {
+  if (!room) return false;
+  const name = String(room.name || '').trim().toLowerCase();
+  const desc = String(room.description || '').trim().toLowerCase();
+  const rawType = String(room.roomType ?? '').trim().toLowerCase();
+  const displayType = String(room._displayType || getRoomTypeDisplayLabel(room.roomType, room)).trim().toLowerCase();
+
+  // 1. Hội trường (Lecture Hall) - Enum 1
+  if (
+    rawType === '1' ||
+    rawType === 'lecturehall' ||
+    displayType.includes('hội trường') ||
+    name.includes('hội trường') ||
+    desc.includes('hội trường')
+  ) {
+    return true;
+  }
+
+  // 2. Phòng Lab / máy tính / thực hành - Enum 2
+  if (
+    rawType === '2' ||
+    rawType === 'lab' ||
+    rawType === 'computerlab' ||
+    displayType.includes('lab') ||
+    name.includes('lab') ||
+    desc.includes('lab') ||
+    desc.includes('máy tính') ||
+    name === 'greenlab'
+  ) {
+    return true;
+  }
+
+  // 3. Cinema (A302 hoặc phòng có chứa cinema)
+  if (
+    displayType.includes('cinema') ||
+    name.includes('cinema') ||
+    desc.includes('cinema') ||
+    name === 'a302'
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -69,7 +154,8 @@ export function extractOfficialCode(roomName?: string): string | null {
 /**
  * Normalizes rooms solely from GET /api/rooms.
  * Does NOT generate static rooms on empty/error.
- * Does NOT overwrite real capacity, building, or roomType with hardcoded constants.
+ * Ensures consistent naming (A101), standardized buildings (Khu A / Khu B),
+ * accurate display types, and natural numeric sorting.
  */
 export function getOfficialRooms(apiRooms?: Room[]): ValidatedRoom[] {
   if (!apiRooms || !Array.isArray(apiRooms) || apiRooms.length === 0) {
@@ -77,23 +163,44 @@ export function getOfficialRooms(apiRooms?: Room[]): ValidatedRoom[] {
   }
 
   const result: ValidatedRoom[] = apiRooms.map((r) => {
-    const displayType = getRoomTypeDisplayLabel(r.roomType);
+    // 1. Chuẩn hóa tên phòng: bỏ dấu chấm thừa ("A.101" -> "A101"), xóa tiền tố "Phòng " thừa
+    let cleanName = (r.name || '').trim().replace(/^phòng\s+/i, '').trim();
+    if (cleanName === 'A.101') cleanName = 'A101';
+
+    // 2. Chuẩn hóa phân loại tòa nhà: Khu A và Khu B
+    let building = (r.building || '').trim();
+    const lowerName = cleanName.toLowerCase();
+    const lowerBuilding = building.toLowerCase();
+    if (lowerBuilding.includes('a') || lowerName.startsWith('a')) {
+      building = 'Khu A';
+    } else if (lowerBuilding.includes('b') || lowerName.startsWith('b') || lowerName.includes('lab') || lowerName.includes('greenlab')) {
+      building = 'Khu B';
+    } else if (!building) {
+      building = lowerName.startsWith('b') ? 'Khu B' : 'Khu A';
+    }
+
+    const displayType = getRoomTypeDisplayLabel(r.roomType, { ...r, name: cleanName });
+
     return {
       ...r,
+      name: cleanName,
+      building: building,
       _displayType: displayType,
       _displayNote: r.description || '',
-      _displayName: r.name
+      _displayName: cleanName
     };
   });
 
-  // Natural sorting by building, then by name
+  // Sắp xếp tự nhiên chuẩn học vụ:
+  // - Khu A trước, Khu B sau
+  // - Thứ tự số phòng tăng dần: A101, A108, A109, A110, A111, A201, ..., A403, rồi B001, ..., B107, Greenlab, Lab.204
   return result.sort((a, b) => {
     const buildingA = String(a.building || '');
     const buildingB = String(b.building || '');
     if (buildingA !== buildingB) {
-      return buildingA.localeCompare(buildingB);
+      return buildingA.localeCompare(buildingB, 'vi');
     }
-    return a.name.localeCompare(b.name, undefined, { numeric: true });
+    return a.name.localeCompare(b.name, 'vi', { numeric: true, sensitivity: 'base' });
   });
 }
 
