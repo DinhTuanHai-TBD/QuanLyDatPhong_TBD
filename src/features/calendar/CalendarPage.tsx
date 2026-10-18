@@ -2,7 +2,7 @@ import { Calendar, momentLocalizer } from 'react-big-calendar'
 import moment from 'moment'
 import 'moment/locale/vi'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Card,
   Select,
@@ -25,9 +25,10 @@ import {
   App
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { getUserId, getUserRole, getUserEmail, isAuthenticated } from '../../api/authUtils'
+import { fetchUserProfile, type UserProfileData } from '../../api/userProfile'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
 import { getOfficialRooms } from '../../utils/roomUtils'
@@ -200,19 +201,71 @@ export default function CalendarPage() {
 
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const targetRoomIdParam = searchParams.get('roomId')
+  const [highlightedRoomId, setHighlightedRoomId] = useState<string | null>(targetRoomIdParam)
+  const hasScrolledRef = useRef<string | null>(null)
+
   useEffect(() => {
-    if (screens.md === false) {
-      setMode('list')
-    } else {
-      setMode('room')
+    if (targetRoomIdParam) {
+      setHighlightedRoomId(targetRoomIdParam)
+      hasScrolledRef.current = null
     }
-  }, [screens.md])
+  }, [targetRoomIdParam])
 
   // User auth details
   const userId = getUserId()
   const userRole = getUserRole()
   const userEmail = getUserEmail()
   const isAuthed = isAuthenticated()
+
+  const { data: userProfile } = useQuery<UserProfileData>({
+    queryKey: ['userProfile', userEmail],
+    queryFn: fetchUserProfile,
+    staleTime: 5 * 60 * 1000,
+    enabled: isAuthed,
+  })
+
+  // Phân quyền: Sinh viên và Giảng viên
+  const isStudentOrLecturer = useMemo(() => {
+    const r = (userRole || '').toLowerCase()
+    const pr = String(userProfile?.role || '').toLowerCase()
+
+    const isAdmin = 
+      r === 'admin' || 
+      pr.includes('admin') || 
+      pr.includes('quản trị')
+
+    const isApprover = 
+      r === 'approver' || 
+      r === 'staff' || 
+      pr.includes('approver') || 
+      pr.includes('manager') || 
+      pr.includes('staff') || 
+      pr.includes('quanly') || 
+      pr.includes('quản lý') || 
+      pr.includes('cán bộ') || 
+      pr.includes('đào tạo')
+
+    if (isAdmin || isApprover) {
+      return false
+    }
+
+    // Nếu không phải Admin hoặc Approver/Quản lý thì là Sinh viên / Giảng viên
+    return true
+  }, [userRole, userProfile])
+
+  useEffect(() => {
+    if (isStudentOrLecturer) {
+      setMode('room')
+      return
+    }
+    if (screens.md === false) {
+      setMode('list')
+    } else {
+      setMode('room')
+    }
+  }, [screens.md, isStudentOrLecturer])
 
   useEffect(() => {
     if (!isAuthed) {
@@ -237,8 +290,8 @@ export default function CalendarPage() {
     const cM = parseInt(closeTime.split(':')[1], 10) || 0
 
     const tStartMin = oH * 60 + oM
-    // Thêm đúng một cột hiển thị mốc 20:00 ngay sau cột 19:00 (mốc 20:00 là giờ đóng cửa)
-    const displayEndHour = Math.max(21, cH + (cM > 0 ? 1 : 0))
+    // Mốc kết thúc hiển thị chính xác theo giờ đóng cửa quy định (20:00)
+    const displayEndHour = cH + (cM > 0 ? 1 : 0)
     const tEndMin = displayEndHour * 60
     const totalMins = Math.max(60, tEndMin - tStartMin)
     const halfHours = Math.ceil(totalMins / 30)
@@ -373,6 +426,55 @@ export default function CalendarPage() {
       return true
     })
   }, [roomsQuery.data, filterBuilding, filterRoomType, filterMinCapacity, filterEquipments])
+
+  const matchedHighlightedRoom = useMemo(() => {
+    if (!highlightedRoomId || !roomsQuery.data) return null
+    const target = String(highlightedRoomId).toLowerCase().trim()
+    return (
+      roomsQuery.data.find(
+        (r: any) =>
+          String(r.id).toLowerCase().trim() === target ||
+          String(r.name).toLowerCase().trim() === target
+      ) || null
+    )
+  }, [highlightedRoomId, roomsQuery.data])
+
+  // Tự động điều chỉnh bộ lọc để phòng được chọn từ trang Thông tin phòng luôn hiển thị
+  useEffect(() => {
+    if (!matchedHighlightedRoom) return
+
+    if (filterBuilding !== 'all' && matchedHighlightedRoom.building && matchedHighlightedRoom.building !== filterBuilding) {
+      setFilterBuilding('all')
+    }
+    if (filterRoomType !== 'all') {
+      setFilterRoomType('all')
+    }
+    if (filterMinCapacity && matchedHighlightedRoom.capacity < filterMinCapacity) {
+      setFilterMinCapacity(null)
+    }
+    setMode('room')
+  }, [matchedHighlightedRoom])
+
+  // Cuộn mượt mà đến vị trí phòng trong bảng lịch phòng
+  useEffect(() => {
+    if (!matchedHighlightedRoom || !filteredRooms || filteredRooms.length === 0) return
+
+    if (hasScrolledRef.current === String(matchedHighlightedRoom.id)) return
+
+    const isVisibleInList = filteredRooms.some((r: any) => r.id === matchedHighlightedRoom.id)
+    if (!isVisibleInList) return
+
+    hasScrolledRef.current = String(matchedHighlightedRoom.id)
+
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`room-row-${matchedHighlightedRoom.id}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [matchedHighlightedRoom, filteredRooms])
 
   // Filter all bookings by user-selected status filter and exclude online rooms
   const filteredBookings = useMemo(() => {
@@ -625,6 +727,13 @@ export default function CalendarPage() {
             const roomBookings = dayBookingsByRoom.get(room.id) || []
             const isLastRoom = roomIndex === filteredRooms.length - 1
 
+            const isHighlighted = Boolean(
+              highlightedRoomId && (
+                String(highlightedRoomId).toLowerCase().trim() === String(room.id).toLowerCase().trim() ||
+                String(highlightedRoomId).toLowerCase().trim() === String(room.name).toLowerCase().trim()
+              )
+            )
+
             // Check if any closed periods apply to this room on this day
             const roomClosedPeriods = (bookingSettings?.closedPeriods || []).filter((cp) => {
               if (cp.roomId !== null && cp.roomId !== room.id) return false
@@ -637,31 +746,61 @@ export default function CalendarPage() {
             return (
               <div 
                 key={room.id} 
+                id={`room-row-${room.id}`}
+                className={isHighlighted ? 'calendar-room-row-highlight' : undefined}
                 style={{ 
                   display: 'flex', 
-                  borderBottom: isLastRoom ? 'none' : '1px solid #CBD5E1', 
-                  minHeight: 70 
+                  borderBottom: isHighlighted ? '2px solid #0284c7' : isLastRoom ? 'none' : '1px solid #CBD5E1', 
+                  borderTop: isHighlighted ? '2px solid #0284c7' : undefined,
+                  minHeight: 70,
+                  backgroundColor: isHighlighted ? '#eff6ff' : undefined,
+                  position: isHighlighted ? 'relative' : undefined,
+                  zIndex: isHighlighted ? 6 : undefined,
+                  transition: 'all 0.3s ease',
                 }}
               >
                 <div
+                  className={isHighlighted ? 'calendar-room-header-highlight' : undefined}
                   style={{
                     width: 200,
                     flexShrink: 0,
                     position: 'sticky',
                     left: 0,
-                    zIndex: 5,
-                    background: '#fff',
+                    zIndex: 10,
+                    background: isHighlighted ? '#e0f2fe' : '#fff',
                     padding: '12px 16px',
-                    borderRight: '2px solid #94A3B8',
+                    borderRight: isHighlighted ? '2px solid #93c5fd' : '2px solid #94A3B8',
+                    borderLeft: isHighlighted ? '6px solid #0284c7' : '6px solid transparent',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
+                    transition: 'all 0.3s ease',
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 14 }}>{room.name}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Sức chứa: {room.capacity}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, color: isHighlighted ? '#0369a1' : '#0f172a', fontSize: 14 }}>
+                      {room.name}
+                    </span>
+                    {isHighlighted && (
+                      <Tag color="#0284c7" style={{ margin: 0, fontSize: 10, lineHeight: '18px', padding: '0 6px', fontWeight: 600, borderRadius: 10 }}>
+                        Đang chọn
+                      </Tag>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: isHighlighted ? '#0369a1' : '#64748b', marginTop: 4 }}>
+                    Sức chứa: {room.capacity}
+                  </div>
                 </div>
-                <div style={{ flex: 1, display: 'flex', position: 'relative', background: '#fff' }}>
+                <div 
+                  className={isHighlighted ? 'calendar-room-slots-highlight' : undefined}
+                  style={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    position: 'relative', 
+                    background: isHighlighted ? '#eff6ff' : '#fff',
+                    borderRight: isHighlighted ? '2px solid #0284c7' : undefined,
+                  }}
+                >
                   {Array.from({ length: totalHalfHours }).map((_, i) => {
                     const slotMinutes = timelineStartMin + i * 30
                     const hour = Math.floor(slotMinutes / 60)
@@ -677,6 +816,18 @@ export default function CalendarPage() {
                     const isPastSlot = slotStartTime.isBefore(toVN())
                     const isSlotDisabled = isClosedAfterHours || isPastSlot
 
+                    const slotBg = isHighlighted
+                      ? isClosedAfterHours
+                        ? '#e2e8f0'
+                        : isPastSlot
+                          ? 'rgba(224, 242, 254, 0.45)'
+                          : 'rgba(239, 246, 255, 0.95)'
+                      : isClosedAfterHours
+                        ? '#f8fafc'
+                        : isPastSlot
+                          ? '#fbfcfe'
+                          : undefined
+
                     return (
                       <div
                         key={i}
@@ -685,10 +836,10 @@ export default function CalendarPage() {
                           borderRight: isLastSlot
                             ? 'none'
                             : isMainHour
-                              ? '1px solid #CBD5E1'
-                              : '1px dashed #E2E8F0',
+                              ? isHighlighted ? '1px solid #93c5fd' : '1px solid #CBD5E1'
+                              : isHighlighted ? '1px dashed #bfdbfe' : '1px dashed #E2E8F0',
                           cursor: isSlotDisabled ? 'not-allowed' : 'pointer',
-                          background: isClosedAfterHours ? '#f8fafc' : isPastSlot ? '#fbfcfe' : undefined,
+                          background: slotBg,
                         }}
                         className={isSlotDisabled ? undefined : 'calendar-slot-hover'}
                         title={
@@ -1097,19 +1248,21 @@ export default function CalendarPage() {
             Tải lại lịch
           </Button>
 
-          <Segmented
-            options={[
-              { label: 'Theo phòng', value: 'room', icon: <AppstoreOutlined /> },
-              { label: 'Theo tuần', value: 'week', icon: <CalendarOutlined /> },
-              { label: 'Danh sách', value: 'list', icon: <UnorderedListOutlined /> },
-            ]}
-            value={mode}
-            onChange={(val) => {
-              setMode(val as any)
-              window.scrollTo({ top: 0, behavior: 'smooth' })
-            }}
-            size="large"
-          />
+          {!isStudentOrLecturer && (
+            <Segmented
+              options={[
+                { label: 'Theo phòng', value: 'room', icon: <AppstoreOutlined /> },
+                { label: 'Theo tuần', value: 'week', icon: <CalendarOutlined /> },
+                { label: 'Danh sách', value: 'list', icon: <UnorderedListOutlined /> },
+              ]}
+              value={mode}
+              onChange={(val) => {
+                setMode(val as any)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              size="large"
+            />
+          )}
         </Space>
       </div>
 
@@ -1247,6 +1400,56 @@ export default function CalendarPage() {
           </Space>
         </div>
       </Card>
+
+      {matchedHighlightedRoom && (
+        <Alert
+          message={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <Space align="center">
+                <span style={{ fontSize: 14 }}>
+                  Đang xem lịch phòng: <strong style={{ color: '#0369a1', fontSize: 15 }}>{matchedHighlightedRoom.name}</strong>
+                  {matchedHighlightedRoom.building ? ` (${matchedHighlightedRoom.building})` : ''} - Sức chứa: <strong>{matchedHighlightedRoom.capacity}</strong> người
+                </span>
+              </Space>
+              <Space>
+                <Button 
+                  size="small" 
+                  type="primary"
+                  onClick={() => {
+                    const el = document.getElementById(`room-row-${matchedHighlightedRoom.id}`)
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }
+                  }}
+                  style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                >
+                  Cuộn đến phòng này
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => {
+                    setHighlightedRoomId(null)
+                    const newParams = new URLSearchParams(searchParams)
+                    newParams.delete('roomId')
+                    setSearchParams(newParams, { replace: true })
+                  }}
+                >
+                  Bỏ làm nổi bật
+                </Button>
+              </Space>
+            </div>
+          }
+          type="info"
+          showIcon
+          style={{ 
+            marginBottom: 20, 
+            borderRadius: 10, 
+            border: '1.5px solid #7dd3fc', 
+            background: '#f0f9ff',
+            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)' 
+          }}
+        />
+      )}
 
       {bookingsQuery.isError || roomsQuery.isError ? (
         (() => {

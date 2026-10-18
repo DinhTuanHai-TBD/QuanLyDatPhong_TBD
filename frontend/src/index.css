@@ -1187,6 +1187,39 @@ footer,
   background: rgba(24, 144, 255, 0.08);
 }
 
+/* Highlighted Room Row in Calendar - Full Row Effect */
+@keyframes rowPulseGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px rgba(2, 132, 199, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.3);
+  }
+}
+
+.calendar-room-row-highlight {
+  background-color: #eff6ff !important;
+  border-top: 2px solid #0284c7 !important;
+  border-bottom: 2px solid #0284c7 !important;
+  animation: rowPulseGlow 2.5s infinite ease-in-out;
+  position: relative;
+  z-index: 6;
+  transition: all 0.3s ease;
+}
+
+.calendar-room-header-highlight {
+  background: #e0f2fe !important;
+  border-left: 6px solid #0284c7 !important;
+}
+
+.calendar-room-slots-highlight {
+  background: #eff6ff !important;
+  border-right: 2px solid #0284c7 !important;
+}
+
 /* New Feature Cards CSS */
 .feature-card {
   position: relative;

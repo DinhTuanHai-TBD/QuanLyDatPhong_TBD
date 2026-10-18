@@ -18,7 +18,7 @@ public class BookingSetting
     public int StudentMaxAdvanceDays { get; set; } = 7;
     public double StudentMaxHoursPerBooking { get; set; } = 3.0;
     public int FacultyMaxAdvanceDays { get; set; } = 30;
-    public double FacultyMaxHoursPerBooking { get; set; } = 8.0;
+    public double FacultyMaxHoursPerBooking { get; set; } = 6.0;
     public bool AutoApproveForFaculty { get; set; } = true;
     public int MaxPendingBookingsPerUser { get; set; } = 3;
     public double MaxBookedHoursPerUserPerWeek { get; set; } = 20.0;

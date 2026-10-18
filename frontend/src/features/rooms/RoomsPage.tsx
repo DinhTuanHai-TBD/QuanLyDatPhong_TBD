@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { http, formatApiError } from '../../api/http'
 import type { Room } from '../../types/room'
-import { getOfficialRooms } from '../../utils/roomUtils'
+import { getOfficialRooms, getRoomAvailableEquipmentList } from '../../utils/roomUtils'
 import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 
 async function fetchRooms(): Promise<Room[]> {
@@ -37,18 +37,7 @@ const getFormattedRoomType = (room: any) => {
 };
 
 const getRoomEquipments = (room: any, allEquipments: any[] = []) => {
-  const roomEquips = allEquipments
-    .filter((e: any) => e.roomId === room.id && e.status !== 'Maintenance' && e.status !== 'Broken')
-    .map((e: any) => e.name || e.type);
-  if (roomEquips.length > 0) {
-    return roomEquips.join(', ');
-  }
-  const type = String(room._displayType || room.roomType || '').toLowerCase();
-  if (type.includes('lab')) return 'Máy tính cấu hình cao, Máy chiếu, Điều hòa, Bảng từ';
-  if (type.includes('hội trường')) return 'Hệ thống âm thanh, Màn hình LED, Micro không dây, Điều hòa';
-  if (type.includes('cinema')) return 'Màn chiếu lớn, Âm thanh vòm, Điều hòa, Ghế rạp';
-  if (type.includes('nhóm')) return 'Bảng thông minh, Điều hòa, Wifi tốc độ cao';
-  return 'Máy chiếu, Điều hòa, Micro';
+  return getRoomAvailableEquipmentList(room, allEquipments).join(', ');
 };
 
 const isKhuA = (room: any) => {
@@ -524,7 +513,9 @@ function RoomsPage() {
             key="calendar"
             onClick={() => {
               if (selectedRoom) {
-                navigate('/calendar?roomId=' + selectedRoom.id);
+                const targetId = selectedRoom.id;
+                setSelectedRoom(null);
+                navigate('/calendar?roomId=' + targetId);
               }
             }}
           >

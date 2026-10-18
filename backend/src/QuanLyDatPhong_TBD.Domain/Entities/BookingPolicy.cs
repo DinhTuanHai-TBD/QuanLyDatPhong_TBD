@@ -58,9 +58,9 @@ public static class BookingPolicy
         if (!isFaculty && !isManager)
         {
             // Sinh viên / người dùng thông thường
-            if (roomType == Enums.RoomType.LectureHall && !isSpecialRequest)
+            if ((roomType == Enums.RoomType.LectureHall || roomType == Enums.RoomType.Lab) && !isSpecialRequest)
             {
-                return "Hội trường chỉ dành cho Giảng viên hoặc đơn yêu cầu đặc biệt của Khoa/Trường.";
+                return "Hội trường và Phòng thực hành Lab chỉ dành cho Giảng viên hoặc đơn yêu cầu đặc biệt của Khoa/Trường.";
             }
 
             var studentMaxDays = settings.StudentMaxAdvanceDays > 0 ? settings.StudentMaxAdvanceDays : settings.MaxAdvanceDays;

@@ -1,58 +1,71 @@
-# Quy định đặt phòng có hiệu lực
+# Quy định Đặt phòng Đại học Thái Bình Dương (TBD)
 
-Đã triển khai 6 nhóm: đặt trước tối đa, đặt trước tối thiểu, thời lượng, hạn hủy, giờ hoạt động, ngày hoạt động/nghỉ/bảo trì.
+Hệ thống quản lý đặt phòng học và thiết bị áp dụng các quy chuẩn quản lý cơ sở vật chất dành riêng cho Sinh viên, Giảng viên và Cán bộ Nhà trường.
 
-Mặc định mới: 14 ngày; 30 phút; 4 giờ/lượt; hủy trước 2 giờ; **07:00–20:00 giờ Việt Nam**; thứ Hai đến thứ Bảy. Khoảng nghỉ có `roomId: null` áp dụng toàn trường, có roomId thì chỉ áp dụng phòng đó. Một ngày nghỉ đầy đủ dùng 00:00 đến 00:00 ngày kế tiếp.
+---
 
-## API
+## 1. Khung giờ & Ngày hoạt động
+- **Giờ mở cửa – đóng cửa:** **07:00 – 20:00 (giờ Việt Nam)** từ Thứ Hai đến Thứ Bảy.
+- **Sau 20:00 hoặc Chủ Nhật:** Hệ thống khóa đặt phòng thường; chỉ mở cho các sự kiện đặc biệt có phê duyệt của Ban Giám hiệu / P. Quản lý Đào tạo & CSVC.
+- **Khoảng nghỉ / Bảo trì:** Hỗ trợ khóa toàn trường (`roomId: null`) hoặc từng phòng cụ thể (`roomId: number`).
 
-- `GET /api/booking-settings`: người dùng đăng nhập đọc quy định.
-- `PUT /api/booking-settings`: chỉ vai trò `Admin` được sửa; body giống response GET, phải giữ `revision` đã đọc. Lỗi 409 yêu cầu tải lại vì admin khác đã sửa.
-- `PUT /api/bookings/{id}/cancel`: chủ đơn hủy với body `{ "reason": "..." }`. Backend kiểm tra trạng thái và hạn hủy.
+---
 
-Ví dụ body cấu hình (revision phải lấy từ GET):
+## 2. Ma trận phân quyền đặt phòng theo đối tượng
 
+| Tiêu chuẩn quy định | Sinh viên (Students) | Giảng viên / Cán bộ (Faculty/Staff) |
+| :--- | :--- | :--- |
+| **Đặt trước tối đa** | Tối đa **7 ngày** | Tối đa **30 ngày** |
+| **Đặt trước tối thiểu** | Trước ít nhất **1 giờ** (60 phút) | Trước ít nhất **30 phút** |
+| **Thời lượng tối đa / lượt** | Tối đa **3 giờ / lượt** (tối đa 6 giờ / tuần) | Tối đa **6 giờ / lượt** |
+| **Phạm vi phòng** | Phòng học thường (Classroom), phòng nhóm | Toàn bộ: Phòng học, Lab, gửi duyệt Hội trường |
+| **Hội trường / Lab chuyên dụng** | Cần đơn yêu cầu đặc biệt của Khoa | Đặt trực tiếp; Hội trường cần duyệt CSVC |
+| **Cơ chế xét duyệt** | Tự động duyệt phòng học thường nếu trống lịch | Tự động duyệt ngay (Auto-approve) |
+| **Thời hạn hủy phòng** | Trước giờ sử dụng ít nhất **2 giờ** | Trước giờ sử dụng ít nhất **1 giờ** |
+
+---
+
+## 3. Quy định Check-in & Chống giữ chỗ ảo (No-show)
+- **Quy tắc 15 phút (Auto-release):** Người đặt phòng phải bấm nút **Check-in** trên hệ thống trong vòng 15 phút đầu tiên kể từ giờ bắt đầu. Sau 15 phút chưa check-in, đơn đặt phòng tự động bị hủy và chuyển sang trạng thái "Trống" cho người khác sử dụng.
+- **Chế tài xử phạt (Three-strikes policy):** Tài khoản vi phạm No-show quá 3 lần trong vòng 30 ngày sẽ bị **tạm khóa quyền đặt phòng trong 14 ngày**.
+
+---
+
+## 4. Thứ tự ưu tiên & Giải quyết xung đột
+1. **Mức 1 (Cao nhất):** Thời khóa biểu chính khóa và Lịch thi tập trung của Trường.
+2. **Mức 2:** Sự kiện, hội thảo khoa học cấp Trường có phê duyệt của Ban Giám hiệu.
+3. **Mức 3:** Giảng viên đặt lịch giảng dạy bù, ôn tập, bảo vệ khóa luận.
+4. **Mức 4:** Hoạt động chính thức của Đoàn Thanh niên / Hội Sinh viên / Câu lạc bộ.
+5. **Mức 5:** Lịch học nhóm / tự học cá nhân của Sinh viên.
+
+---
+
+## 5. API & Cấu hình Hệ thống
+- `GET /api/booking-settings`: Người dùng đã đăng nhập đọc toàn bộ quy định.
+- `PUT /api/booking-settings`: Quản trị viên (`Admin`) cập nhật quy định với kiểm tra `revision` chống xung đột.
+- `PUT /api/bookings/{id}/cancel`: Người đặt phòng hủy lịch kèm lý do. Hệ thống kiểm tra thời hạn hủy theo vai trò.
+- `PUT /api/bookings/{id}/check-in`: Người đặt phòng xác nhận nhận phòng trong khung giờ ân hạn 15 phút.
+
+Ví dụ payload cấu hình chuẩn:
 ```json
 {
-  "maxAdvanceDays": 14,
-  "minAdvanceMinutes": 30,
-  "maxHoursPerBooking": 4,
-  "minCancelHours": 2,
   "openTime": "07:00",
   "closeTime": "20:00",
   "workingDays": [1, 2, 3, 4, 5, 6],
+  "minAdvanceMinutes": 30,
+  "maxAdvanceDays": 14,
+  "maxHoursPerBooking": 4.0,
+  "minCancelHours": 2.0,
+  "studentMaxAdvanceDays": 7,
+  "studentMaxHoursPerBooking": 3.0,
+  "facultyMaxAdvanceDays": 30,
+  "facultyMaxHoursPerBooking": 6.0,
+  "autoApproveForFaculty": true,
+  "checkInGraceMinutes": 15,
+  "maxPendingBookingsPerUser": 3,
+  "maxBookedHoursPerUserPerWeek": 20.0,
+  "approvalReminderHours": 1.0,
   "closedPeriods": [],
   "revision": 0
 }
 ```
-
-Khoảng nghỉ: `{ "roomId": null, "start": "2026-12-31T17:00:00Z", "end": "2027-01-01T17:00:00Z", "reason": "Nghỉ ngày 01/01" }`.
-
-Không dùng localStorage làm nguồn quy định. Frontend đọc lại sau khi lưu, khi focus và mỗi 30 giây trên các trang đang dùng quy định. Backend đọc DB mỗi thao tác nên không phụ thuộc cache trình duyệt. Một lần lưu và nhật ký thay đổi được ghi trong cùng transaction. Các nút cấu hình tự duyệt/ngoại lệ cũ chưa triển khai đã được bỏ khỏi panel này.
-
-## Phạm vi
-
-- Tạo/sửa đơn thường kiểm tra toàn bộ quy định liên quan; Admin cũng không tự bỏ qua giới hạn.
-- Duyệt đơn kiểm tra giờ hoạt động, ngày nghỉ, thời lượng, giới hạn ngày và xung đột; không áp lại thời gian đặt trước tối thiểu vì đơn đã được nộp trước đó.
-- Thời khóa biểu chính khóa miễn giới hạn đặt trước và thời lượng; vẫn kiểm tra giờ/ngày hoạt động, bảo trì và phòng hoạt động. Các buổi vi phạm được báo trong kết quả nhập và không được tạo.
-- Cập nhật quy định không tự thay đổi/hủy lịch đã duyệt. Admin cần xử lý riêng các lịch cũ bị ảnh hưởng bởi lịch nghỉ mới.
-- Giờ chuỗi trong nhập thời khóa biểu được chuyển từ giờ Việt Nam sang UTC trước khi lưu. Không sửa dữ liệu lịch sử tự động.
-
-## Triển khai
-
-Migration `20260914125847_EnforceBookingPolicies` đã được áp dụng lên Supabase trong phiên làm việc này. Không cần chạy lại seed mẫu. Backend đang chạy trước khi sửa cần khởi động lại; frontend AI Studio phải đồng bộ mã nguồn mới để hiện form mới.
-
-Nếu chạy bằng CLI, thêm `--Database:InitializeOnStartup=false` vào tham số ứng dụng sau `--` vì migration đã được áp dụng.
-
-Tệp giao diện chính: `frontend/src/features/settings/BookingSettingsPanel.tsx`, hook/kiểm tra: `frontend/src/api/bookingSettings.ts`.
-
-## Kiểm tra
-
-Tại thư mục gốc:
-
-```powershell
-dotnet run --project backend/tests/PolicyChecks -c Release
-dotnet run --project backend/tests/PolicyChecks -c Release -- --database
-```
-
-Lệnh thứ hai dùng cấu hình kết nối backend, kiểm tra lưu/đọc, tạo/sửa/duyệt/hủy trong transaction và rollback dữ liệu thử. Không bật tiến trình ứng dụng/worker bằng bộ kiểm tra này. Không chứa mật khẩu hoặc JWT trong tài liệu.

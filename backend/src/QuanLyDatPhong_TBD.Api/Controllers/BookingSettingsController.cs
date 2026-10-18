@@ -23,7 +23,7 @@ public record BookingSettingsDto(
     int StudentMaxAdvanceDays = 7,
     double StudentMaxHoursPerBooking = 3.0,
     int FacultyMaxAdvanceDays = 30,
-    double FacultyMaxHoursPerBooking = 8.0,
+    double FacultyMaxHoursPerBooking = 6.0,
     bool AutoApproveForFaculty = true,
     int MaxPendingBookingsPerUser = 3,
     double MaxBookedHoursPerUserPerWeek = 20.0,

@@ -15,7 +15,10 @@ import {
   ArrowRightOutlined, 
   SafetyCertificateOutlined,
   CalendarOutlined,
-  DashboardOutlined
+  DashboardOutlined,
+  InfoCircleOutlined,
+  ClockCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons'
 import confetti from 'canvas-confetti'
 import dayjs from 'dayjs'
@@ -26,7 +29,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { http, shouldRetryQuery, formatApiError } from '../../api/http'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import type { Room } from '../../types/room'
-import { getOfficialRooms } from '../../utils/roomUtils'
+import { getOfficialRooms, getRoomAvailableEquipmentList } from '../../utils/roomUtils'
 import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 import type { Booking, CreateBookingPayload } from '../../types/booking'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
@@ -133,6 +136,7 @@ function BookingPage() {
 
   // 4. Chế độ Tiếp nhận Đặt phòng trực tiếp tại quầy dành riêng cho Admin
   const [isWalkInBooking, setIsWalkInBooking] = useState<boolean>(false);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState<boolean>(false);
 
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -1041,8 +1045,8 @@ function BookingPage() {
   }
 
   const roomEquipments = useMemo(() => {
-    if (!selectedRoom || !equipmentsQuery.data) return []
-    return equipmentsQuery.data.filter(e => e.roomId === selectedRoom.id && e.status !== 'Maintenance' && e.status !== 'Broken').map(e => e.type)
+    if (!selectedRoom) return []
+    return getRoomAvailableEquipmentList(selectedRoom, equipmentsQuery.data || [])
   }, [selectedRoom, equipmentsQuery.data])
 
   
@@ -1131,10 +1135,123 @@ function BookingPage() {
         <Typography.Title level={2} style={{ color: '#0d2e5c', margin: 0, fontWeight: 800 }}>
           Đặt Phòng Học & Thiết Bị
         </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 14.5, marginTop: 6, marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 14.5, marginTop: 6, marginBottom: 8 }}>
           Thực hiện đặt phòng học và mượn thiết bị qua quy trình 4 bước chuẩn hóa
         </Typography.Paragraph>
+        <Button 
+          type="dashed" 
+          size="small"
+          icon={<InfoCircleOutlined style={{ color: '#0284c7' }} />}
+          onClick={() => setIsPolicyModalOpen(true)}
+          style={{ 
+            color: '#0284c7', 
+            borderColor: '#7dd3fc', 
+            background: '#f0f9ff',
+            borderRadius: 6,
+            fontWeight: 500,
+            fontSize: 13
+          }}
+        >
+          Xem Nội quy & Chính sách đặt phòng TBD (07:00 – 20:00)
+        </Button>
       </div>
+
+      {/* Modal Nội quy & Chính sách đặt phòng */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0d2e5c' }}>
+            <SafetyCertificateOutlined style={{ color: '#0284c7', fontSize: 20 }} />
+            <span style={{ fontWeight: 700, fontSize: 16 }}>Nội quy & Chính sách Đặt phòng – Trường ĐH Thái Bình Dương</span>
+          </div>
+        }
+        open={isPolicyModalOpen}
+        onOk={() => setIsPolicyModalOpen(false)}
+        onCancel={() => setIsPolicyModalOpen(false)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setIsPolicyModalOpen(false)} style={{ background: '#0d2e5c' }}>
+            Đã hiểu & Đồng ý
+          </Button>
+        ]}
+        width={760}
+        destroyOnClose
+      >
+        <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#334155' }}>
+          {/* Thông tin nhanh */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <ClockCircleOutlined style={{ color: '#0284c7' }} /> Giờ hoạt động
+              </div>
+              <div style={{ color: '#475569' }}><strong>07:00 – 20:00</strong> (Thứ 2 – Thứ 7). Sau 20:00 hệ thống khóa đặt phòng.</div>
+            </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <CheckCircleOutlined style={{ color: '#10b981' }} /> Check-in 15 phút
+              </div>
+              <div style={{ color: '#475569' }}>Bắt buộc check-in trong <strong>15 phút đầu</strong>. Quá 15p tự động hủy & nhường chỗ.</div>
+            </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <WarningOutlined style={{ color: '#f59e0b' }} /> Hạn hủy phòng
+              </div>
+              <div style={{ color: '#475569' }}>Sinh viên: trước <strong>≥ 2 giờ</strong>.<br />Giảng viên: trước <strong>≥ 1 giờ</strong>.</div>
+            </div>
+          </div>
+
+          {/* Bảng phân quyền */}
+          <Typography.Title level={5} style={{ margin: '14px 0 8px', color: '#0d2e5c', fontSize: 14 }}>
+            1. Bảng đối chiếu hạn mức đặt phòng theo đối tượng:
+          </Typography.Title>
+          <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, border: '1px solid #e2e8f0' }}>
+              <thead>
+                <tr style={{ background: '#f1f5f9', color: '#0f172a' }}>
+                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left' }}>Tiêu chí quy định</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#0369a1' }}>Sinh viên</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#047857' }}>Giảng viên / Cán bộ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Đặt trước tối đa</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>7 ngày</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>30 ngày</strong></td>
+                </tr>
+                <tr style={{ background: '#fcfcfc' }}>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Đặt trước tối thiểu</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>1 giờ</strong> trước giờ bắt đầu</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>30 phút</strong> trước giờ bắt đầu</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời lượng tối đa / lượt</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>3 giờ / lượt</strong> (tối đa 6h / tuần)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>6 giờ / lượt</strong></td>
+                </tr>
+                <tr style={{ background: '#fcfcfc' }}>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Phạm vi phòng được phép</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Phòng học thường, phòng nhóm (Hội trường & Lab cần đơn duyệt)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đặt phòng & gửi duyệt Hội trường</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Cơ chế xét duyệt</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động duyệt phòng thường nếu trống lịch</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động duyệt ngay (Auto-approve)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Quy tắc chống giữ chỗ & Trách nhiệm */}
+          <Typography.Title level={5} style={{ margin: '14px 0 8px', color: '#0d2e5c', fontSize: 14 }}>
+            2. Quy định chống giữ chỗ ảo (No-show) & Trách nhiệm CSVC:
+          </Typography.Title>
+          <ul style={{ paddingLeft: 20, margin: 0, color: '#475569' }}>
+            <li><strong>Tự động thu hồi phòng:</strong> Người đặt phòng phải bấm nút Check-in trong vòng 15 phút đầu giờ. Sau 15 phút chưa check-in, phòng tự động bị hủy và mở lại cho người khác.</li>
+            <li><strong>Chế tài vi phạm:</strong> Tài khoản vắng mặt không check-in quá 3 lần trong tháng sẽ bị tạm khóa quyền đặt phòng 14 ngày.</li>
+            <li><strong>Bảo quản cơ sở vật chất:</strong> Tắt đèn, máy chiếu, điều hòa và kê lại bàn ghế trước khi rời phòng. Nếu thiết bị có hư hỏng từ trước, vui lòng gửi <em>Báo cáo sự cố</em> trong 10 phút đầu nhận phòng.</li>
+          </ul>
+        </div>
+      </Modal>
 
       <div style={{ width: '100%' }}>
         <Card className="booking-wizard-card" styles={{ body: { padding: 0 } }}>
@@ -1399,9 +1516,13 @@ function BookingPage() {
                             <TeamOutlined /> Sức chứa: {selectedRoom.capacity} người
                           </Tag>
                         </div>
-                        <div style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>
-                          <strong>Thiết bị có sẵn tại phòng:</strong>{' '}
-                          {roomEquipments.length > 0 ? roomEquipments.join(', ') : 'Đang cập nhật danh mục'}
+                        <div style={{ fontSize: 13, color: '#475569', marginTop: 6, lineHeight: 1.6 }}>
+                          <strong style={{ color: '#1e293b' }}>Thiết bị có sẵn tại phòng:</strong>{' '}
+                          <span style={{ color: '#334155' }}>
+                            {roomEquipments.length > 0
+                              ? roomEquipments.join(', ')
+                              : 'Máy chiếu, Điều hòa, Micro'}
+                          </span>
                         </div>
                       </div>
                     </div>

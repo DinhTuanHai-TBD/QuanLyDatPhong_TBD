@@ -44,7 +44,7 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
   studentMaxAdvanceDays: 7,
   studentMaxHoursPerBooking: 3.0,
   facultyMaxAdvanceDays: 30,
-  facultyMaxHoursPerBooking: 8.0,
+  facultyMaxHoursPerBooking: 6.0,
   autoApproveForFaculty: true,
   maxPendingBookingsPerUser: 3,
   maxBookedHoursPerUserPerWeek: 20.0,
@@ -357,9 +357,9 @@ export function validateBookingAgainstSettings({
     violations.push('Giờ kết thúc phải sau giờ bắt đầu.')
   } else {
     const maxHours = facultyUser 
-      ? (settings.facultyMaxHoursPerBooking ?? 8.0) 
+      ? (settings.facultyMaxHoursPerBooking ?? 6.0) 
       : adminUser 
-        ? Math.max(settings.facultyMaxHoursPerBooking ?? 8.0, settings.maxHoursPerBooking ?? 4.0) 
+        ? Math.max(settings.facultyMaxHoursPerBooking ?? 6.0, settings.maxHoursPerBooking ?? 4.0) 
         : (settings.studentMaxHoursPerBooking ?? 3.0)
 
     if (durationHours > maxHours) {
@@ -373,15 +373,17 @@ export function validateBookingAgainstSettings({
     }
   }
 
-  // 6. Khóa đặt Hội trường (RoomType.LectureHall) đối với Sinh viên
+  // 6. Khóa đặt Hội trường (RoomType.LectureHall) và Phòng Lab đối với Sinh viên
   const roomTypeStr = String(roomType || '').toLowerCase()
   const isLectureHall = roomType === 'LectureHall' || roomTypeStr === '2' || roomTypeStr.includes('hội trường') || roomTypeStr.includes('lecturehall') || roomTypeStr.includes('hall')
+  const isLab = roomType === 'Lab' || roomTypeStr === '1' || roomTypeStr.includes('phòng máy') || roomTypeStr.includes('lab') || roomTypeStr.includes('thực hành')
 
-  if (isLectureHall && isStudent) {
+  if ((isLectureHall || isLab) && isStudent) {
+    const roomTypeLabel = isLectureHall ? 'Hội trường' : 'Phòng thực hành Lab'
     if (!isSpecialRequest) {
-      violations.push('Hội trường chỉ dành cho Giảng viên hoặc đơn yêu cầu đặc biệt của Khoa/Trường.')
+      violations.push(`${roomTypeLabel} chỉ dành cho Giảng viên hoặc đơn yêu cầu đặc biệt của Khoa/Trường.`)
     } else if (!specialRequestReason || !specialRequestReason.trim()) {
-      violations.push('Vui lòng nhập lý do xét duyệt của Khoa/Trường đối với đơn yêu cầu đặc biệt đặt Hội trường.')
+      violations.push(`Vui lòng nhập lý do xét duyệt của Khoa/Trường đối với đơn yêu cầu đặc biệt đặt ${roomTypeLabel}.`)
     }
   }
 

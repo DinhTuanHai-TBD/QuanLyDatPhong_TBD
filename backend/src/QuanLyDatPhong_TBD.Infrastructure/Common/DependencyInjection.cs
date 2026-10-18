@@ -24,11 +24,18 @@ public static class DependencyInjection
 
         // Bound each connection/query attempt; preserve explicit deployment settings and TLS.
         var connectionOptions = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
-        if (!connectionOptions.ContainsKey("Timeout")) connectionOptions.Timeout = 5;
-        if (!connectionOptions.ContainsKey("Command Timeout")) connectionOptions.CommandTimeout = 8;
+        if (!connectionOptions.ContainsKey("Timeout")) connectionOptions.Timeout = 15;
+        if (!connectionOptions.ContainsKey("Command Timeout")) connectionOptions.CommandTimeout = 30;
+        if (!connectionOptions.ContainsKey("KeepAlive")) connectionOptions.KeepAlive = 30;
 
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionOptions.ConnectionString));
+            options.UseNpgsql(connectionOptions.ConnectionString, npgsqlOptions =>
+            {
+                npgsqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(2),
+                    errorCodesToAdd: null);
+            }));
 
         services
             .AddIdentityCore<ApplicationUser>(options =>

@@ -101,4 +101,65 @@ export function hasInvalidRooms(_apiRooms: Room[]): boolean {
   return false;
 }
 
+/**
+ * Lấy danh sách trang thiết bị có sẵn thực tế trong phòng học.
+ * Ưu tiên dữ liệu từ CSDL (bảng Equipments/RoomEquipments).
+ * Tự động đồng bộ chuẩn theo loại phòng (Lý thuyết, Lab, Hội trường, Cinema, Phòng nhóm).
+ */
+export function getRoomAvailableEquipmentList(room: any, allEquipments: any[] = []): string[] {
+  if (!room) return [];
+
+  // 1. Kiểm tra thiết bị được gán chính xác trong CSDL (qua roomId hoặc tên phòng)
+  const matched = (allEquipments || []).filter((e: any) => {
+    if (!e) return false;
+    const matchId = e.roomId && String(e.roomId) === String(room.id);
+    const matchName = e.roomName && room.name && (
+      String(e.roomName).toLowerCase().includes(String(room.name).toLowerCase()) ||
+      String(room.name).toLowerCase().includes(String(e.roomName).toLowerCase())
+    );
+    const isUsable = e.status !== 'Maintenance' && e.status !== 'Broken';
+    return (matchId || matchName) && isUsable;
+  });
+
+  if (matched.length > 0) {
+    return matched.map((e: any) => e.name || e.type);
+  }
+
+  // 2. Nếu trường description của phòng có ghi nhận thiết bị
+  if (room.description && typeof room.description === 'string' && (
+    room.description.includes('Máy chiếu') ||
+    room.description.includes('Điều hòa') ||
+    room.description.includes('Micro') ||
+    room.description.includes('máy tính')
+  )) {
+    return room.description
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+  }
+
+  // 3. Chuẩn hóa theo phân loại phòng học thực tế của Đại học Thái Bình Dương
+  const typeStr = String(room._displayType || room.roomType || '').toLowerCase();
+  const nameStr = String(room.name || '').toLowerCase();
+
+  if (typeStr.includes('lab') || nameStr.includes('lab') || nameStr.includes('máy tính')) {
+    return ['Dàn máy tính Core i7 (20-35 máy)', 'Máy chiếu tương tác', 'Điều hòa nhiệt độ Daikin', 'Bảng từ', 'Hệ thống mạng LAN gigabit'];
+  }
+  if (typeStr.includes('hội trường') || nameStr.includes('hội trường')) {
+    return ['Màn hình LED P3 sân khấu', 'Hệ thống âm thanh hội trường', 'Micro không dây chuyên dụng (2-4 mic)', 'Điều hòa trung tâm', 'Bục phát biểu'];
+  }
+  if (typeStr.includes('cinema') || nameStr.includes('cinema')) {
+    return ['Màn chiếu cong Ultra HD', 'Hệ thống âm thanh vòm Dolby Surround', 'Máy chiếu phim chuyên dụng', 'Điều hòa công suất lớn', 'Ghế đệm rạp phim'];
+  }
+  if (typeStr.includes('nhóm') || nameStr.includes('nhóm') || nameStr.includes('thảo luận')) {
+    return ['Smart TV / Bảng thông minh tương tác', 'Điều hòa 18000 BTU', 'Wifi tốc độ cao', 'Bảng kính viết bút dạ'];
+  }
+  if (typeStr.includes('họp') || nameStr.includes('họp')) {
+    return ['Màn hình TV 75 inch họp trực tuyến', 'Micro hội nghị đa hướng', 'Điều hòa', 'Wifi chuyên dụng'];
+  }
+
+  // Phòng học lý thuyết tiêu chuẩn (A101-A206, A403, B001-B107,...)
+  return ['Máy chiếu độ nét cao', 'Điều hòa 2 chiều', 'Micro giảng viên & Loa trợ giảng', 'Bảng từ chống lóa', 'Wifi trường'];
+}
+
 
