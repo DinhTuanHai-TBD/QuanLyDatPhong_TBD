@@ -15,10 +15,7 @@ import {
   ArrowRightOutlined, 
   SafetyCertificateOutlined,
   CalendarOutlined,
-  DashboardOutlined,
-  InfoCircleOutlined,
-  ClockCircleOutlined,
-  WarningOutlined
+  DashboardOutlined
 } from '@ant-design/icons'
 import confetti from 'canvas-confetti'
 import dayjs from 'dayjs'
@@ -381,8 +378,27 @@ function BookingPage() {
       endTime: et,
       roomId: selectedRoom.id,
       settings: bookingSettings,
+      userRole: userRole,
+      isFaculty: isFaculty || isStaff,
+      isAdmin: isAdmin,
     })
-  }, [bookingSettings, selectedRoom, selectedDate, startTime, endTime])
+  }, [bookingSettings, selectedRoom, selectedDate, startTime, endTime, userRole, isFaculty, isStaff, isAdmin])
+
+  const userMaxAdvanceDays = useMemo(() => {
+    if (!bookingSettings) return 7
+    if (isFaculty || isStaff || isAdmin) {
+      return bookingSettings.facultyMaxAdvanceDays ?? 30
+    }
+    return bookingSettings.studentMaxAdvanceDays ?? 7
+  }, [bookingSettings, isFaculty, isStaff, isAdmin])
+
+  const userMaxHoursPerBooking = useMemo(() => {
+    if (!bookingSettings) return 3
+    if (isFaculty || isStaff || isAdmin) {
+      return bookingSettings.facultyMaxHoursPerBooking ?? 6
+    }
+    return bookingSettings.studentMaxHoursPerBooking ?? 3
+  }, [bookingSettings, isFaculty, isStaff, isAdmin])
 
   const isDateDisabled = (current: dayjs.Dayjs) => {
     if (!current) return false
@@ -390,7 +406,7 @@ function BookingPage() {
     const today = toVN().startOf('day')
     const cur = toVN(current).startOf('day')
     if (cur.isBefore(today)) return true
-    if (cur.diff(today, 'day') > bookingSettings.maxAdvanceDays) return true
+    if (cur.diff(today, 'day') > userMaxAdvanceDays) return true
     if (!bookingSettings.workingDays.includes(cur.day())) return true
     return false
   }
@@ -1139,29 +1155,25 @@ function BookingPage() {
           Thực hiện đặt phòng học và mượn thiết bị qua quy trình 4 bước chuẩn hóa
         </Typography.Paragraph>
         <Button 
-          type="dashed" 
-          size="small"
-          icon={<InfoCircleOutlined style={{ color: '#0284c7' }} />}
+          type="link" 
           onClick={() => setIsPolicyModalOpen(true)}
           style={{ 
-            color: '#0284c7', 
-            borderColor: '#7dd3fc', 
-            background: '#f0f9ff',
-            borderRadius: 6,
-            fontWeight: 500,
-            fontSize: 13
+            color: '#0369a1', 
+            fontWeight: 600,
+            fontSize: 13.5,
+            padding: 0,
+            textDecoration: 'underline'
           }}
         >
-          Xem Nội quy & Chính sách đặt phòng TBD (07:00 – 20:00)
+          Nội quy & Chính sách Đặt phòng
         </Button>
       </div>
 
-      {/* Modal Nội quy & Chính sách đặt phòng */}
+      {/* Modal Nội quy & Chính sách Đặt phòng */}
       <Modal
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0d2e5c' }}>
-            <SafetyCertificateOutlined style={{ color: '#0284c7', fontSize: 20 }} />
-            <span style={{ fontWeight: 700, fontSize: 16 }}>Nội quy & Chính sách Đặt phòng – Trường ĐH Thái Bình Dương</span>
+          <div style={{ color: '#0d2e5c', fontWeight: 700, fontSize: 16 }}>
+            Nội quy & Chính sách Đặt phòng
           </div>
         }
         open={isPolicyModalOpen}
@@ -1169,86 +1181,94 @@ function BookingPage() {
         onCancel={() => setIsPolicyModalOpen(false)}
         footer={[
           <Button key="close" type="primary" onClick={() => setIsPolicyModalOpen(false)} style={{ background: '#0d2e5c' }}>
-            Đã hiểu & Đồng ý
+            Xác nhận đã đọc
           </Button>
         ]}
         width={760}
         destroyOnClose
       >
         <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#334155' }}>
-          {/* Thông tin nhanh */}
+          {/* Tóm tắt quy chuẩn vận hành */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
-              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <ClockCircleOutlined style={{ color: '#0284c7' }} /> Giờ hoạt động
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
+                Thời gian vận hành giảng đường
               </div>
-              <div style={{ color: '#475569' }}><strong>07:00 – 20:00</strong> (Thứ 2 – Thứ 7). Sau 20:00 hệ thống khóa đặt phòng.</div>
+              <div style={{ color: '#475569' }}><strong>07:00 – 20:00</strong> (Từ Thứ Hai đến Thứ Bảy). Hệ thống tự động khóa đăng ký ngoài khung giờ này.</div>
             </div>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
-              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <CheckCircleOutlined style={{ color: '#10b981' }} /> Check-in 15 phút
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
+                Xác nhận hiện diện (Check-in)
               </div>
-              <div style={{ color: '#475569' }}>Bắt buộc check-in trong <strong>15 phút đầu</strong>. Quá 15p tự động hủy & nhường chỗ.</div>
+              <div style={{ color: '#475569' }}>Thực hiện trong vòng <strong>15 phút</strong> đầu buổi. Quá thời hạn, hệ thống tự động giải phóng phòng.</div>
             </div>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
-              <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <WarningOutlined style={{ color: '#f59e0b' }} /> Hạn hủy phòng
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+              <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
+                Thời hạn thông báo hủy lịch
               </div>
-              <div style={{ color: '#475569' }}>Sinh viên: trước <strong>≥ 2 giờ</strong>.<br />Giảng viên: trước <strong>≥ 1 giờ</strong>.</div>
+              <div style={{ color: '#475569' }}>Sinh viên: trước ít nhất <strong>02 giờ</strong>.<br />Giảng viên: trước ít nhất <strong>01 giờ</strong>.</div>
             </div>
           </div>
 
-          {/* Bảng phân quyền */}
+          {/* Bảng phân quyền học thuật */}
           <Typography.Title level={5} style={{ margin: '14px 0 8px', color: '#0d2e5c', fontSize: 14 }}>
-            1. Bảng đối chiếu hạn mức đặt phòng theo đối tượng:
+            1. Định mức và Phân quyền Đăng ký Sử dụng Giảng đường
           </Typography.Title>
           <div style={{ overflowX: 'auto', marginBottom: 16 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, border: '1px solid #e2e8f0' }}>
               <thead>
                 <tr style={{ background: '#f1f5f9', color: '#0f172a' }}>
-                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left' }}>Tiêu chí quy định</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left' }}>Nội dung quy định</th>
                   <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#0369a1' }}>Sinh viên</th>
-                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#047857' }}>Giảng viên / Cán bộ</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#047857' }}>Giảng viên & Cán bộ, Nhân viên</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Đặt trước tối đa</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>7 ngày</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời hạn đăng ký trước tối đa</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>07 ngày</strong></td>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>30 ngày</strong></td>
                 </tr>
                 <tr style={{ background: '#fcfcfc' }}>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Đặt trước tối thiểu</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>1 giờ</strong> trước giờ bắt đầu</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>30 phút</strong> trước giờ bắt đầu</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời hạn đăng ký trước tối thiểu</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>01 giờ</strong> trước buổi sử dụng</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>30 phút</strong> trước buổi sử dụng</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời lượng tối đa / lượt</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>3 giờ / lượt</strong> (tối đa 6h / tuần)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>6 giờ / lượt</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời lượng đăng ký tối đa</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>03 giờ / lượt</strong> (định mức 06 giờ / tuần)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>06 giờ / lượt</strong></td>
                 </tr>
                 <tr style={{ background: '#fcfcfc' }}>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Phạm vi phòng được phép</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Phòng học thường, phòng nhóm (Hội trường & Lab cần đơn duyệt)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đặt phòng & gửi duyệt Hội trường</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Phạm vi giảng đường áp dụng</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Giảng đường tiêu chuẩn, phòng học nhóm (Phòng thực hành chuyên môn và Hội trường cần phê duyệt của Khoa / Đơn vị)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đăng ký giảng đường, phòng thực hành; Hội trường cần phê duyệt của Ban Quản lý CSVC</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Cơ chế xét duyệt</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động duyệt phòng thường nếu trống lịch</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động duyệt ngay (Auto-approve)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Quy trình phê duyệt</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động phê duyệt đối với giảng đường tiêu chuẩn nếu còn chỗ</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động phê duyệt đối với giảng đường và phòng máy tính</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Quy tắc chống giữ chỗ & Trách nhiệm */}
+          {/* Quy chế chống giữ chỗ không sử dụng */}
           <Typography.Title level={5} style={{ margin: '14px 0 8px', color: '#0d2e5c', fontSize: 14 }}>
-            2. Quy định chống giữ chỗ ảo (No-show) & Trách nhiệm CSVC:
+            2. Quy chế Chống giữ chỗ không sử dụng & Xử lý vi phạm
+          </Typography.Title>
+          <ul style={{ paddingLeft: 20, margin: '0 0 16px', color: '#475569' }}>
+            <li><strong>Tự động thu hồi giảng đường:</strong> Người đăng ký có trách nhiệm xác nhận hiện diện (Check-in) trong vòng 15 phút đầu tiên. Quá thời hạn này, hệ thống tự động hủy đơn và chuyển quyền sử dụng cho cá nhân, tập thể khác.</li>
+            <li><strong>Xử lý vi phạm vắng mặt:</strong> Trường hợp đăng ký nhưng không sử dụng và không thông báo hủy quá 03 lần trong vòng 30 ngày, hệ thống sẽ tạm đình chỉ quyền đăng ký sử dụng phòng học trong thời hạn 14 ngày.</li>
+          </ul>
+
+          {/* Trách nhiệm bảo quản CSVC */}
+          <Typography.Title level={5} style={{ margin: '14px 0 8px', color: '#0d2e5c', fontSize: 14 }}>
+            3. Trách nhiệm Bảo quản Cơ sở vật chất và An toàn Thiết bị
           </Typography.Title>
           <ul style={{ paddingLeft: 20, margin: 0, color: '#475569' }}>
-            <li><strong>Tự động thu hồi phòng:</strong> Người đặt phòng phải bấm nút Check-in trong vòng 15 phút đầu giờ. Sau 15 phút chưa check-in, phòng tự động bị hủy và mở lại cho người khác.</li>
-            <li><strong>Chế tài vi phạm:</strong> Tài khoản vắng mặt không check-in quá 3 lần trong tháng sẽ bị tạm khóa quyền đặt phòng 14 ngày.</li>
-            <li><strong>Bảo quản cơ sở vật chất:</strong> Tắt đèn, máy chiếu, điều hòa và kê lại bàn ghế trước khi rời phòng. Nếu thiết bị có hư hỏng từ trước, vui lòng gửi <em>Báo cáo sự cố</em> trong 10 phút đầu nhận phòng.</li>
+            <li><strong>Kiểm tra trang thiết bị:</strong> Trong vòng 10 phút đầu khi tiếp nhận phòng, nếu phát hiện hư hại về âm thanh, máy chiếu, điều hòa hoặc thiết bị điện, người sử dụng cần thực hiện Báo cáo sự cố trên hệ thống để Ban Quản lý CSVC ghi nhận và miễn trừ trách nhiệm.</li>
+            <li><strong>Bàn giao sau buổi học:</strong> Tắt toàn bộ hệ thống máy chiếu, điều hòa nhiệt độ và thiết bị chiếu sáng; sắp xếp lại bàn ghế theo sơ đồ chuẩn trước khi rời khỏi giảng đường.</li>
           </ul>
         </div>
       </Modal>
@@ -1677,8 +1697,8 @@ function BookingPage() {
                     {/* Hiển thị giờ mở/đóng cửa và cảnh báo ngày nghỉ nếu có */}
                     {bookingSettings && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: 13, color: '#475569' }}>
-                        <span>Giờ mở cửa theo quy định: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
-                        <span>Đặt trước tối đa: <strong>{bookingSettings.maxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{bookingSettings.maxHoursPerBooking} giờ</strong></span>
+                        <span>Khung giờ vận hành giảng đường: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
+                        <span>Đặt trước tối đa: <strong>{userMaxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{userMaxHoursPerBooking} giờ</strong></span>
                       </div>
                     )}
 
