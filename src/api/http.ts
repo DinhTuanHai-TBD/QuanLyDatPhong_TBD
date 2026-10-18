@@ -1,13 +1,27 @@
 import axios from 'axios'
 
 const envUrl = import.meta.env.VITE_API_URL?.trim()
+
+const isDeadTunnel = (url?: string) => {
+  if (!url) return true
+  return (
+    url.includes('tartness') ||
+    url.includes('subsector') ||
+    url.includes('skyrocket-humorous-that') ||
+    url.includes('cos-arrangement-sperm-magnitude')
+  )
+}
+
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
 const targetBaseUrl =
-  envUrl &&
-  !envUrl.includes('tartness') &&
-  !envUrl.includes('subsector') &&
-  !envUrl.includes('skyrocket-humorous-that')
+  envUrl && !isDeadTunnel(envUrl)
     ? envUrl
-    : 'https://cos-arrangement-sperm-magnitude.trycloudflare.com'
+    : isLocalhost
+      ? 'http://localhost:5250'
+      : ''
 
 export const http = axios.create({
   baseURL: targetBaseUrl,
