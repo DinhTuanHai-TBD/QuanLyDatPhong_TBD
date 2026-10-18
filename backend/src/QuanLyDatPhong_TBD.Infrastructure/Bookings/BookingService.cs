@@ -272,12 +272,17 @@ internal sealed class BookingService : IBookingService
         }
         else
         {
-            // 1. Notification for Student/User
+            var requesterTitle = isFaculty ? "Giảng viên" : (isAdmin ? "Quản trị viên" : "Sinh viên");
+            var requesterDisplayName = !string.IsNullOrWhiteSpace(user?.FullName) ? $"{user.FullName} ({user.Email})" : (user?.Email ?? "người dùng");
+
+            // 1. Notification for Requester
             _dbContext.Notifications.Add(new Notification
             {
                 UserId = userId,
                 Title = "Yêu cầu đặt phòng đã được ghi nhận",
-                Message = $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của bạn đang chờ phê duyệt.",
+                Message = isFaculty 
+                    ? $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của Thầy/Cô đã được ghi nhận và xếp mức Ưu tiên xét duyệt Cấp 1."
+                    : $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của bạn đang chờ phê duyệt.",
                 IsRead = false,
                 CreatedAt = DateTime.UtcNow
             });
@@ -296,8 +301,8 @@ internal sealed class BookingService : IBookingService
                     _dbContext.Notifications.Add(new Notification
                     {
                         UserId = approverId,
-                        Title = "Yêu cầu đặt phòng mới cần duyệt",
-                        Message = $"Sinh viên {user?.Email ?? "người dùng"} vừa tạo yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}).",
+                        Title = isFaculty ? "Yêu cầu đặt phòng từ Giảng viên cần duyệt" : "Yêu cầu đặt phòng mới cần duyệt",
+                        Message = $"{requesterTitle} {requesterDisplayName} vừa tạo yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}).",
                         IsRead = false,
                         CreatedAt = DateTime.UtcNow
                     });

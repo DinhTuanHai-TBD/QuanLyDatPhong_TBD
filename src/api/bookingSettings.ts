@@ -45,7 +45,7 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
   studentMaxHoursPerBooking: 3.0,
   facultyMaxAdvanceDays: 30,
   facultyMaxHoursPerBooking: 6.0,
-  autoApproveForFaculty: true,
+  autoApproveForFaculty: false,
   maxPendingBookingsPerUser: 3,
   maxBookedHoursPerUserPerWeek: 20.0,
   approvalReminderHours: 1.0,

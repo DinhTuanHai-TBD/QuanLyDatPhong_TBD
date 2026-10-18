@@ -1246,8 +1246,8 @@ function BookingPage() {
                 </tr>
                 <tr>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Quy trình phê duyệt</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động phê duyệt đối với giảng đường tiêu chuẩn nếu còn chỗ</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tự động phê duyệt đối với giảng đường và phòng máy tính</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Xét duyệt theo thứ tự tiếp nhận)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Ưu tiên xét duyệt Cấp 1)</td>
                 </tr>
               </tbody>
             </table>
@@ -2678,9 +2678,9 @@ function BookingPage() {
                     {isAdmin 
                       ? 'ĐẶT PHÒNG & DUYỆT TRỰC TIẾP' 
                       : isFaculty 
-                        ? 'XÁC NHẬN ĐẶT PHÒNG GIẢNG DẠY' 
+                        ? 'GỬI YÊU CẦU ĐẶT PHÒNG GIẢNG DẠY' 
                         : isStaff 
-                          ? 'XÁC NHẬN ĐẶT PHÒNG LÀM VIỆC' 
+                          ? 'GỬI YÊU CẦU ĐẶT PHÒNG LÀM VIỆC' 
                           : 'GỬI YÊU CẦU PHÊ DUYỆT'}
                   </Button>
                 </div>
@@ -2689,7 +2689,7 @@ function BookingPage() {
                   <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: '#64748b' }}>
                     {isStaffOrFaculty 
                       ? 'Yêu cầu của Thầy/Cô và Cán bộ được chuyển trực tiếp vào hàng chờ Ưu tiên xét duyệt Cấp 1.'
-                      : 'Yêu cầu của bạn sẽ được chuyển đến Ban Quản trị để xem xét.'}
+                      : 'Yêu cầu của bạn sẽ được chuyển đến Ban Quản lý CSVC để xem xét phê duyệt.'}
                   </div>
                 )}
               </div>
@@ -2720,18 +2720,18 @@ function BookingPage() {
             {isAdmin 
               ? 'Đặt phòng và phê duyệt trực tiếp thành công!' 
               : isFaculty 
-                ? 'Đã gửi phiếu đặt phòng giảng dạy thành công!' 
+                ? 'Đã gửi yêu cầu đặt phòng giảng dạy thành công!' 
                 : isStaff 
-                  ? 'Đã gửi phiếu đặt phòng làm việc thành công!' 
-                  : 'Gửi Yêu Cầu Đặt Phòng Thành Công!'}
+                  ? 'Đã gửi yêu cầu đặt phòng làm việc thành công!' 
+                  : 'Gửi yêu cầu đặt phòng thành công!'}
           </Typography.Title>
 
           <Typography.Paragraph type="secondary" style={{ fontSize: 14.5, marginBottom: 20, lineHeight: 1.5 }}>
             {isAdmin
               ? 'Lịch phòng đã được cập nhật.'
               : isStaffOrFaculty
-                ? 'Đơn đặt phòng đã được ghi nhận và xếp mức Ưu tiên xét duyệt Cấp 1. Bạn có thể theo dõi tiến độ tại trang Lịch sử.'
-                : 'Yêu cầu của bạn sẽ được chuyển đến Ban Quản trị để xem xét. Bạn có thể theo dõi tiến độ xét duyệt tại trang Lịch sử.'}
+                ? 'Đơn đặt phòng đã được ghi nhận và xếp mức Ưu tiên xét duyệt Cấp 1. Thầy/Cô vui lòng đợi Ban Quản lý CSVC phê duyệt trước khi nhận phòng.'
+                : 'Yêu cầu của bạn đã được chuyển đến Ban Quản lý CSVC để xem xét phê duyệt. Bạn có thể theo dõi tiến độ xét duyệt tại trang Lịch sử.'}
           </Typography.Paragraph>
 
           {successBookingInfo && (
