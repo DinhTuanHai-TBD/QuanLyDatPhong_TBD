@@ -281,7 +281,7 @@ internal sealed class BookingService : IBookingService
                 UserId = userId,
                 Title = "Yêu cầu đặt phòng đã được ghi nhận",
                 Message = isFaculty 
-                    ? $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của Thầy/Cô đã được ghi nhận và xếp mức Ưu tiên xét duyệt Cấp 1."
+                    ? $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của Thầy/Cô đã được ghi nhận và ưu tiên xét duyệt."
                     : $"Yêu cầu đặt phòng {room.Name} ({request.StartTime:dd/MM/yyyy HH:mm}) của bạn đang chờ phê duyệt.",
                 IsRead = false,
                 CreatedAt = DateTime.UtcNow

@@ -978,9 +978,9 @@ function BookingPage() {
             message.success("Đặt phòng và phê duyệt trực tiếp thành công! Lịch phòng đã được cập nhật.")
           }
         } else if (isFaculty) {
-          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng giảng dạy! Đơn được xếp ưu tiên xét duyệt cấp 1.")
+          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng giảng dạy! Đơn được ưu tiên xét duyệt.")
         } else if (isStaff) {
-          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng làm việc! Đơn được xếp ưu tiên xét duyệt cấp 1.")
+          message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Đã gửi yêu cầu đặt phòng làm việc! Đơn được ưu tiên xét duyệt.")
         } else {
           message.success(isApproved ? "Đặt phòng thành công và đã được phê duyệt!" : "Gửi yêu cầu đặt phòng thành công! Vui lòng chờ phê duyệt.")
         }
@@ -1247,7 +1247,7 @@ function BookingPage() {
                 <tr>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Quy trình phê duyệt</td>
                   <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Xét duyệt theo thứ tự tiếp nhận)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Ưu tiên xét duyệt Cấp 1)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Ưu tiên xét duyệt)</td>
                 </tr>
               </tbody>
             </table>
@@ -2354,7 +2354,7 @@ function BookingPage() {
                       </Tag>
                     ) : isStaffOrFaculty ? (
                       <Tag color="blue" style={{ fontWeight: 700, margin: 0, padding: '3px 10px', borderRadius: 6, fontSize: 13 }}>
-                        Ưu tiên xét duyệt Cấp 1
+                        Ưu tiên xét duyệt
                       </Tag>
                     ) : (
                       <Tag color="gold" style={{ fontWeight: 700, margin: 0 }}>
@@ -2533,7 +2533,7 @@ function BookingPage() {
                         {isFaculty ? '[Giảng viên] Chế độ ưu tiên xét duyệt' : '[Cán bộ - Nhân viên] Chế độ ưu tiên xét duyệt'}
                       </div>
                       <div style={{ color: '#0c4a6e', fontSize: 13, lineHeight: 1.5 }}>
-                        Yêu cầu đặt phòng của Thầy/Cô và Cán bộ được xếp thứ tự <strong>ƯU TIÊN XÉT DUYỆT CẤP 1</strong> để phục vụ công tác giảng dạy và hoạt động nhà trường.
+                        Yêu cầu đặt phòng của Thầy/Cô và Cán bộ được xếp thứ tự <strong>ƯU TIÊN XÉT DUYỆT</strong> để phục vụ công tác giảng dạy và hoạt động nhà trường.
                       </div>
                     </div>
                   </div>
@@ -2688,7 +2688,7 @@ function BookingPage() {
                 {!isAdmin && (
                   <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: '#64748b' }}>
                     {isStaffOrFaculty 
-                      ? 'Yêu cầu của Thầy/Cô và Cán bộ được chuyển trực tiếp vào hàng chờ Ưu tiên xét duyệt Cấp 1.'
+                      ? 'Yêu cầu của Thầy/Cô và Cán bộ được chuyển trực tiếp vào hàng chờ Ưu tiên xét duyệt.'
                       : 'Yêu cầu của bạn sẽ được chuyển đến Ban Quản lý CSVC để xem xét phê duyệt.'}
                   </div>
                 )}
@@ -2730,7 +2730,7 @@ function BookingPage() {
             {isAdmin
               ? 'Lịch phòng đã được cập nhật.'
               : isStaffOrFaculty
-                ? 'Đơn đặt phòng đã được ghi nhận và xếp mức Ưu tiên xét duyệt Cấp 1. Thầy/Cô vui lòng đợi Ban Quản lý CSVC phê duyệt trước khi nhận phòng.'
+                ? 'Đơn đặt phòng đã được ghi nhận và được ưu tiên xét duyệt. Thầy/Cô vui lòng đợi Ban Quản lý CSVC phê duyệt trước khi nhận phòng.'
                 : 'Yêu cầu của bạn đã được chuyển đến Ban Quản lý CSVC để xem xét phê duyệt. Bạn có thể theo dõi tiến độ xét duyệt tại trang Lịch sử.'}
           </Typography.Paragraph>
 
@@ -2762,7 +2762,7 @@ function BookingPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span style={{ color: '#64748b' }}>Trạng thái đơn:</span>
                 <Tag color={isAdmin ? 'green' : isStaffOrFaculty ? 'blue' : 'gold'} style={{ margin: 0, fontWeight: 700 }}>
-                  {isAdmin ? 'ĐÃ DUYỆT (TRỰC TIẾP)' : isStaffOrFaculty ? 'CHỜ DUYỆT (ƯU TIÊN CẤP 1)' : 'CHỜ DUYỆT'}
+                  {isAdmin ? 'ĐÃ DUYỆT (TRỰC TIẾP)' : isStaffOrFaculty ? 'CHỜ DUYỆT (ƯU TIÊN)' : 'CHỜ DUYỆT'}
                 </Tag>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
