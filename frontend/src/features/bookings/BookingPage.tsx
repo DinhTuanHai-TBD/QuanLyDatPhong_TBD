@@ -1497,9 +1497,7 @@ function BookingPage() {
                           return {
                             value: r.id,
                             disabled: isRestricted,
-                            label: isRestricted
-                              ? `Phòng ${cleanName} - ${displayType} - ${r.building} (${r.capacity} chỗ) [Chỉ dành cho Giảng viên]`
-                              : `Phòng ${cleanName} - ${displayType} - ${r.building} (${r.capacity} chỗ)`
+                            label: `Phòng ${cleanName} - ${displayType} - ${r.building} (${r.capacity} chỗ)`
                           }
                         })}
                         onChange={(val) => {
