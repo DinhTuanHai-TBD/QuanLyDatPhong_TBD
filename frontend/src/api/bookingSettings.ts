@@ -117,7 +117,7 @@ export function generateOperatingSlots(openTime: string, closeTime: string, step
   const endMin = parseTimeToMinutes(closeTime || '20:00')
   const slots: string[] = []
 
-  for (let m = startMin; m <= endMin; m += stepMinutes) {
+  for (let m = startMin; m < endMin; m += stepMinutes) {
     slots.push(formatMinutesToTime(m))
   }
   return slots
