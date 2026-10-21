@@ -2352,7 +2352,7 @@ img {
 }
 
 /* 2. Viền ô nhập liệu (Input, Select, DatePicker, TextArea, InputNumber) */
-.ant-input,
+.ant-input:not(.ant-input-affix-wrapper .ant-input),
 .ant-input-affix-wrapper,
 .ant-select:not(.ant-select-customize-input) .ant-select-selector,
 .ant-picker,
@@ -2362,7 +2362,20 @@ img {
   transition: all 0.2s ease !important;
 }
 
-.ant-input:hover,
+/* LOẠI BỎ HOÀN TOÀN viền/đóng khung bên trong input-affix-wrapper (tránh đóng khung lồng chữ và icon) */
+.ant-input-affix-wrapper .ant-input,
+.ant-input-affix-wrapper > input.ant-input,
+.ant-input-affix-wrapper input,
+.ant-input-affix-wrapper-focused .ant-input,
+.ant-input-affix-wrapper .ant-input:focus,
+.ant-input-affix-wrapper .ant-input:hover {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background: transparent !important;
+}
+
+.ant-input:not(.ant-input-affix-wrapper .ant-input):hover,
 .ant-input-affix-wrapper:hover,
 .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
 .ant-picker:hover,
@@ -2370,8 +2383,8 @@ img {
   border-color: #0d2e5c !important;
 }
 
-.ant-input:focus,
-.ant-input-focused,
+.ant-input:not(.ant-input-affix-wrapper .ant-input):focus,
+.ant-input-focused:not(.ant-input-affix-wrapper .ant-input),
 .ant-input-affix-wrapper:focus,
 .ant-input-affix-wrapper-focused,
 .ant-select-focused .ant-select-selector,
