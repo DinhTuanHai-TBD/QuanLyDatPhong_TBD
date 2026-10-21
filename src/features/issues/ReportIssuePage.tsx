@@ -171,19 +171,49 @@ export default function ReportIssuePage() {
     }
   })
 
-  const getBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
+  const compressImage = (file: File): Promise<string> =>
+    new Promise((resolve) => {
       const reader = new FileReader()
       reader.readAsDataURL(file)
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = (error) => reject(error)
+      reader.onload = (event) => {
+        const img = new Image()
+        img.src = event.target?.result as string
+        img.onload = () => {
+          const maxDim = 1200
+          let width = img.width
+          let height = img.height
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width)
+              width = maxDim
+            } else {
+              width = Math.round((width * maxDim) / height)
+              height = maxDim
+            }
+          }
+
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height)
+            resolve(canvas.toDataURL('image/jpeg', 0.75))
+          } else {
+            resolve(event.target?.result as string)
+          }
+        }
+        img.onerror = () => resolve(event.target?.result as string)
+      }
+      reader.onerror = () => resolve('')
     })
 
   const onFinish = async (values: any) => {
     let imageUrl = values.imageUrl
     
     if (fileList.length > 0 && fileList[0].originFileObj) {
-      imageUrl = await getBase64(fileList[0].originFileObj as File)
+      imageUrl = await compressImage(fileList[0].originFileObj as File)
     }
 
     const payload: CreateIssuePayload = { ...values, imageUrl }

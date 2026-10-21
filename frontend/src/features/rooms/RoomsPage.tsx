@@ -144,10 +144,7 @@ function RoomsPage() {
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          padding: '8px 12px',
-          background: '#f8fafc',
-          borderRadius: 8,
-          border: '1.5px solid #94a3b8',
+          padding: '6px 8px', background: '#f8fafc', borderRadius: 8, border: 'none',
           marginBottom: 20,
           overflowX: 'auto',
           whiteSpace: 'nowrap'
@@ -213,15 +210,7 @@ function RoomsPage() {
       </div>
 
       {/* Bộ lọc và tìm kiếm */}
-      <Card 
-        style={{ 
-          marginBottom: 32, 
-          borderRadius: 10, 
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
-          border: '1px solid #e2e8f0',
-          padding: '2px'
-        }}
-      >
+      <div style={{ marginBottom: 32 }}>
         <Row gutter={[16, 16]} align="middle">
           <Col xs={24} md={14}>
             <Input
@@ -270,7 +259,7 @@ function RoomsPage() {
             </div>
           </Col>
         </Row>
-      </Card>
+      </div>
 
       {roomsQuery.isLoading ? (
         <Row gutter={[24, 24]}>

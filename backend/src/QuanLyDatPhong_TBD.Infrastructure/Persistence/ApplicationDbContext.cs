@@ -31,7 +31,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Building).HasMaxLength(100);
-            entity.Property(x => x.ImageUrl).HasMaxLength(500);
+            entity.Property(x => x.ImageUrl).HasColumnType("text");
             entity.Property(x => x.MapImageUrl).HasMaxLength(500);
             entity.Property(x => x.Description).HasMaxLength(1000);
         });
