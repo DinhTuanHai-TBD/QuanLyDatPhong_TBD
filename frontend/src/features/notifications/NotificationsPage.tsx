@@ -33,6 +33,7 @@ import { http } from '../../api/http';
 import { getUserEmail, getUserRole } from '../../api/authUtils';
 import { isBookingUrgent, isPendingBooking } from '../../utils/bookingStatusUtils';
 import type { Booking } from '../../types/booking';
+import { getNotificationTargetUrl } from '../../utils/notificationUtils';
 
 dayjs.extend(relativeTime);
 dayjs.locale('vi');
@@ -54,6 +55,25 @@ export interface NotificationItem {
 }
 
 type MainFilter = 'all' | 'unread' | 'booking' | 'issue';
+
+// Helper làm đậm phần ngày giờ trong ngoặc đơn ( ) nếu có trong nội dung thông báo
+const renderMessageWithBoldDateTime = (text?: string, isRead?: boolean) => {
+  if (!text) return 'Nội dung thông báo';
+  const regex = /(\(\d{1,2}\/\d{1,2}\/\d{4}[^\)]*\)|\(\d{1,2}:\d{2}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4}\))/g;
+  const parts = text.split(regex);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, idx) => {
+    if (regex.test(part)) {
+      return (
+        <strong key={idx} style={{ fontWeight: 700, color: isRead ? '#1e293b' : '#0d2e5c' }}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
 
 export default function NotificationsPage() {
   const { message } = App.useApp();
@@ -279,43 +299,8 @@ export default function NotificationsPage() {
   // Click notification to navigate
   const handleItemClick = (item: NotificationItem) => {
     markAsRead(item);
-
-    if (item.link) {
-      navigate(item.link);
-      return;
-    }
-
-    const title = (item.title || '').toLowerCase();
-    const messageText = (item.message || item.content || '').toLowerCase();
-    const full = `${title} ${messageText}`;
-    const cat = getNotificationCategory(item);
-
-    if (cat === 'urgent') {
-      navigate('/approvals');
-      return;
-    }
-
-    if (full.includes('hết hạn') || full.includes('expired')) {
-      navigate('/bookings');
-      return;
-    }
-
-    if (full.includes('từ chối') || full.includes('phê duyệt') || full.includes('đã duyệt')) {
-      navigate('/booking-history');
-      return;
-    }
-
-    if (cat === 'issue' || full.includes('sự cố') || full.includes('thiết bị')) {
-      navigate(isAdmin ? '/admin' : '/report-issue');
-      return;
-    }
-
-    if (full.includes('cần duyệt') || full.includes('yêu cầu mới')) {
-      navigate(isAdmin ? '/approvals' : '/booking-history');
-      return;
-    }
-
-    navigate(isAdmin ? '/approvals' : '/booking-history');
+    const targetUrl = getNotificationTargetUrl(item, userRole);
+    navigate(targetUrl);
   };
 
   // Visual badges & icons
@@ -324,15 +309,31 @@ export default function NotificationsPage() {
     const msg = (item.message || item.content || '').toLowerCase();
     const full = `${title} ${msg}`;
     const cat = getNotificationCategory(item);
+    const targetUrl = getNotificationTargetUrl(item, userRole);
+
+    let actionLabel = 'Xem chi tiết';
+    if (targetUrl.startsWith('/approvals')) {
+      actionLabel = cat === 'urgent' ? 'Phê duyệt ngay' : 'Xem phê duyệt';
+    } else if (targetUrl.startsWith('/bookings')) {
+      actionLabel = 'Đặt phòng mới';
+    } else if (targetUrl.startsWith('/calendar')) {
+      actionLabel = 'Xem lịch phòng';
+    } else if (targetUrl.startsWith('/report-issue') || targetUrl.includes('equipment-issues')) {
+      actionLabel = 'Xem sự cố';
+    } else if (targetUrl.startsWith('/admin')) {
+      actionLabel = 'Xem quản trị';
+    } else if (targetUrl.startsWith('/booking-history')) {
+      actionLabel = full.includes('phê duyệt') || full.includes('đã duyệt') ? 'Xem phiếu mượn' : 'Xem chi tiết';
+    }
 
     if (cat === 'urgent') {
       return {
         icon: <ClockCircleFilled style={{ color: '#ef4444', fontSize: 18 }} />,
-        tagText: 'CẦN DUYỆT GẤP',
+        tagText: 'SẮP ĐẾN GIỜ DÙNG',
         tagBg: '#fef2f2',
         tagColor: '#dc2626',
         tagBorder: '#fecaca',
-        actionLabel: 'Phê duyệt ngay',
+        actionLabel,
       };
     }
 
@@ -343,7 +344,7 @@ export default function NotificationsPage() {
         tagBg: '#fffbeb',
         tagColor: '#d97706',
         tagBorder: '#fde68a',
-        actionLabel: 'Đặt lại ca khác',
+        actionLabel,
       };
     }
 
@@ -354,7 +355,7 @@ export default function NotificationsPage() {
         tagBg: '#fef2f2',
         tagColor: '#dc2626',
         tagBorder: '#fecaca',
-        actionLabel: 'Xem chi tiết',
+        actionLabel,
       };
     }
 
@@ -365,7 +366,7 @@ export default function NotificationsPage() {
         tagBg: '#ecfdf5',
         tagColor: '#059669',
         tagBorder: '#a7f3d0',
-        actionLabel: 'Xem phiếu mượn',
+        actionLabel,
       };
     }
 
@@ -376,7 +377,7 @@ export default function NotificationsPage() {
         tagBg: '#fff7ed',
         tagColor: '#c2410c',
         tagBorder: '#ffedd5',
-        actionLabel: 'Xem sự cố',
+        actionLabel,
       };
     }
 
@@ -387,7 +388,7 @@ export default function NotificationsPage() {
         tagBg: '#f0f9ff',
         tagColor: '#0369a1',
         tagBorder: '#bae6fd',
-        actionLabel: 'Xem chi tiết',
+        actionLabel,
       };
     }
 
@@ -397,7 +398,7 @@ export default function NotificationsPage() {
       tagBg: '#eef2ff',
       tagColor: '#4f46e5',
       tagBorder: '#e0e7ff',
-      actionLabel: 'Xem thông báo',
+      actionLabel,
     };
   };
 
@@ -524,7 +525,7 @@ export default function NotificationsPage() {
             backgroundColor: '#ffffff',
             borderRadius: 10,
             padding: '14px 18px',
-            border: '1px solid #e2e8f0',
+            border: '1.5px solid #94a3b8',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
             marginBottom: 20,
             display: 'flex',
@@ -597,7 +598,7 @@ export default function NotificationsPage() {
                 backgroundColor: '#ffffff',
                 borderRadius: 10,
                 padding: 24,
-                border: '1px solid #e2e8f0',
+                border: '1.5px solid #94a3b8',
               }}
             >
               <Skeleton active avatar paragraph={{ rows: 2 }} />
@@ -613,7 +614,7 @@ export default function NotificationsPage() {
                 borderRadius: 10,
                 padding: '48px 24px',
                 textAlign: 'center',
-                border: '1px solid #e2e8f0',
+                border: '1.5px solid #94a3b8',
               }}
             >
               <Empty
@@ -735,12 +736,12 @@ export default function NotificationsPage() {
                       </div>
 
                       {/* Time */}
-                      <div style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontWeight: 500, color: isRead ? '#94a3b8' : '#0369a1' }}>
+                      <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                        <span style={{ fontWeight: 500, color: isRead ? '#64748b' : '#0369a1' }}>
                           {relativeText}
                         </span>
                         {fullDateText && (
-                          <span style={{ marginLeft: 6, color: '#cbd5e1' }}>
+                          <span style={{ marginLeft: 6, color: isRead ? '#334155' : '#0f172a', fontWeight: 700 }}>
                             ({fullDateText})
                           </span>
                         )}
@@ -756,7 +757,7 @@ export default function NotificationsPage() {
                         lineHeight: 1.6,
                       }}
                     >
-                      {item.message || item.content || 'Nội dung thông báo'}
+                      {renderMessageWithBoldDateTime(item.message || item.content, isRead)}
                     </Paragraph>
                   </div>
 

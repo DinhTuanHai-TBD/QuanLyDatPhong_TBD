@@ -42,6 +42,25 @@ interface CategoryConfig {
   isUrgent?: boolean;
 }
 
+// Helper làm đậm phần ngày giờ trong ngoặc đơn ( ) nếu có trong nội dung thông báo
+const renderMessageWithBoldDateTime = (text?: string, isRead?: boolean) => {
+  if (!text) return text;
+  const regex = /(\(\d{1,2}\/\d{1,2}\/\d{4}[^\)]*\)|\(\d{1,2}:\d{2}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4}\))/g;
+  const parts = text.split(regex);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, idx) => {
+    if (regex.test(part)) {
+      return (
+        <strong key={idx} style={{ fontWeight: 700, color: isRead ? '#1e293b' : '#0d2e5c' }}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
+
 function classifyNotification(item: RealNotification): NotificationCategory {
   const title = (item.title || '').toLowerCase();
   const message = (item.message || item.content || '').toLowerCase();
@@ -101,21 +120,37 @@ function classifyNotification(item: RealNotification): NotificationCategory {
   return 'system';
 }
 
+import { getNotificationTargetUrl } from '../../utils/notificationUtils';
+
 function getCategoryConfig(category: NotificationCategory, item: RealNotification): CategoryConfig {
-  const fullText = `${item.title || ''} ${item.message || item.content || ''}`.toLowerCase();
   const role = getUserRole();
-  const isAdmin = role === 'admin' || role === 'approver';
+  const targetUrl = getNotificationTargetUrl(item, role);
+
+  let actionText = 'Xem chi tiết';
+  if (targetUrl.startsWith('/approvals')) {
+    actionText = category === 'urgent' ? 'Phê duyệt ngay' : 'Xem duyệt đơn';
+  } else if (targetUrl.startsWith('/bookings')) {
+    actionText = 'Đặt phòng';
+  } else if (targetUrl.startsWith('/calendar')) {
+    actionText = 'Xem lịch phòng';
+  } else if (targetUrl.startsWith('/report-issue') || targetUrl.includes('equipment-issues')) {
+    actionText = 'Xem sự cố';
+  } else if (targetUrl.startsWith('/admin')) {
+    actionText = 'Quản trị';
+  } else if (targetUrl.startsWith('/booking-history')) {
+    actionText = category === 'approved' ? 'Xem phiếu mượn' : 'Xem chi tiết';
+  }
 
   switch (category) {
     case 'urgent':
       return {
-        tagText: '• [CẦN DUYỆT GẤP]',
+        tagText: '• [SẮP ĐẾN GIỜ DÙNG]',
         dotColor: '#ef4444',
         tagColor: '#dc2626',
         tagBg: '#fef2f2',
         tagBorder: '#fecaca',
-        actionText: 'Phê duyệt ngay',
-        actionLink: '/approvals',
+        actionText,
+        actionLink: targetUrl,
         isUrgent: true,
       };
     case 'expired':
@@ -125,8 +160,8 @@ function getCategoryConfig(category: NotificationCategory, item: RealNotificatio
         tagColor: '#d97706',
         tagBg: '#fffbeb',
         tagBorder: '#fde68a',
-        actionText: 'Đặt lại ca khác',
-        actionLink: '/bookings',
+        actionText,
+        actionLink: targetUrl,
       };
     case 'rejected':
       return {
@@ -135,8 +170,8 @@ function getCategoryConfig(category: NotificationCategory, item: RealNotificatio
         tagColor: '#dc2626',
         tagBg: '#fef2f2',
         tagBorder: '#fecaca',
-        actionText: 'Xem chi tiết',
-        actionLink: '/booking-history',
+        actionText,
+        actionLink: targetUrl,
       };
     case 'approved':
       return {
@@ -145,20 +180,19 @@ function getCategoryConfig(category: NotificationCategory, item: RealNotificatio
         tagColor: '#059669',
         tagBg: '#ecfdf5',
         tagBorder: '#a7f3d0',
-        actionText: 'Xem phiếu mượn',
-        actionLink: '/booking-history',
+        actionText,
+        actionLink: targetUrl,
       };
     case 'system':
     default: {
-      const isIssue = fullText.includes('sự cố') || fullText.includes('thiết bị') || fullText.includes('hỏng');
       return {
         tagText: '• [HỆ THỐNG]',
         dotColor: '#3b82f6',
         tagColor: '#2563eb',
         tagBg: '#eff6ff',
         tagBorder: '#bfdbfe',
-        actionText: isIssue ? 'Xem sự cố' : 'Xem chi tiết',
-        actionLink: isIssue ? (isAdmin ? '/admin' : '/report-issue') : (isAdmin ? '/approvals' : '/booking-history'),
+        actionText,
+        actionLink: targetUrl,
       };
     }
   }
@@ -321,51 +355,8 @@ export default function NotificationBell() {
     markItemAsRead(item);
     setOpen(false);
 
-    if (customLink) {
-      navigate(customLink);
-      return;
-    }
-
-    const category = classifyNotification(item);
-    const title = (item.title || '').toLowerCase();
-    const message = (item.message || item.content || '').toLowerCase();
-    const fullText = `${title} ${message}`;
-    const role = getUserRole();
-    const isAdmin = role === 'admin' || role === 'approver';
-
-    if (category === 'urgent') {
-      navigate('/approvals');
-      return;
-    }
-    if (category === 'expired') {
-      navigate('/bookings');
-      return;
-    }
-    if (category === 'approved' || category === 'rejected') {
-      navigate('/booking-history');
-      return;
-    }
-
-    // Equipment issue notifications
-    if (fullText.includes('sự cố') || fullText.includes('thiết bị') || fullText.includes('hỏng')) {
-      navigate(isAdmin ? '/admin' : '/report-issue');
-      return;
-    }
-
-    // Booking approval needed for admin/approver
-    if (fullText.includes('cần duyệt') || fullText.includes('yêu cầu mới') || (isAdmin && (fullText.includes('đặt phòng') || fullText.includes('yêu cầu')))) {
-      navigate('/approvals');
-      return;
-    }
-
-    // Explicit link if available
-    if (item.link) {
-      navigate(item.link);
-      return;
-    }
-
-    // Fallback based on role
-    navigate(isAdmin ? '/approvals' : '/booking-history');
+    const targetUrl = customLink || getNotificationTargetUrl(item, userRole);
+    navigate(targetUrl);
   };
 
   const getMessage = (item: RealNotification) => item.message || item.content || '';
@@ -550,8 +541,15 @@ export default function NotificationBell() {
                       {config.tagText}
                     </span>
 
-                    <span style={{ color: '#94a3b8', fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {time ? dayjs(time).fromNow() : ''}
+                    <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                      <span style={{ color: readStatus ? '#64748b' : '#0369a1', fontWeight: 500 }}>
+                        {time ? dayjs(time).fromNow() : ''}
+                      </span>
+                      {time && (
+                        <span style={{ marginLeft: 4, color: readStatus ? '#334155' : '#0f172a', fontWeight: 700 }}>
+                          ({dayjs(time).format('HH:mm - DD/MM/YYYY')})
+                        </span>
+                      )}
                     </span>
                   </div>
 
@@ -582,7 +580,7 @@ export default function NotificationBell() {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {message}
+                      {renderMessageWithBoldDateTime(message, readStatus)}
                     </div>
                   )}
 
@@ -691,7 +689,7 @@ export default function NotificationBell() {
           borderRadius: 12,
           overflow: 'hidden',
           boxShadow: '0 14px 36px -4px rgba(15, 23, 42, 0.18), 0 6px 16px -2px rgba(15, 23, 42, 0.08)',
-          border: '1px solid #e2e8f0',
+          border: '1.5px solid #94a3b8',
         },
       }}
       content={dropdownContent}

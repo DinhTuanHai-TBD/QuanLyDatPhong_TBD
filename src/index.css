@@ -6,7 +6,9 @@
   --bg-slate: #f8fafc;
   --text-main: #1e293b;
   --text-muted: #64748b;
-  --border-color: #e2e8f0;
+  --border-color: #94a3b8;
+  --border-color-subtle: #cbd5e1;
+  --border-color-strong: #64748b;
   --font-family:
     "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --tbd-wave-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='20' viewBox='0 0 100 20'%3E%3Cpath d='M0,10 C25,2 25,18 50,10 C75,2 75,18 100,10' fill='none' stroke='rgba(255,255,255,0.085)' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M0,0 C25,-8 25,8 50,0 C75,-8 75,8 100,0' fill='none' stroke='rgba(255,255,255,0.085)' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M0,20 C25,12 25,28 50,20 C75,12 75,28 100,20' fill='none' stroke='rgba(255,255,255,0.085)' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
@@ -2329,3 +2331,141 @@ img {
 }
 
 
+
+
+/* ==========================================================================
+   HIGH-CONTRAST BORDERS: VIỀN KHUNG, CỘT, Ô ĐẬM RÕ NÉT VÀ CHUYÊN NGHIỆP
+   ========================================================================== */
+
+/* 1. Viền khung Card, Panel và Box */
+.ant-card {
+  border: 1.5px solid #94a3b8 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+.ant-card-bordered {
+  border: 1.5px solid #94a3b8 !important;
+}
+
+.ant-card-head {
+  border-bottom: 1.5px solid #cbd5e1 !important;
+}
+
+/* 2. Viền ô nhập liệu (Input, Select, DatePicker, TextArea, InputNumber) */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select:not(.ant-select-customize-input) .ant-select-selector,
+.ant-picker,
+.ant-input-number {
+  border: 1.5px solid #94a3b8 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:hover,
+.ant-input-number:hover {
+  border-color: #0d2e5c !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-input-number-focused {
+  border-color: #0d2e5c !important;
+  box-shadow: 0 0 0 3px rgba(13, 46, 92, 0.16) !important;
+}
+
+/* 3. Viền bảng (Table): Phân tách rõ ràng giữa các cột và hàng */
+.ant-table-wrapper .ant-table {
+  border: 1.5px solid #94a3b8 !important;
+  border-radius: 8px !important;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  border-bottom: 2px solid #64748b !important;
+  border-right: 1px solid #cbd5e1 !important;
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th:last-child {
+  border-right: none !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #cbd5e1 !important;
+  border-right: 1px solid #cbd5e1 !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td:last-child {
+  border-right: none !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background-color: #f8fafc !important;
+}
+
+/* 4. Viền lưới chọn giờ (Booking Time Slots Grid) */
+.time-slot-btn {
+  border-width: 1.5px !important;
+}
+
+/* 5. Viền bảng mô tả (Descriptions) */
+.ant-descriptions-bordered .ant-descriptions-view {
+  border: 1.5px solid #94a3b8 !important;
+}
+
+.ant-descriptions-bordered .ant-descriptions-row {
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+
+.ant-descriptions-bordered .ant-descriptions-item-label,
+.ant-descriptions-bordered .ant-descriptions-item-content {
+  border-right: 1px solid #cbd5e1 !important;
+}
+
+/* 6. Viền Modal, Alert, Tabs, Tag, Button */
+.ant-modal-content {
+  border: 1.5px solid #94a3b8 !important;
+}
+
+.ant-modal-header {
+  border-bottom: 1.5px solid #cbd5e1 !important;
+}
+
+.ant-modal-footer {
+  border-top: 1.5px solid #cbd5e1 !important;
+}
+
+.ant-alert {
+  border-width: 1.5px !important;
+}
+
+.ant-tabs-nav::before {
+  border-bottom: 1.5px solid #cbd5e1 !important;
+}
+
+.ant-divider-horizontal {
+  border-top: 1.5px solid #cbd5e1 !important;
+}
+
+.ant-btn-default:not(.ant-btn-primary):not(.ant-btn-link):not(.ant-btn-text) {
+  border: 1.5px solid #94a3b8 !important;
+}
+
+.ant-segmented {
+  border: 1.5px solid #94a3b8 !important;
+}
+
+/* 7. Các khối chứa bộ lọc, wizard step container và filter bar */
+.wizard-step-content {
+  border: 1.5px solid #94a3b8 !important;
+  border-radius: 12px;
+}

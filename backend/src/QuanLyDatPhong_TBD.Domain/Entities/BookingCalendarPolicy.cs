@@ -7,7 +7,7 @@ public static class BookingCalendarPolicy
 {
     public static Expression<Func<Booking, bool>> VisibleTo(string userId) => b =>
         b.Status == BookingStatus.Approved || b.Status == BookingStatus.Using ||
-        b.Status == BookingStatus.Completed || b.UserId == userId;
+        b.Status == BookingStatus.Completed || b.Status == BookingStatus.Pending || b.UserId == userId;
 
     public static Expression<Func<Booking, bool>> NoShow(DateTime cutoff) => b =>
         !b.IsSchoolOverride && b.Status == BookingStatus.Approved &&

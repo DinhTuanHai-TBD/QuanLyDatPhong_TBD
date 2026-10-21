@@ -361,7 +361,7 @@ export default function ReportIssuePage() {
                 <Select size="large" optionLabelProp="label">
                   <Select.Option value="Low" label="Thấp - Ảnh hưởng nhỏ">
                     <div style={{ padding: '4px 0' }}>
-                      <strong style={{ color: '#1e293b' }}>Thấp (Low)</strong>
+                      <strong style={{ color: '#1e293b' }}>Thấp</strong>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         Sự cố nhỏ, không ảnh hưởng đến việc dạy và học (Ví dụ: Cháy 1 bóng đèn phụ, ghế lung lay, đồng hồ hết pin...).
                       </div>
@@ -369,7 +369,7 @@ export default function ReportIssuePage() {
                   </Select.Option>
                   <Select.Option value="Medium" label="Trung bình - Ảnh hưởng một phần">
                     <div style={{ padding: '4px 0' }}>
-                      <strong style={{ color: '#1e293b' }}>Trung bình (Medium)</strong>
+                      <strong style={{ color: '#1e293b' }}>Trung bình</strong>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         Ảnh hưởng một phần nhưng buổi học vẫn tạm thời tiếp tục được (Ví dụ: Điều hòa làm lạnh yếu, micro thỉnh thoảng chập chờn, bảng từ bị mờ...).
                       </div>
@@ -377,7 +377,7 @@ export default function ReportIssuePage() {
                   </Select.Option>
                   <Select.Option value="High" label="Cao - Gián đoạn lớp học">
                     <div style={{ padding: '4px 0' }}>
-                      <strong style={{ color: '#1e293b' }}>Cao (High)</strong>
+                      <strong style={{ color: '#1e293b' }}>Cao</strong>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         Gây gián đoạn giảng dạy, cần kỹ thuật hỗ trợ sớm (Ví dụ: Máy chiếu không lên hình, mất mạng phòng Lab, micro mất hẳn tiếng...).
                       </div>
@@ -385,7 +385,7 @@ export default function ReportIssuePage() {
                   </Select.Option>
                   <Select.Option value="Critical" label="Khẩn cấp - Nguy hiểm / Buộc dừng buổi học">
                     <div style={{ padding: '4px 0' }}>
-                      <strong style={{ color: '#1e293b' }}>Khẩn cấp (Critical)</strong>
+                      <strong style={{ color: '#1e293b' }}>Khẩn cấp</strong>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         Sự cố nghiêm trọng, đe dọa an toàn hoặc buộc dừng buổi học ngay (Ví dụ: Chập cháy điện, rò rỉ nước, điều hòa nổ khói, cửa bị kẹt...).
                       </div>

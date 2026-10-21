@@ -1,4 +1,4 @@
-import { Alert, Button, Card, DatePicker, Form, Input, Select, Typography, App, Row, Col, InputNumber, Checkbox, Modal, Tag, Space, Steps, Spin } from 'antd'
+import { Alert, Button, Card, DatePicker, Form, Input, Select, Typography, App, Row, Col, InputNumber, Checkbox, Modal, Tag, Space, Steps, Spin, Tooltip } from 'antd'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { 
   CheckCircleOutlined, 
@@ -30,7 +30,7 @@ import { getOfficialRooms, getRoomAvailableEquipmentList, isRoomRestrictedForStu
 import { getStorageImageUrl, handleImageFallback } from '../../utils/storageUtils'
 import type { Booking, CreateBookingPayload } from '../../types/booking'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
-import { type UserProfileData } from '../../api/userProfile'
+import { type UserProfileData, fetchUserProfile, getCachedUserProfile } from '../../api/userProfile'
 import type { EquipmentItem } from '../admin/AdminPage'
 import { EquipmentSelector } from './EquipmentSelector'
 import { normalizeDepartmentName } from '../../utils/academicPrograms'
@@ -115,26 +115,67 @@ const STAFF_EVENT_SUGGESTIONS = [
 function BookingPage() {
   const userRole = (getUserRole() || '').toLowerCase();
   const userEmail = (getUserEmail() || '').toLowerCase();
+  const cachedProfile = getCachedUserProfile();
 
-  // 1. Trích xuất thông tin người dùng thực tế từ API GET /api/auth/me
+  // 1. Trích xuất thông tin người dùng thực tế từ API GET /api/auth/me với fallback dữ liệu trường
   const { data: userProfile } = useQuery<UserProfileData>({
-    queryKey: ['user-profile'],
-    queryFn: async () => {
-      const res = await http.get('/api/auth/me');
-      return res.data;
-    }
+    queryKey: ['user-profile', userEmail],
+    queryFn: fetchUserProfile,
+    initialData: cachedProfile || undefined,
   });
 
-  const roleFromProfile = (userProfile?.role || '').toLowerCase();
+  const activeProfile = userProfile || cachedProfile;
+
+  const roleFromProfile = (activeProfile?.role || '').toLowerCase();
+  const isManagerOrAdmin = 
+    userRole === 'admin' || roleFromProfile === 'admin' || userEmail.includes('admin') ||
+    userRole === 'approver' || roleFromProfile === 'approver' ||
+    userRole === 'manager' || roleFromProfile === 'manager' ||
+    roleFromProfile === 'quanly' || userEmail.includes('quanly') ||
+    userRole.includes('approver') || roleFromProfile.includes('approver') ||
+    roleFromProfile.includes('quản lý') || roleFromProfile.includes('quan ly');
+  const isAdmin = isManagerOrAdmin;
   const isFaculty = userRole === 'faculty' || userRole === 'teacher' || userRole === 'lecturer' || roleFromProfile === 'faculty' || userEmail.includes('giangvien');
   const isStaff = userRole === 'staff' || userRole === 'employee' || roleFromProfile === 'staff' || userEmail.includes('nhanvien');
-  const isAdmin = userRole === 'admin' || roleFromProfile === 'admin' || userEmail.includes('admin');
   const isStaffOrFaculty = isFaculty || isStaff || isAdmin;
   const isStudent = !isStaffOrFaculty;
 
   // 4. Chế độ Tiếp nhận Đặt phòng trực tiếp tại quầy dành riêng cho Admin
   const [isWalkInBooking, setIsWalkInBooking] = useState<boolean>(false);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState<boolean>(false);
+
+  // Giá trị thông tin tài khoản chuẩn hóa (fallback bảo đảm không bao giờ rỗng)
+  const fallbackDept = isFaculty
+    ? 'Khoa Công nghệ thông tin và Bán dẫn'
+    : isStaff
+      ? 'Phòng Quản lý Đào tạo & Cơ sở vật chất TBD'
+      : isAdmin
+        ? 'Phòng Quản trị thiết bị & Ban Quản trị'
+        : 'Khoa Công nghệ thông tin và Bán dẫn';
+
+  const fallbackName = isFaculty
+    ? 'TS. Trần Văn Nam'
+    : isStaff
+      ? 'ThS. Nguyễn Văn Đức'
+      : isAdmin
+        ? 'Ban Quản trị Cơ sở vật chất'
+        : 'Nguyễn Văn Hải';
+
+  const fallbackPhone = isFaculty
+    ? '0912345678'
+    : isStaff
+      ? '02583727148'
+      : isAdmin
+        ? '02583727147'
+        : '0939393939';
+
+  const effectiveDept = normalizeDepartmentName(activeProfile?.department?.trim() || fallbackDept);
+  const effectiveName = activeProfile?.fullName?.trim() || fallbackName;
+  const effectivePhone = activeProfile?.phoneNumber?.trim() || fallbackPhone;
+
+  // Khóa cố định ô Họ tên & Khoa/Bộ môn nếu là tài khoản Giảng viên, Sinh viên, Cán bộ (không phải Admin chế độ Đặt hộ)
+  const isNameLocked = !isAdmin || !isWalkInBooking;
+  const isDeptLocked = !isAdmin || !isWalkInBooking;
 
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -150,30 +191,16 @@ function BookingPage() {
   const [currentStep, setCurrentStep] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 3. Tự động điền Bước 3 Trang Đặt Phòng từ userProfile
+  // 3. Tự động điền Bước 3 Trang Đặt Phòng từ thông tin tài khoản
   useEffect(() => {
-    if (!userProfile) return;
     if (!isWalkInBooking) {
-      const currentDept = form.getFieldValue('department');
-      const currentPerson = form.getFieldValue('personName');
-      const currentPhone = form.getFieldValue('phoneNumber');
-
-      const nextValues: any = {};
-      if (!currentDept) {
-        nextValues.department = normalizeDepartmentName(userProfile.department) || (isAdmin ? 'Phòng Quản trị thiết bị & Ban Quản trị' : '');
-      }
-      if (!currentPerson) {
-        nextValues.personName = userProfile.fullName || (isAdmin ? 'Ban Quản trị Cơ sở vật chất' : '');
-      }
-      if (!currentPhone) {
-        nextValues.phoneNumber = userProfile.phoneNumber || (isAdmin ? '02583727147' : '');
-      }
-
-      if (Object.keys(nextValues).length > 0) {
-        form.setFieldsValue(nextValues);
-      }
+      form.setFieldsValue({
+        department: effectiveDept,
+        personName: effectiveName,
+        phoneNumber: form.getFieldValue('phoneNumber') || effectivePhone,
+      });
     }
-  }, [userProfile, isWalkInBooking, form, isAdmin]);
+  }, [effectiveDept, effectiveName, effectivePhone, isWalkInBooking, form]);
 
   const scrollToTop = () => {
     containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -345,14 +372,7 @@ function BookingPage() {
     return rooms.find((r: Room) => r.id === selectedRoomId) || null
   }, [selectedRoomId, rooms])
 
-  const dayBookingsForSelectedRoom = useMemo(() => {
-    if (!selectedRoom || !bookingsQuery.data) return []
-    return bookingsQuery.data.filter(b => {
-      if (b.roomId !== selectedRoom.id) return false
-      const s = String(b.status).toLowerCase()
-      return s !== 'cancelled' && s !== 'rejected' && s !== '-1' && s !== '2' && s !== 'expired' && s !== '3'
-    })
-  }, [selectedRoom, bookingsQuery.data])
+
 
   const isOverCapacity = useMemo(() => {
     if (!selectedRoom || !participantCount) return false
@@ -459,13 +479,21 @@ function BookingPage() {
     }
     const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
     const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
-    if (et.isSameOrBefore(st)) {
-      message.error('Giờ kết thúc phải sau giờ bắt đầu!')
+    const hours = et.diff(st, 'hour', true)
+    if (hours < 1.0) {
+      message.error(`Thời lượng mượn phòng tối thiểu là 1 giờ (hiện tại chọn ${Math.round(hours * 60)} phút)!`)
       return
     }
     if (limitViolations.length > 0) {
       message.error('Khung giờ bạn chọn không đáp ứng quy định đặt phòng của Nhà trường. Vui lòng điều chỉnh lại!')
       return
+    }
+    if (!isWalkInBooking) {
+      form.setFieldsValue({
+        department: effectiveDept,
+        personName: effectiveName,
+        phoneNumber: form.getFieldValue('phoneNumber') || effectivePhone,
+      });
     }
     setCurrentStep(2)
     scrollToTop()
@@ -516,7 +544,11 @@ function BookingPage() {
   const closeTime = bookingSettings?.closeTime || '20:00'
 
   const slots = useMemo(() => {
-    return generateOperatingSlots(openTime, closeTime, 30)
+    const baseSlots = generateOperatingSlots(openTime, closeTime, 30)
+    if (closeTime && !baseSlots.includes(closeTime)) {
+      return [...baseSlots, closeTime]
+    }
+    return baseSlots
   }, [openTime, closeTime])
 
   const getSlotStatus = (slot: string) => {
@@ -534,16 +566,37 @@ function BookingPage() {
     // Check closed / maintenance periods
     if (bookingSettings?.closedPeriods && bookingSettings.closedPeriods.length > 0) {
       const slotStart = slotTime
-      const slotEnd = slotTime.add(30, 'minute')
+      const slotEnd = slot === closeTime ? slotTime : slotTime.add(30, 'minute')
       const closedHit = checkClosedPeriodOverlap(selectedRoom.id, slotStart, slotEnd, bookingSettings.closedPeriods)
       if (closedHit) return 'maintenance'
     }
 
-    const bookings = bookingsQuery.data || []
-    const roomBookings = bookings.filter(b => b.roomId === selectedRoom.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
+    // 1. Kiểm tra trạng thái đang chọn (Selected range: start, end, in-between)
+    if (startTime) {
+      if (slot === startTime) {
+        return 'start'
+      }
+      if (endTime) {
+        if (slot === endTime) {
+          return 'end'
+        }
+        const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
+        const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
+        if (slotTime.isAfter(st) && slotTime.isBefore(et)) {
+          return 'in-between'
+        }
+      }
+    }
 
-    // 1. Kiểm tra xem ô này (khoảng [slotTime, slotTime + 30m)) có trùng lịch đã đặt hoặc chờ duyệt không
-    // BẤT KỲ Ô NÀO ĐÃ CÓ LỊCH SẼ LUÔN ĐƯỢC GIỮ NGUYÊN TRẠNG THÁI NÀY, KHÔNG BAO GIỜ BỊ ĐỔI THÀNH START/END/AVAILABLE
+    // 2. Ô mốc đóng cửa (closeTime, ví dụ 20:00) nếu chưa chọn làm endTime
+    if (slot === closeTime) {
+      return 'close-time'
+    }
+
+    // 3. Kiểm tra xem ô này có trùng lịch đã đặt hoặc chờ duyệt không
+    const bookings = bookingsQuery.data || []
+    const roomBookings = bookings.filter(b => b.roomId === selectedRoom.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
+
     const blockEnd = slotTime.add(30, 'minute')
     for (const b of roomBookings) {
       const bStart = dayjs(b.startTime)
@@ -556,31 +609,6 @@ function BookingPage() {
       }
     }
 
-    if (slot === closeTime) return 'disabled'
-
-    // 2. Nếu ô còn trống, kiểm tra xem có đang nằm trong khung giờ người dùng chọn không
-    if (startTime && endTime) {
-      const st = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
-      const et = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
-
-      // Slot này thuộc khoảng chọn nếu slotTime >= st và slotTime < et
-      if (slotTime.isSameOrAfter(st) && slotTime.isBefore(et)) {
-        const isStart = slot === startTime
-        const isLastBlock = slotTime.add(30, 'minute').isSame(et)
-
-        if (isStart && isLastBlock) {
-          return 'selected-single'
-        }
-        if (isStart) {
-          return 'start'
-        }
-        if (isLastBlock) {
-          return 'end'
-        }
-        return 'in-between'
-      }
-    }
-
     return 'available'
   }
 
@@ -589,6 +617,29 @@ function BookingPage() {
       message.warning('Dữ liệu lịch phòng hoặc quy định chưa tải xong. Vui lòng đợi trong giây lát.')
       return
     }
+
+    const clickedTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
+    const curStart = startTime ? dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`) : null
+    const isPickingEndTime = curStart ? clickedTime.isAfter(curStart) : false
+
+    // Helper kiểm tra khoảng thời gian có bị vướng lịch hoặc bảo trì không
+    const checkRangeHasConflict = (rangeStart: dayjs.Dayjs, rangeEnd: dayjs.Dayjs) => {
+      const bookings = bookingsQuery.data || []
+      const roomBookings = bookings.filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
+      for (const b of roomBookings) {
+        const bStart = dayjs(b.startTime)
+        const bEnd = dayjs(b.endTime)
+        if (rangeStart.isBefore(bEnd) && rangeEnd.isAfter(bStart)) {
+          return true
+        }
+      }
+      if (bookingSettings?.closedPeriods) {
+        const closedHit = checkClosedPeriodOverlap(selectedRoom?.id, rangeStart, rangeEnd, bookingSettings.closedPeriods)
+        if (closedHit) return true
+      }
+      return false
+    }
+
     const status = getSlotStatus(slot)
     if (status === 'disabled') {
       return
@@ -601,6 +652,55 @@ function BookingPage() {
       message.warning('Phòng hiện đang không hoạt động.')
       return
     }
+
+    // 1. NẾU ĐANG CHỌN / CẬP NHẬT GIỜ KẾT THÚC (bấm một ô sau startTime):
+    if (isPickingEndTime && curStart) {
+      // Bấm lại chính ô endTime hiện tại -> Hủy endTime để chọn lại
+      if (slot === endTime) {
+        setEndTime(null)
+        form.setFieldsValue({ endTime: undefined })
+        message.info('Đã hủy giờ kết thúc. Vui lòng chọn lại giờ kết thúc mới.')
+        return
+      }
+
+      if (checkRangeHasConflict(curStart, clickedTime)) {
+        message.warning('Khung giờ bạn chọn có chứa khoảng thời gian đã có lịch hoặc bảo trì. Vui lòng chọn giờ kết thúc khác!')
+        return
+      }
+
+      const hours = clickedTime.diff(curStart, 'hour', true)
+      if (hours < 1.0) {
+        message.warning(`Thời lượng mượn phòng tối thiểu là 1 giờ (hiện tại chọn ${Math.round(hours * 60)} phút). Vui lòng chọn giờ kết thúc từ ${curStart.add(1, 'hour').format('HH:mm')} trở đi!`)
+        return
+      }
+      if (hours > userMaxHoursPerBooking) {
+        message.warning(`Thời lượng chọn (${hours.toFixed(1)} giờ) vượt quá giới hạn tối đa cho phép (${userMaxHoursPerBooking} giờ). Vui lòng chọn giờ kết thúc sớm hơn!`)
+        return
+      }
+
+      setEndTime(slot)
+      form.setFieldsValue({ endTime: slot })
+      message.success(`Đã chọn khung giờ: ${startTime} - ${slot} (${hours.toFixed(1)} giờ)`)
+      return
+    }
+
+    // 2. BẤM LẠI CHÍNH Ô START TIME -> Hủy toàn bộ lựa chọn (reset)
+    if (startTime && slot === startTime) {
+      handleResetTime()
+      return
+    }
+
+    // 3. CÁC TRƯỜNG HỢP CHỌN HOẶC ĐỔI GIỜ BẮT ĐẦU:
+    // Không cho phép bắt đầu vào giờ đóng cửa
+    if (slot === closeTime) {
+      message.warning({
+        content: `Giảng đường đóng cửa lúc ${closeTime}. Không thể chọn giờ này để bắt đầu mượn. Vui lòng chọn khung giờ bắt đầu sớm hơn!`,
+        key: 'cannot-start-at-close-time',
+        duration: 3.5,
+      })
+      return
+    }
+
     if (status === 'maintenance') {
       const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
       const slotEnd = slotTime.add(30, 'minute')
@@ -616,7 +716,7 @@ function BookingPage() {
       const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
       const blockEnd = slotTime.add(30, 'minute')
       const bookings = bookingsQuery.data || []
-      const roomBookings = bookings.filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
+      const roomBookings = bookings.filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
       const hit = roomBookings.find(b => {
         const bStart = dayjs(b.startTime)
         const bEnd = dayjs(b.endTime)
@@ -624,13 +724,19 @@ function BookingPage() {
       })
       if (hit && (hit.isSchoolOverride || hit.IsSchoolOverride)) {
         message.warning({
-          content: `Khung giờ ${slot} - ${blockEnd.format('HH:mm')} đã có Thời khóa biểu chính khóa (${hit.purpose || 'Lịch học chính khóa'}). Không thể chọn ô này!`,
+          content: `Khung giờ ${slot} - ${blockEnd.format('HH:mm')} đã có Thời khóa biểu chính khóa. Vui lòng chọn khung giờ còn trống.`,
           key: 'school-schedule-time',
-          duration: 3.5,
+          duration: 3,
+        })
+      } else if (status === 'pending') {
+        message.warning({
+          content: `Khung giờ ${slot} - ${blockEnd.format('HH:mm')} đang chờ duyệt. Vui lòng chọn khung giờ còn trống.`,
+          key: 'slot-pending',
+          duration: 3,
         })
       } else {
         message.warning({
-          content: `Khung giờ ${slot} - ${blockEnd.format('HH:mm')} đã có lịch mượn trước (${status === 'pending' ? 'Chờ duyệt' : 'Đã duyệt'}). Không thể chọn ô này!`,
+          content: `Khung giờ ${slot} - ${blockEnd.format('HH:mm')} đã có lịch mượn trước. Vui lòng chọn khung giờ còn trống.`,
           key: 'slot-booked',
           duration: 3,
         })
@@ -638,74 +744,11 @@ function BookingPage() {
       return
     }
 
-    const clickedStart = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
-    const clickedEnd = clickedStart.add(30, 'minute')
-    const clickedSlotEndStr = clickedEnd.format('HH:mm')
-
-    // Helper kiểm tra khoảng thời gian có bị vướng lịch hoặc bảo trì không
-    const checkRangeHasConflict = (rangeStart: dayjs.Dayjs, rangeEnd: dayjs.Dayjs) => {
-      const bookings = bookingsQuery.data || []
-      const roomBookings = bookings.filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
-      for (const b of roomBookings) {
-        const bStart = dayjs(b.startTime)
-        const bEnd = dayjs(b.endTime)
-        if (rangeStart.isBefore(bEnd) && rangeEnd.isAfter(bStart)) {
-          return true
-        }
-      }
-      if (bookingSettings?.closedPeriods) {
-        const closedHit = checkClosedPeriodOverlap(selectedRoom?.id, rangeStart, rangeEnd, bookingSettings.closedPeriods)
-        if (closedHit) return true
-      }
-      return false
-    }
-
-    // Trường hợp 1: Chưa chọn ô nào
-    if (!startTime || !endTime) {
-      setStartTime(slot)
-      setEndTime(clickedSlotEndStr)
-      form.setFieldsValue({ startTime: slot, endTime: clickedSlotEndStr })
-      return
-    }
-
-    // Trường hợp 2: Đang có khung giờ được chọn
-    const curStart = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${startTime}`)
-    const curEnd = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${endTime}`)
-
-    // Bấm lại chính ô duy nhất đang chọn -> Hủy chọn (reset)
-    if (startTime === slot && endTime === clickedSlotEndStr) {
-      handleResetTime()
-      return
-    }
-
-    // Bấm một ô sau startTime: Mở rộng khung giờ từ startTime đến hết ô vừa bấm
-    if (clickedStart.isSameOrAfter(curStart)) {
-      const newEnd = clickedEnd
-      if (checkRangeHasConflict(curStart, newEnd)) {
-        message.warning('Khoảng mở rộng có chứa khung giờ đã có lịch hoặc bảo trì. Đã chọn lại ô này.')
-        setStartTime(slot)
-        setEndTime(clickedSlotEndStr)
-        form.setFieldsValue({ startTime: slot, endTime: clickedSlotEndStr })
-      } else {
-        setEndTime(clickedSlotEndStr)
-        form.setFieldsValue({ endTime: clickedSlotEndStr })
-      }
-      return
-    }
-
-    // Bấm một ô trước startTime: Mở rộng về phía trước từ ô vừa bấm đến endTime
-    if (clickedStart.isBefore(curStart)) {
-      if (checkRangeHasConflict(clickedStart, curEnd)) {
-        // Nếu có trùng ở giữa, đặt lại từ ô này
-        setStartTime(slot)
-        setEndTime(clickedSlotEndStr)
-        form.setFieldsValue({ startTime: slot, endTime: clickedSlotEndStr })
-      } else {
-        setStartTime(slot)
-        form.setFieldsValue({ startTime: slot })
-      }
-      return
-    }
+    // Chọn làm startTime mới
+    setStartTime(slot)
+    setEndTime(null)
+    form.setFieldsValue({ startTime: slot, endTime: undefined })
+    message.info(`Đã chọn giờ bắt đầu: ${slot}. Vui lòng bấm chọn tiếp ô giờ kết thúc.`)
   }
 
   const handleResetTime = () => {
@@ -737,7 +780,7 @@ function BookingPage() {
   }
 
   const renderSelectionBanner = () => {
-    if (!startTime || !endTime) {
+    if (!startTime) {
       return (
         <Alert
           type="info"
@@ -745,7 +788,38 @@ function BookingPage() {
           style={{ borderRadius: 8, background: '#f0f9ff', borderColor: '#bae6fd', marginBottom: 16 }}
           title={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0369a1', fontWeight: 500, fontSize: 13.5 }}>
-              <span>Vui lòng bấm chọn một ô khung giờ trống để bắt đầu mượn (mỗi ô là ca 30 phút). Các ô đã có lịch học sẽ bị khóa hoàn toàn.</span>
+              <span>Vui lòng bấm chọn một ô khung giờ trống để bắt đầu mượn.</span>
+            </div>
+          }
+        />
+      )
+    }
+
+    if (startTime && !endTime) {
+      return (
+        <Alert
+          type="warning"
+          showIcon={false}
+          style={{ borderRadius: 8, background: '#fffbeb', borderColor: '#fde68a', marginBottom: 16 }}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ color: '#b45309', fontWeight: 600, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span>Đã chọn giờ bắt đầu:</span>
+                <Tag color="orange" style={{ fontSize: 13, fontWeight: 700, margin: 0, padding: '2px 8px' }}>
+                  {startTime}
+                </Tag>
+                <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>
+                  👉 Vui lòng bấm chọn tiếp <strong>ô giờ kết thúc</strong> mượn phòng (tối thiểu 1 giờ).
+                </span>
+              </div>
+              <Button 
+                size="small" 
+                onClick={handleResetTime} 
+                icon={<ReloadOutlined />}
+                style={{ fontSize: 12, borderColor: '#d97706', color: '#b45309', fontWeight: 600 }}
+              >
+                Hủy chọn
+              </Button>
             </div>
           }
         />
@@ -769,7 +843,6 @@ function BookingPage() {
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 12.5, color: '#15803d' }}>Bấm thêm ô khác để kéo dài giờ mượn</span>
               <Button 
                 size="small" 
                 onClick={handleResetTime} 
@@ -888,7 +961,11 @@ function BookingPage() {
       startTime: st,
       endTime: et,
       roomId: selectedRoom.id,
+      roomType: (selectedRoom as any)?._displayType || selectedRoom.roomType,
       settings: bookingSettings,
+      userRole: userRole,
+      isFaculty: isFaculty || isStaff,
+      isAdmin: isAdmin,
     })
 
     if (violations.length > 0) {
@@ -1069,7 +1146,7 @@ function BookingPage() {
 
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <div style={{ width: '100%', maxWidth: 800 }}>
-            <Card style={{ borderRadius: 12, border: '1px solid #e2e8f0', padding: 24 }}>
+            <Card style={{ borderRadius: 12, border: '1.5px solid #94a3b8', padding: 24 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="skeleton-card-loading" style={{ width: 180, height: 24 }} />
@@ -1178,19 +1255,19 @@ function BookingPage() {
         <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#334155' }}>
           {/* Tóm tắt quy chuẩn vận hành */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+            <div style={{ background: '#f8fafc', border: '1.5px solid #94a3b8', borderRadius: 6, padding: '10px 14px' }}>
               <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
                 Thời gian vận hành giảng đường
               </div>
               <div style={{ color: '#475569' }}><strong>07:00 – 20:00</strong> (Từ Thứ Hai đến Thứ Bảy). Hệ thống tự động khóa đăng ký ngoài khung giờ này.</div>
             </div>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+            <div style={{ background: '#f8fafc', border: '1.5px solid #94a3b8', borderRadius: 6, padding: '10px 14px' }}>
               <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
                 Xác nhận hiện diện (Check-in)
               </div>
               <div style={{ color: '#475569' }}>Thực hiện trong vòng <strong>15 phút</strong> đầu buổi. Quá thời hạn, hệ thống tự động giải phóng phòng.</div>
             </div>
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px' }}>
+            <div style={{ background: '#f8fafc', border: '1.5px solid #94a3b8', borderRadius: 6, padding: '10px 14px' }}>
               <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
                 Thời hạn thông báo hủy lịch
               </div>
@@ -1203,39 +1280,39 @@ function BookingPage() {
             1. Định mức và Phân quyền Đăng ký Sử dụng Giảng đường
           </Typography.Title>
           <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, border: '1px solid #e2e8f0' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, border: '1.5px solid #94a3b8' }}>
               <thead>
                 <tr style={{ background: '#f1f5f9', color: '#0f172a' }}>
-                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left' }}>Nội dung quy định</th>
-                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#0369a1' }}>Sinh viên</th>
-                  <th style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'left', color: '#047857' }}>Giảng viên & Cán bộ, Nhân viên</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderBottom: '2px solid #64748b', textAlign: 'left' }}>Nội dung quy định</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderBottom: '2px solid #64748b', textAlign: 'left', color: '#0369a1' }}>Sinh viên</th>
+                  <th style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderBottom: '2px solid #64748b', textAlign: 'left', color: '#047857' }}>Giảng viên & Cán bộ, Nhân viên</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời hạn đăng ký trước tối đa</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>07 ngày</strong></td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>30 ngày</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1', fontWeight: 600 }}>Thời hạn đăng ký trước tối đa</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Tối đa <strong>07 ngày</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Tối đa <strong>30 ngày</strong></td>
                 </tr>
                 <tr style={{ background: '#fcfcfc' }}>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời hạn đăng ký trước tối thiểu</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>01 giờ</strong> trước buổi sử dụng</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Ít nhất <strong>30 phút</strong> trước buổi sử dụng</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1', fontWeight: 600 }}>Thời hạn đăng ký trước tối thiểu</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Ít nhất <strong>01 giờ</strong> trước buổi sử dụng</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Ít nhất <strong>30 phút</strong> trước buổi sử dụng</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Thời lượng đăng ký tối đa</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>03 giờ / lượt</strong> (định mức 06 giờ / tuần)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Tối đa <strong>06 giờ / lượt</strong></td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1', fontWeight: 600 }}>Thời lượng đăng ký tối đa</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Tối đa <strong>03 giờ / lượt</strong> (định mức 06 giờ / tuần)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Tối đa <strong>06 giờ / lượt</strong></td>
                 </tr>
                 <tr style={{ background: '#fcfcfc' }}>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Phạm vi giảng đường áp dụng</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Giảng đường tiêu chuẩn, phòng học nhóm (Không áp dụng đối với Hội trường, Phòng Lab và Cinema)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Toàn quyền đăng ký giảng đường tiêu chuẩn, phòng thực hành Lab, Cinema; Hội trường cần Ban Quản lý CSVC phê duyệt</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1', fontWeight: 600 }}>Phạm vi giảng đường áp dụng</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Giảng đường tiêu chuẩn, phòng học nhóm (Không áp dụng đối với Hội trường, Phòng Lab và Cinema)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Toàn quyền đăng ký giảng đường tiêu chuẩn, phòng thực hành Lab, Cinema; Hội trường cần Ban Quản lý CSVC phê duyệt</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontWeight: 600 }}>Quy trình phê duyệt</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Xét duyệt theo thứ tự tiếp nhận)</td>
-                  <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Ưu tiên xét duyệt)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1', fontWeight: 600 }}>Quy trình phê duyệt</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Xét duyệt theo thứ tự tiếp nhận)</td>
+                  <td style={{ padding: '8px 10px', border: '1px solid #cbd5e1' }}>Cần Ban Quản lý CSVC phê duyệt trước khi sử dụng (Ưu tiên xét duyệt)</td>
                 </tr>
               </tbody>
             </table>
@@ -1298,7 +1375,12 @@ function BookingPage() {
             form={form} 
             layout="vertical" 
             onFinish={submitBooking} 
-            initialValues={{ date: selectedDate }}
+            initialValues={{ 
+              date: selectedDate,
+              department: isWalkInBooking ? undefined : effectiveDept,
+              personName: isWalkInBooking ? undefined : effectiveName,
+              phoneNumber: isWalkInBooking ? undefined : effectivePhone,
+            }}
             onValuesChange={(changedValues, allValues) => {
               if (changedValues.startTime !== undefined) {
                 setStartTime(changedValues.startTime)
@@ -1310,7 +1392,7 @@ function BookingPage() {
                     form.setFieldsValue({ endTime: undefined })
                   } else {
                     let hasConflict = false
-                    const roomBookings = (bookingsQuery.data || []).filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
+                    const roomBookings = (bookingsQuery.data || []).filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
                     for (const b of roomBookings) {
                       const bStart = dayjs(b.startTime)
                       const bEnd = dayjs(b.endTime)
@@ -1320,7 +1402,7 @@ function BookingPage() {
                       }
                     }
                     if (hasConflict) {
-                      message.error('Khoảng thời gian này đã có người đặt, vui lòng chọn lại!')
+                      message.error('Khung giờ này đã có người khác gửi yêu cầu chờ duyệt hoặc đã đặt, vui lòng chọn lại!')
                       setEndTime(null)
                       form.setFieldsValue({ endTime: undefined })
                     }
@@ -1338,7 +1420,7 @@ function BookingPage() {
                     form.setFieldsValue({ endTime: undefined })
                   } else {
                     let hasConflict = false
-                    const roomBookings = (bookingsQuery.data || []).filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1', '2'].includes(String(b.status)))
+                    const roomBookings = (bookingsQuery.data || []).filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
                     for (const b of roomBookings) {
                       const bStart = dayjs(b.startTime)
                       const bEnd = dayjs(b.endTime)
@@ -1496,7 +1578,7 @@ function BookingPage() {
                       padding: 16, 
                       background: '#f8fafc', 
                       borderRadius: 12, 
-                      border: '1.5px solid #e2e8f0' 
+                      border: '1.5px solid #94a3b8' 
                     }}
                   >
                     <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1505,7 +1587,7 @@ function BookingPage() {
                           src={getStorageImageUrl(selectedRoom.imageUrl)} 
                           alt={selectedRoom.name} 
                           onError={(e) => handleImageFallback(e, selectedRoom.imageUrl || undefined)}
-                          style={{ width: 88, height: 68, objectFit: 'cover', borderRadius: 8, border: '1px solid #cbd5e1' }} 
+                          style={{ width: 88, height: 68, objectFit: 'cover', borderRadius: 8, border: '1.5px solid #94a3b8' }} 
                         />
                       ) : (
                         <div style={{ width: 88, height: 68, background: '#e2e8f0', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1694,7 +1776,7 @@ function BookingPage() {
                     )
                   })()
                 ) : (isScheduleFetching || !bookingSettings) ? (
-                  <Card style={{ textAlign: 'center', padding: '48px 24px', borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}>
+                  <Card style={{ textAlign: 'center', padding: '48px 24px', borderRadius: 12, border: '1.5px solid #94a3b8', marginBottom: 20 }}>
                     <Spin size="large" />
                     <div style={{ marginTop: 16, fontSize: 15, fontWeight: 600, color: '#0d2e5c' }}>
                       Đang tải lịch phòng và quy định...
@@ -1708,8 +1790,10 @@ function BookingPage() {
                     {/* Hiển thị giờ mở/đóng cửa và cảnh báo ngày nghỉ nếu có */}
                     {bookingSettings && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: 13, color: '#475569' }}>
-                        <span>Khung giờ vận hành giảng đường: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong></span>
-                        <span>Đặt trước tối đa: <strong>{userMaxAdvanceDays} ngày</strong> | Thời lượng tối đa: <strong>{userMaxHoursPerBooking} giờ</strong></span>
+                        <span>
+                          Khung giờ vận hành giảng đường: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong>
+                        </span>
+                        <span>Đặt trước tối đa: <strong>{userMaxAdvanceDays} ngày</strong> | Thời lượng: <strong>Tối thiểu 1 giờ - Tối đa {userMaxHoursPerBooking} giờ</strong></span>
                       </div>
                     )}
 
@@ -1723,33 +1807,16 @@ function BookingPage() {
                       />
                     )}
 
-                    {/* Không có lịch chỉ được hiển thị sau khi tất cả dữ liệu cần thiết tải thành công */}
-                    {dayBookingsForSelectedRoom.length === 0 && (
-                      <Alert
-                        type="info"
-                        showIcon
-                        style={{ marginBottom: 14, borderRadius: 8, background: '#f0fdf4', borderColor: '#bbf7d0' }}
-                        title={
-                          <span style={{ color: '#166534', fontWeight: 600 }}>
-                            Không có lịch đặt trước nào trong ngày {selectedDate.format('DD/MM/YYYY')}
-                          </span>
-                        }
-                        description={
-                          <span style={{ color: '#15803d', fontSize: 12.5 }}>
-                            Phòng {selectedRoom?.name} hiện chưa có lịch sử dụng trong ngày này. Bạn có thể tự do chọn khung giờ hoạt động.
-                          </span>
-                        }
-                      />
-                    )}
 
                     {/* Bảng chú thích màu sắc trạng thái */}
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 14, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Còn trống</div>
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, marginBottom: 14, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: '1.5px solid #94a3b8' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1.5px solid #94a3b8', borderRadius: 4 }}></div> Còn trống</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#0d2e5c', borderRadius: 4 }}></div> Đang chọn</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef08a', border: '1px solid #facc15', borderRadius: 4 }}></div> Chờ duyệt</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#86efac', border: '1px solid #4ade80', borderRadius: 4 }}></div> Đã đặt / Lịch học</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef3c7', border: '1px dashed #f59e0b', borderRadius: 4 }}></div> Tạm ngưng/Bảo trì</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: 4 }}></div> Đã qua/Đóng</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef08a', border: '1.5px solid #eab308', borderRadius: 4 }}></div> Chờ duyệt</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#86efac', border: '1.5px solid #16a34a', borderRadius: 4 }}></div> Đã đặt / Lịch học</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#fef3c7', border: '1.5px dashed #d97706', borderRadius: 4 }}></div> Tạm ngưng/Bảo trì</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#f8fafc', border: '1.5px dashed #64748b', borderRadius: 4 }}></div> Giờ đóng cửa (Mốc kết thúc)</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 14, height: 14, background: '#e2e8f0', border: '1.5px solid #94a3b8', borderRadius: 4 }}></div> Đã qua/Đóng</div>
                     </div>
 
                     {/* Banner hướng dẫn và thông báo khung giờ đã chọn */}
@@ -1766,125 +1833,236 @@ function BookingPage() {
                       }}
                     >
                       {slots.map(slot => {
+                        const isCloseSlot = slot === closeTime
                         const status = getSlotStatus(slot)
-                        const nextSlotStr = dayjs(`2000-01-01 ${slot}`).add(30, 'minute').format('HH:mm')
 
-                        let bg = '#f8fafc'
-                        let color = '#475569'
-                        let border = '1px solid #cbd5e1'
+                        const slotTime = dayjs(`${selectedDate.format('YYYY-MM-DD')} ${slot}`)
+                        const blockEnd = slotTime.add(30, 'minute')
+                        const bookings = bookingsQuery.data || []
+                        const roomBookings = bookings.filter(b => b.roomId === selectedRoom?.id && ['Pending', 'PendingSpecial', 'Approved', 'Using', '0', '1'].includes(String(b.status)))
+                        const hit = roomBookings.find(b => {
+                          const bStart = dayjs(b.startTime)
+                          const bEnd = dayjs(b.endTime)
+                          return slotTime.isBefore(bEnd) && blockEnd.isAfter(bStart)
+                        })
+                        const closedHit = checkClosedPeriodOverlap(selectedRoom?.id, slotTime, blockEnd, bookingSettings?.closedPeriods)
+
+                        let tooltipContent: React.ReactNode = null
+                        if (status === 'approved' && hit && (hit.isSchoolOverride || hit.IsSchoolOverride)) {
+                          const bStartStr = dayjs(hit.startTime).format('HH:mm')
+                          const bEndStr = dayjs(hit.endTime).format('HH:mm')
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', maxWidth: 280, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 4, textTransform: 'uppercase', fontSize: 12 }}>
+                                Thời khóa biểu chính khóa
+                              </div>
+                              <div style={{ color: '#cbd5e1', marginBottom: 3 }}>
+                                Thời gian: <strong>{bStartStr} - {bEndStr}</strong>
+                              </div>
+                              {hit.purpose && (
+                                <div style={{ color: '#e2e8f0', marginBottom: 3, wordBreak: 'break-word' }}>
+                                  Môn học: {hit.purpose}
+                                </div>
+                              )}
+                              <div style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 4 }}>
+                                Khung giờ đã có lịch học, không thể chọn.
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'approved' && hit) {
+                          const bStartStr = dayjs(hit.startTime).format('HH:mm')
+                          const bEndStr = dayjs(hit.endTime).format('HH:mm')
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', maxWidth: 260, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 4, textTransform: 'uppercase', fontSize: 12 }}>
+                                Đã có lịch mượn phòng
+                              </div>
+                              <div style={{ color: '#cbd5e1', marginBottom: 3 }}>
+                                Thời gian: <strong>{bStartStr} - {bEndStr}</strong>
+                              </div>
+                              {hit.purpose && (
+                                <div style={{ color: '#e2e8f0', marginBottom: 3, wordBreak: 'break-word' }}>
+                                  Mục đích: {hit.purpose}
+                                </div>
+                              )}
+                              <div style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 4 }}>
+                                Khung giờ đã được duyệt, không thể chọn.
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'pending') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', maxWidth: 240, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 4, textTransform: 'uppercase', fontSize: 12 }}>
+                                Đang chờ duyệt mượn
+                              </div>
+                              <div style={{ color: '#cbd5e1', marginBottom: 3 }}>
+                                Khung giờ: <strong>{slot} - {blockEnd.format('HH:mm')}</strong>
+                              </div>
+                              <div style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 4 }}>
+                                Đã có yêu cầu gửi trước, không thể chọn.
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'maintenance') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', maxWidth: 240, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 4, textTransform: 'uppercase', fontSize: 12 }}>
+                                Tạm ngưng / Bảo trì
+                              </div>
+                              <div style={{ color: '#cbd5e1', marginBottom: 3 }}>
+                                Khung giờ: <strong>{slot} - {blockEnd.format('HH:mm')}</strong>
+                              </div>
+                              {closedHit?.reason && (
+                                <div style={{ color: '#e2e8f0', marginBottom: 3 }}>
+                                  Lý do: {closedHit.reason}
+                                </div>
+                              )}
+                              <div style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 4 }}>
+                                Phòng tạm ngưng phục vụ trong thời gian này.
+                              </div>
+                            </div>
+                          )
+                        } else if (isCloseSlot) {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', maxWidth: 220, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 3 }}>
+                                Mốc {closeTime} (Giờ đóng cửa)
+                              </div>
+                              <div style={{ color: '#cbd5e1', fontSize: 11.5 }}>
+                                {startTime ? 'Nhấp chọn để làm giờ kết thúc mượn phòng' : 'Chỉ dùng làm mốc kết thúc, không thể bắt đầu'}
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'past' || status === 'inactive' || status === 'disabled') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', fontSize: 12 }}>
+                              Khung giờ {slot}: {status === 'past' ? 'Đã qua trong ngày' : 'Không khả dụng'}
+                            </div>
+                          )
+                        } else if (status === 'start') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', fontSize: 12.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                                Giờ bắt đầu: {slot}
+                              </div>
+                              <div style={{ color: '#93c5fd', fontSize: 11.5, marginTop: 2 }}>
+                                Nhấp lại để hủy chọn
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'end') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', fontSize: 12.5 }}>
+                              <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                                Giờ kết thúc: {slot}
+                              </div>
+                              <div style={{ color: '#93c5fd', fontSize: 11.5, marginTop: 2 }}>
+                                Nhấp lại để hủy chọn giờ kết thúc
+                              </div>
+                            </div>
+                          )
+                        } else if (status === 'in-between') {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', fontSize: 12 }}>
+                              Trong khoảng thời gian mượn: {startTime} - {endTime}
+                            </div>
+                          )
+                        } else {
+                          tooltipContent = (
+                            <div style={{ padding: '2px 0', fontSize: 12.5 }}>
+                              <div style={{ fontWeight: 600, color: '#f8fafc' }}>
+                                Khung giờ {slot} - {blockEnd.format('HH:mm')}
+                              </div>
+                              <div style={{ color: '#86efac', fontSize: 11.5, marginTop: 2 }}>
+                                {startTime ? 'Còn trống, nhấp chọn làm giờ kết thúc' : 'Còn trống, nhấp chọn làm giờ bắt đầu'}
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        let bg = '#ffffff'
+                        let color = '#1e293b'
+                        let border = '1.5px solid #94a3b8'
                         let cursor = 'pointer'
 
                         if (status === 'past' || status === 'inactive') {
-                          bg = '#e2e8f0'
+                          bg = '#f1f5f9'
                           color = '#94a3b8'
+                          border = '1px solid #e2e8f0'
                           cursor = 'not-allowed'
                         } else if (status === 'maintenance') {
                           bg = '#fef3c7'
                           color = '#92400e'
-                          border = '1px dashed #f59e0b'
+                          border = '1.5px dashed #d97706'
                           cursor = 'not-allowed'
                         } else if (status === 'pending') {
                           bg = '#fef08a'
                           color = '#854d0e'
-                          border = '1px solid #facc15'
+                          border = '1.5px solid #eab308'
                           cursor = 'not-allowed'
                         } else if (status === 'approved') {
                           bg = '#86efac'
                           color = '#166534'
-                          border = '1px solid #4ade80'
+                          border = '1.5px solid #16a34a'
                           cursor = 'not-allowed'
-                        } else if (status === 'selected-single') {
-                          bg = '#0d2e5c'
-                          color = '#fff'
-                          border = '2px solid #2563eb'
                         } else if (status === 'start') {
                           bg = '#0d2e5c'
-                          color = '#fff'
+                          color = '#ffffff'
                           border = '2px solid #2563eb'
                         } else if (status === 'end') {
                           bg = '#0d2e5c'
-                          color = '#fff'
+                          color = '#ffffff'
                           border = '2px solid #f59e0b'
                         } else if (status === 'in-between') {
                           bg = '#e0e7ff'
                           color = '#3730a3'
-                          border = '1px solid #c7d2fe'
+                          border = '1.5px solid #818cf8'
+                        } else if (status === 'close-time') {
+                          bg = '#f8fafc'
+                          color = '#64748b'
+                          border = '1.5px dashed #64748b'
+                          cursor = startTime ? 'pointer' : 'not-allowed'
                         } else if (status === 'disabled') {
-                          bg = '#e2e8f0'
+                          bg = '#f1f5f9'
                           color = '#94a3b8'
+                          border = '1px solid #e2e8f0'
                           cursor = 'not-allowed'
                         }
 
-                        const isSelected = status === 'selected-single' || status === 'start' || status === 'end' || status === 'in-between'
+                        const isSelected = status === 'start' || status === 'end' || status === 'in-between'
+
                         return (
-                          <div 
+                          <Tooltip
                             key={slot}
-                            onClick={() => handleSlotClick(slot)}
-                            className={`time-slot-btn ${isSelected ? 'selected' : ''}`}
-                            style={{ 
-                              background: bg,
-                              color: color,
-                              border: border,
-                              borderRadius: 8,
-                              padding: '6px 4px',
-                              textAlign: 'center',
-                              cursor: cursor,
-                              fontWeight: 600,
-                              fontSize: 13,
-                              userSelect: 'none',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              minHeight: 56,
-                              transition: 'all 0.15s ease'
-                            }}
+                            title={tooltipContent}
+                            placement="top"
+                            mouseEnterDelay={0.12}
+                            overlayInnerStyle={{ borderRadius: 8, padding: '8px 12px' }}
                           >
-                            <div style={{ fontSize: 13.5, fontWeight: 700 }}>{slot}</div>
-                            <div style={{ fontSize: 10, opacity: isSelected ? 0.9 : 0.65, marginTop: 1 }}>
-                              {slot} - {nextSlotStr}
+                            <div 
+                              onClick={() => handleSlotClick(slot)}
+                              className={`time-slot-btn ${isSelected ? 'selected' : ''}`}
+                              style={{ 
+                                background: bg,
+                                color: color,
+                                border: border,
+                                borderRadius: 8,
+                                padding: '10px 4px',
+                                textAlign: 'center',
+                                cursor: cursor,
+                                userSelect: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minHeight: 44,
+                                transition: 'all 0.15s ease',
+                                boxShadow: (status === 'start' || status === 'end') ? '0 2px 8px rgba(13, 46, 92, 0.28)' : undefined
+                              }}
+                            >
+                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.2px' }}>{slot}</div>
                             </div>
-                            {status === 'selected-single' && (
-                              <span style={{ fontSize: 9.5, background: '#2563eb', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 3, fontWeight: 700 }}>
-                                Đã chọn (30p)
-                              </span>
-                            )}
-                            {status === 'start' && (
-                              <span style={{ fontSize: 9.5, background: '#2563eb', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 3, fontWeight: 700 }}>
-                                Bắt đầu
-                              </span>
-                            )}
-                            {status === 'end' && (
-                              <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 3, fontWeight: 700 }}>
-                                Đến {endTime}
-                              </span>
-                            )}
-                            {status === 'in-between' && (
-                              <span style={{ fontSize: 10, color: '#4338ca', marginTop: 2, fontWeight: 700 }}>
-                                •••
-                              </span>
-                            )}
-                            {status === 'approved' && (
-                              <span style={{ fontSize: 9.5, color: '#166534', marginTop: 2, fontWeight: 600 }}>
-                                Đã đặt
-                              </span>
-                            )}
-                            {status === 'pending' && (
-                              <span style={{ fontSize: 9.5, color: '#854d0e', marginTop: 2, fontWeight: 600 }}>
-                                Chờ duyệt
-                              </span>
-                            )}
-                            {status === 'maintenance' && (
-                              <span style={{ fontSize: 9.5, background: '#f59e0b', color: '#fff', borderRadius: 3, padding: '1px 4px', marginTop: 2, fontWeight: 700 }}>
-                                Bảo trì
-                              </span>
-                            )}
-                            {(status === 'past' || status === 'inactive') && (
-                              <span style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2 }}>
-                                Đã qua
-                              </span>
-                            )}
-                          </div>
+                          </Tooltip>
                         )
                       })}
                     </div>
@@ -1967,7 +2145,7 @@ function BookingPage() {
                     id="admin-walk-in-panel"
                     style={{
                       background: isWalkInBooking ? '#f0fdf4' : '#f8fafc',
-                      border: `1.5px solid ${isWalkInBooking ? '#86efac' : '#cbd5e1'}`,
+                      border: `1.5px solid ${isWalkInBooking ? '#16a34a' : '#94a3b8'}`,
                       borderRadius: 8,
                       padding: '12px 16px',
                       marginBottom: 18,
@@ -2023,84 +2201,106 @@ function BookingPage() {
                 {/* Lưới 2x2: Hàng 1 (Đơn vị & Họ tên), Hàng 2 (Số điện thoại & Số người tham gia) */}
                 <Row gutter={16}>
                   <Col xs={24} sm={12}>
-                    <Form.Item 
-                      label={
-                        <strong style={{ color: '#334155' }}>
-                          {isAdmin 
-                            ? (isWalkInBooking ? 'Khoa / Đơn vị của người đến mượn tại quầy' : 'Đơn vị / Phòng ban sử dụng') 
-                            : isFaculty 
-                              ? 'Khoa / Bộ môn' 
-                              : isStaff 
-                                ? 'Phòng / Ban / Trung tâm' 
-                                : 'Lớp, khoa, ban, CLB'}
-                        </strong>
-                      } 
-                      name="department"
-                      rules={[
-                        { 
-                          required: true, 
-                          message: isAdmin 
-                            ? (isWalkInBooking ? 'Vui lòng nhập đơn vị/khoa của người đến quầy!' : 'Vui lòng nhập đơn vị/phòng ban sử dụng!') 
-                            : isFaculty 
-                              ? 'Vui lòng nhập Khoa / Bộ môn!' 
-                              : isStaff 
-                                ? 'Vui lòng nhập Phòng / Ban / Trung tâm!' 
-                                : 'Vui lòng nhập đơn vị/khoa/ban/CLB!' 
-                        }
-                      ]}
-                    >
-                      <Input 
-                        placeholder={
-                          isAdmin 
-                            ? (isWalkInBooking ? "Ví dụ: Lớp 21CNTT, Khoa Công nghệ, CLB Tiếng Anh..." : "Ví dụ: Phòng Đào tạo, Khoa CNTT, Phòng QTTB...") 
-                            : isFaculty 
-                              ? "Ví dụ: Khoa Công nghệ thông tin và Bán dẫn, Khoa Du lịch..." 
-                              : isStaff 
-                                ? "Ví dụ: Phòng Đào tạo, Phòng Quản trị thiết bị, Ban CTSV..." 
-                                : "Ví dụ: Khoa CNTT, CLB Lập trình..."
-                        } 
-                        size="large" 
-                      />
-                    </Form.Item>
+                    <Tooltip title={isDeptLocked ? "Thông tin được cố định theo tài khoản" : undefined} placement="topLeft">
+                      <div>
+                        <Form.Item 
+                          label={
+                            <strong style={{ color: '#334155' }}>
+                              {isAdmin 
+                                ? (isWalkInBooking ? 'Khoa / Đơn vị của người đến mượn tại quầy' : 'Đơn vị / Phòng ban sử dụng') 
+                                : isFaculty 
+                                  ? 'Khoa / Bộ môn' 
+                                  : isStaff 
+                                    ? 'Phòng / Ban / Trung tâm' 
+                                    : 'Lớp, khoa, ban, CLB'}
+                            </strong>
+                          } 
+                          name="department"
+                          rules={[
+                            { 
+                              required: true, 
+                              message: isAdmin 
+                                ? (isWalkInBooking ? 'Vui lòng nhập đơn vị/khoa của người đến quầy!' : 'Vui lòng nhập đơn vị/phòng ban sử dụng!') 
+                                : isFaculty 
+                                  ? 'Vui lòng nhập Khoa / Bộ môn!' 
+                                  : isStaff 
+                                    ? 'Vui lòng nhập Phòng / Ban / Trung tâm!' 
+                                    : 'Vui lòng nhập đơn vị/khoa/ban/CLB!' 
+                            }
+                          ]}
+                        >
+                          <Input 
+                            readOnly={isDeptLocked}
+                            tabIndex={isDeptLocked ? -1 : 0}
+                            value={isDeptLocked ? effectiveDept : undefined}
+                            title={isDeptLocked ? "Thông tin được cố định theo tài khoản" : undefined}
+                            style={
+                              isDeptLocked 
+                                ? { backgroundColor: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1', cursor: 'not-allowed', fontWeight: 600 } 
+                                : undefined
+                            }
+                            placeholder={
+                              isDeptLocked 
+                                ? "" 
+                                : (isAdmin 
+                                    ? (isWalkInBooking ? "Nhập đơn vị / khoa của người mượn..." : "Nhập đơn vị / phòng ban sử dụng...") 
+                                    : "Nhập Khoa / Bộ môn...")
+                            } 
+                            size="large" 
+                          />
+                        </Form.Item>
+                      </div>
+                    </Tooltip>
                   </Col>
                   <Col xs={24} sm={12}>
-                    <Form.Item 
-                      label={
-                        <strong style={{ color: '#334155' }}>
-                          {isAdmin 
-                            ? (isWalkInBooking ? 'Họ và tên người mượn thực tế tại quầy' : 'Người / Đơn vị phụ trách') 
-                            : isFaculty 
-                              ? 'Họ và tên Giảng viên' 
-                              : isStaff 
-                                ? 'Họ và tên Cán bộ phụ trách' 
-                                : 'Họ và tên người phụ trách'}
-                        </strong>
-                      } 
-                      name="personName"
-                      rules={[{ required: true, message: 'Vui lòng nhập người/đơn vị phụ trách!' }]}
-                      extra={
-                        isAdmin ? (
-                          <div style={{ fontSize: 12, color: isWalkInBooking ? '#15803d' : '#0284c7', marginTop: 3 }}>
-                            {isWalkInBooking 
-                              ? 'Ghi rõ họ tên Giảng viên hoặc Sinh viên đang có mặt tại quầy (VD: ThS. Lê Văn Nam hoặc Nguyễn Thị Lan - 21CNTT)' 
-                              : 'Ghi rõ ai hoặc đơn vị nào sẽ sử dụng phòng (VD: TS. Nguyễn Văn A - Khoa CNTT hoặc Phòng Đào tạo)'}
-                          </div>
-                        ) : null
-                      }
-                    >
-                      <Input 
-                        placeholder={
-                          isAdmin 
-                            ? (isWalkInBooking ? "Ví dụ: ThS. Lê Văn Nam hoặc Nguyễn Thị Lan (SV)" : "Ví dụ: Ban Quản trị Cơ sở vật chất hoặc TS. Nguyễn Văn A") 
-                            : isFaculty 
-                              ? "Ví dụ: ThS. Nguyễn Văn A, TS. Trần Thị B..." 
-                              : isStaff 
-                                ? "Ví dụ: Nguyễn Văn A (Phòng Đào tạo)..." 
-                                : "Ví dụ: Nguyễn Văn A"
-                        } 
-                        size="large" 
-                      />
-                    </Form.Item>
+                    <Tooltip title={isNameLocked ? "Thông tin được cố định theo tài khoản" : undefined} placement="topLeft">
+                      <div>
+                        <Form.Item 
+                          label={
+                            <strong style={{ color: '#334155' }}>
+                              {isAdmin 
+                                ? (isWalkInBooking ? 'Họ và tên người mượn thực tế tại quầy' : 'Người / Đơn vị phụ trách') 
+                                : isFaculty 
+                                  ? 'Họ và tên Giảng viên' 
+                                  : isStaff 
+                                    ? 'Họ và tên Cán bộ phụ trách' 
+                                    : 'Họ và tên người phụ trách'}
+                            </strong>
+                          } 
+                          name="personName"
+                          rules={[{ required: true, message: 'Vui lòng nhập người/đơn vị phụ trách!' }]}
+                          extra={
+                            isAdmin ? (
+                              <div style={{ fontSize: 12, color: isWalkInBooking ? '#15803d' : '#0284c7', marginTop: 3 }}>
+                                {isWalkInBooking 
+                                  ? 'Ghi rõ họ tên Giảng viên hoặc Sinh viên đang có mặt tại quầy (VD: ThS. Lê Văn Nam hoặc Nguyễn Thị Lan - 21CNTT)' 
+                                  : 'Ghi rõ ai hoặc đơn vị nào sẽ sử dụng phòng (VD: TS. Nguyễn Văn A - Khoa CNTT hoặc Phòng Đào tạo)'}
+                              </div>
+                            ) : null
+                          }
+                        >
+                          <Input 
+                            readOnly={isNameLocked}
+                            tabIndex={isNameLocked ? -1 : 0}
+                            value={isNameLocked ? effectiveName : undefined}
+                            title={isNameLocked ? "Thông tin được cố định theo tài khoản" : undefined}
+                            style={
+                              isNameLocked 
+                                ? { backgroundColor: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1', cursor: 'not-allowed', fontWeight: 600 } 
+                                : undefined
+                            }
+                            placeholder={
+                              isNameLocked 
+                                ? "" 
+                                : (isAdmin 
+                                    ? (isWalkInBooking ? "Nhập họ tên người mượn tại quầy..." : "Nhập người / đơn vị phụ trách...") 
+                                    : "Nhập họ và tên người mượn...")
+                            } 
+                            size="large" 
+                          />
+                        </Form.Item>
+                      </div>
+                    </Tooltip>
                   </Col>
                 </Row>
 
@@ -2117,7 +2317,7 @@ function BookingPage() {
                         }
                       ]}
                     >
-                      <Input placeholder="Ví dụ: 0912345678" size="large" maxLength={10} />
+                      <Input placeholder="Nhập số điện thoại liên hệ" size="large" maxLength={10} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} sm={12}>
@@ -2157,7 +2357,7 @@ function BookingPage() {
                         min={1} 
                         size="large"
                         style={{ width: '100%' }} 
-                        placeholder={selectedRoom ? `Sức chứa tối đa: ${selectedRoom.capacity} người` : "Ví dụ: 40"} 
+                        placeholder={selectedRoom ? `Sức chứa tối đa: ${selectedRoom.capacity} người` : "Nhập số người tham gia"} 
                       />
                     </Form.Item>
                   </Col>
@@ -2605,7 +2805,7 @@ function BookingPage() {
                 {/* Cam kết nội quy phòng học (chỉ hiển thị cho Sinh viên / Khách, tự động miễn cho Giảng viên & Nhân viên) */}
                 {!isStaffOrFaculty && (
                   <>
-                    <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', marginBottom: 16 }}>
+                    <div style={{ padding: 14, border: '1.5px solid #94a3b8', borderRadius: 10, background: '#f8fafc', marginBottom: 16 }}>
                       <div style={{ fontWeight: 700, color: '#0d2e5c', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
                         <SafetyCertificateOutlined style={{ color: '#0284c7' }} />
                         Nội quy sử dụng phòng học Trường Đại Học Thái Bình Dương:
@@ -2742,7 +2942,7 @@ function BookingPage() {
           if (!isAdmin) navigate('/booking-history');
         }}
         centered
-        width={500}
+        width={520}
         className="booking-success-modal"
         destroyOnHidden
       >
@@ -2751,7 +2951,7 @@ function BookingPage() {
             <CheckCircleFilled />
           </div>
 
-          <Typography.Title level={3} style={{ color: '#0d2e5c', margin: '0 0 8px', fontWeight: 800 }}>
+          <Typography.Title level={4} style={{ color: '#0d2e5c', margin: '0 0 6px', fontWeight: 800, fontSize: 18.5, lineHeight: 1.35 }}>
             {isAdmin 
               ? 'Đặt phòng và phê duyệt trực tiếp thành công!' 
               : isFaculty 
@@ -2761,7 +2961,7 @@ function BookingPage() {
                   : 'Gửi yêu cầu đặt phòng thành công!'}
           </Typography.Title>
 
-          <Typography.Paragraph type="secondary" style={{ fontSize: 14.5, marginBottom: 20, lineHeight: 1.5 }}>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.45 }}>
             {isAdmin
               ? 'Lịch phòng đã được cập nhật.'
               : isStaffOrFaculty
@@ -2773,36 +2973,36 @@ function BookingPage() {
             <div
               style={{
                 background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                padding: '14px 16px',
+                border: '1.5px solid #94a3b8',
+                borderRadius: 10,
+                padding: '10px 14px',
                 textAlign: 'left',
-                marginBottom: 24,
-                fontSize: 13.5,
+                marginBottom: 16,
+                fontSize: 13,
                 color: '#334155'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ color: '#64748b' }}>Phòng học:</span>
                 <strong style={{ color: '#0d2e5c' }}>{successBookingInfo.roomName}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ color: '#64748b' }}>Ngày & Khung giờ:</span>
                 <strong style={{ color: '#0d2e5c' }}>{successBookingInfo.timeRange} ({successBookingInfo.dateStr})</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ color: '#64748b' }}>Số người tham gia:</span>
                 <span>{successBookingInfo.participantCount} người</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ color: '#64748b' }}>Trạng thái đơn:</span>
-                <Tag color={isAdmin ? 'green' : isStaffOrFaculty ? 'blue' : 'gold'} style={{ margin: 0, fontWeight: 700 }}>
+                <Tag color={isAdmin ? 'green' : isStaffOrFaculty ? 'blue' : 'gold'} style={{ margin: 0, fontWeight: 700, fontSize: 11.5, padding: '0 6px', lineHeight: '20px' }}>
                   {isAdmin ? 'ĐÃ DUYỆT (TRỰC TIẾP)' : isStaffOrFaculty ? 'CHỜ DUYỆT (ƯU TIÊN)' : 'CHỜ DUYỆT'}
                 </Tag>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#64748b' }}>Mục đích sử dụng:</span>
-                <span style={{ maxWidth: 220, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span style={{ maxWidth: 240, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {successBookingInfo.purpose}
                 </span>
               </div>
@@ -2810,9 +3010,9 @@ function BookingPage() {
           )}
 
           {isAdmin ? (
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <Button
-                size="large"
+                size="middle"
                 icon={<CalendarOutlined />}
                 onClick={() => {
                   setSuccessModalVisible(false)
@@ -2824,14 +3024,14 @@ function BookingPage() {
                   flex: 1,
                   borderColor: '#0284c7',
                   color: '#0284c7',
-                  height: 44
+                  height: 38
                 }}
               >
                 Xem trên Lịch phòng
               </Button>
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 icon={<DashboardOutlined />}
                 onClick={() => {
                   setSuccessModalVisible(false)
@@ -2844,7 +3044,7 @@ function BookingPage() {
                   borderColor: '#0d2e5c',
                   color: '#ffffff',
                   flex: 1,
-                  height: 44,
+                  height: 38,
                   boxShadow: '0 4px 12px rgba(13, 46, 92, 0.25)'
                 }}
               >
@@ -2852,9 +3052,9 @@ function BookingPage() {
               </Button>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <Button
-                size="large"
+                size="middle"
                 icon={<PlusCircleOutlined />}
                 onClick={() => setSuccessModalVisible(false)}
                 style={{
@@ -2863,14 +3063,14 @@ function BookingPage() {
                   flex: 1,
                   borderColor: '#cbd5e1',
                   color: '#475569',
-                  height: 44
+                  height: 38
                 }}
               >
                 Đặt thêm phòng khác
               </Button>
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 icon={<HistoryOutlined />}
                 onClick={() => {
                   setSuccessModalVisible(false)
@@ -2882,7 +3082,7 @@ function BookingPage() {
                   background: '#0d2e5c',
                   borderColor: '#0d2e5c',
                   flex: 1,
-                  height: 44,
+                  height: 38,
                   boxShadow: '0 4px 12px rgba(13, 46, 92, 0.25)'
                 }}
               >

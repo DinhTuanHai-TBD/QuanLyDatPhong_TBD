@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -140,6 +141,140 @@ public class AuthController : ControllerBase
             phoneNumber = user.PhoneNumber,
             department = user.Department,
             userCode = user.UserCode
+        });
+    }
+
+    
+    public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<ActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(JwtRegisteredClaimNames.Email);
+
+        ApplicationUser? user = null;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            user = await _userManager.FindByIdAsync(userId);
+        }
+        else if (!string.IsNullOrEmpty(userEmail))
+        {
+            user = await _userManager.FindByEmailAsync(userEmail);
+        }
+
+        if (user is null) return NotFound(new { message = "Không tìm thấy thông tin tài khoản người dùng." });
+
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            return BadRequest(new { message = "Vui lòng nhập mật khẩu hiện tại." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        {
+            return BadRequest(new { message = "Mật khẩu mới phải có độ dài từ 6 ký tự trở lên." });
+        }
+
+        var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+            if (errors.Contains("PasswordMismatch") || errors.Contains("Incorrect password"))
+            {
+                return BadRequest(new { message = "Mật khẩu hiện tại không chính xác. Vui lòng kiểm tra lại!" });
+            }
+            return BadRequest(new { message = "Đổi mật khẩu thất bại: " + errors });
+        }
+
+        return Ok(new { success = true, message = "Đổi mật khẩu thành công! Mật khẩu mới đã được lưu vào hệ thống." });
+    }
+
+    public record ForgotPasswordRequest(string Email);
+    public record OtpResetData(string Otp, DateTime ExpiresAt);
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, [FromServices] IMemoryCache memoryCache)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest(new { message = "Vui lòng nhập địa chỉ email của bạn." });
+        }
+
+        var trimmedEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await _userManager.FindByEmailAsync(trimmedEmail);
+        if (user is null)
+        {
+            return NotFound(new { message = "Email này chưa được đăng ký trong hệ thống Đại học Thái Bình Dương." });
+        }
+
+        // Sinh mã OTP 6 chữ số ngẫu nhiên
+        var random = new Random();
+        var otp = random.Next(100000, 999999).ToString();
+
+        var cacheKey = $"reset_otp_{trimmedEmail}";
+        var cacheData = new OtpResetData(otp, DateTime.UtcNow.AddMinutes(5));
+        memoryCache.Set(cacheKey, cacheData, TimeSpan.FromMinutes(5));
+
+        Console.WriteLine($"[QUEN MAT KHAU] Ma OTP cho {trimmedEmail} la: {otp} (Hieu luc 5 phut)");
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Mã xác thực OTP (6 chữ số) đã được gửi đến email {trimmedEmail}. Vui lòng kiểm tra hộp thư (hiệu lực 5 phút).",
+            debugOtp = otp
+        });
+    }
+
+    public record ResetPasswordRequest(string Email, string Otp, string NewPassword);
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordRequest request, [FromServices] IMemoryCache memoryCache)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Otp) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return BadRequest(new { message = "Vui lòng nhập đầy đủ Email, mã OTP và Mật khẩu mới." });
+        }
+
+        var trimmedEmail = request.Email.Trim().ToLowerInvariant();
+        var cacheKey = $"reset_otp_{trimmedEmail}";
+
+        if (!memoryCache.TryGetValue<OtpResetData>(cacheKey, out var cacheData) || cacheData is null)
+        {
+            return BadRequest(new { message = "Mã xác thực OTP đã hết hạn hoặc không tồn tại. Vui lòng gửi lại yêu cầu mới." });
+        }
+
+        if (cacheData.Otp != request.Otp.Trim())
+        {
+            return BadRequest(new { message = "Mã xác thực OTP không chính xác. Vui lòng kiểm tra lại!" });
+        }
+
+        var user = await _userManager.FindByEmailAsync(trimmedEmail);
+        if (user is null)
+        {
+            return NotFound(new { message = "Không tìm thấy người dùng tương ứng với email này." });
+        }
+
+        if (request.NewPassword.Length < 6)
+        {
+            return BadRequest(new { message = "Mật khẩu mới phải có tối thiểu 6 ký tự." });
+        }
+
+        var removeResult = await _userManager.RemovePasswordAsync(user);
+        var addResult = await _userManager.AddPasswordAsync(user, request.NewPassword);
+        if (!addResult.Succeeded)
+        {
+            return BadRequest(new { message = "Không thể đặt lại mật khẩu: " + string.Join("; ", addResult.Errors.Select(e => e.Description)) });
+        }
+
+        memoryCache.Remove(cacheKey);
+
+        return Ok(new
+        {
+            success = true,
+            message = "Đặt lại mật khẩu thành công! Mật khẩu mới đã được cập nhật vào hệ thống. Bạn có thể đăng nhập ngay bây giờ."
         });
     }
 

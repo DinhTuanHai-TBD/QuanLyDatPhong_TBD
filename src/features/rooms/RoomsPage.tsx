@@ -147,7 +147,7 @@ function RoomsPage() {
           padding: '8px 12px',
           background: '#f8fafc',
           borderRadius: 8,
-          border: '1px solid #e2e8f0',
+          border: '1.5px solid #94a3b8',
           marginBottom: 20,
           overflowX: 'auto',
           whiteSpace: 'nowrap'
@@ -376,7 +376,7 @@ function RoomsPage() {
                         style={{ 
                           height: 160, 
                           background: '#f8fafc', 
-                          borderBottom: '1px solid #f1f5f9',
+                          borderBottom: '1px solid #cbd5e1',
                           display: 'flex', 
                           flexDirection: 'column',
                           justifyContent: 'center', 
@@ -407,7 +407,7 @@ function RoomsPage() {
                           fontWeight: 600,
                           color: '#475569',
                           background: '#f1f5f9',
-                          border: '1px solid #e2e8f0',
+                          border: '1px solid #cbd5e1',
                           borderRadius: 4,
                           padding: '2px 8px',
                           letterSpacing: '0.5px'
@@ -561,7 +561,7 @@ function RoomsPage() {
               {selectedRoom.closeTime && <Descriptions.Item label="Giờ đóng cửa">{selectedRoom.closeTime}</Descriptions.Item>}
             </Descriptions>
             
-            <div style={{ marginTop: 8, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+            <div style={{ marginTop: 8, padding: 12, border: '1.5px solid #94a3b8', borderRadius: 8, background: '#f8fafc' }}>
               <Typography.Text strong style={{ display: 'block', marginBottom: 8, color: '#334155' }}>
                 Nội quy sử dụng phòng học:
               </Typography.Text>

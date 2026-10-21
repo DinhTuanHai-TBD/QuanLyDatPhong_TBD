@@ -195,8 +195,8 @@ export default function CalendarPage() {
   const [filterBuilding, setFilterBuilding] = useState<string>('all')
   const [filterRoomType, setFilterRoomType] = useState<string>('all')
   const [filterMinCapacity, setFilterMinCapacity] = useState<number | null>(null)
-  const [filterEquipments, setFilterEquipments] = useState<string[]>([])
-  const [filterStatuses, setFilterStatuses] = useState<string[]>([])
+  const [filterEquipments] = useState<string[]>([])
+  const [filterStatuses] = useState<string[]>([])
   const [selectedRoomId, setSelectedRoomId] = useState<number | string | 'all'>('all')
 
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
@@ -397,10 +397,7 @@ export default function CalendarPage() {
     )
   }, [roomsQuery.data])
 
-  const availableEquipments = useMemo(() => {
-    if (!equipmentsQuery.data) return []
-    return Array.from(new Set(equipmentsQuery.data.map((e: any) => e.type).filter(Boolean)))
-  }, [equipmentsQuery.data])
+
 
   const filteredRooms = useMemo(() => {
     if (!roomsQuery.data) return []
@@ -633,6 +630,16 @@ export default function CalendarPage() {
         return
       }
 
+      const isPending = String(conflictingBooking.status) === 'Pending' || String(conflictingBooking.status) === 'PendingSpecial' || String(conflictingBooking.status) === '0'
+      if (isPending) {
+        modal.warning({
+          title: 'Khung Giờ Đang Chờ Duyệt',
+          content: 'Khung giờ này đã có người khác gửi yêu cầu chờ duyệt, vui lòng chọn khung giờ khác.',
+          okText: 'Đã hiểu',
+        })
+        return
+      }
+
       modal.info({
         title: 'Khung Giờ Đã Có Người Đặt',
         content: `Phòng ${room.name} vào khung giờ này đã có người đăng ký (${
@@ -667,7 +674,7 @@ export default function CalendarPage() {
         className="calendar-timeline-table"
         style={{ 
           overflowX: 'auto', 
-          border: '1.5px solid #94A3B8', 
+          border: '2px solid #64748b', 
           borderRadius: 8, 
           background: '#fff' 
         }}
@@ -676,7 +683,7 @@ export default function CalendarPage() {
           <div 
             style={{ 
               display: 'flex', 
-              borderBottom: '2px solid #94A3B8', 
+              borderBottom: '2px solid #64748b', 
               background: '#F1F5F9' 
             }}
           >
@@ -690,7 +697,7 @@ export default function CalendarPage() {
                 background: '#F1F5F9',
                 padding: '12px 16px',
                 fontWeight: 600,
-                borderRight: '2px solid #94A3B8',
+                borderRight: '2px solid #64748b',
                 color: '#1e293b',
                 display: 'flex',
                 alignItems: 'center',
@@ -709,7 +716,7 @@ export default function CalendarPage() {
                       flex: 1,
                       padding: '12px 0',
                       textAlign: 'center',
-                      borderRight: i === totalHourHeaders - 1 ? 'none' : '1px solid #CBD5E1',
+                      borderRight: i === totalHourHeaders - 1 ? 'none' : '1.5px solid #94a3b8',
                       fontWeight: 600,
                       fontSize: 13,
                       color: isClosingCol ? '#64748b' : '#334155',
@@ -750,7 +757,7 @@ export default function CalendarPage() {
                 className={isHighlighted ? 'calendar-room-row-highlight' : undefined}
                 style={{ 
                   display: 'flex', 
-                  borderBottom: isHighlighted ? '2px solid #0284c7' : isLastRoom ? 'none' : '1px solid #CBD5E1', 
+                  borderBottom: isHighlighted ? '2px solid #0284c7' : isLastRoom ? 'none' : '1.5px solid #94a3b8', 
                   borderTop: isHighlighted ? '2px solid #0284c7' : undefined,
                   minHeight: 70,
                   backgroundColor: isHighlighted ? '#eff6ff' : undefined,
@@ -769,7 +776,7 @@ export default function CalendarPage() {
                     zIndex: 10,
                     background: isHighlighted ? '#e0f2fe' : '#fff',
                     padding: '12px 16px',
-                    borderRight: isHighlighted ? '2px solid #93c5fd' : '2px solid #94A3B8',
+                    borderRight: isHighlighted ? '2px solid #93c5fd' : '2px solid #64748b',
                     borderLeft: isHighlighted ? '6px solid #0284c7' : '6px solid transparent',
                     display: 'flex',
                     flexDirection: 'column',
@@ -836,8 +843,8 @@ export default function CalendarPage() {
                           borderRight: isLastSlot
                             ? 'none'
                             : isMainHour
-                              ? isHighlighted ? '1px solid #93c5fd' : '1px solid #CBD5E1'
-                              : isHighlighted ? '1px dashed #bfdbfe' : '1px dashed #E2E8F0',
+                              ? isHighlighted ? '1.5px solid #0284c7' : '1.5px solid #94a3b8'
+                              : isHighlighted ? '1px dashed #93c5fd' : '1px dashed #cbd5e1',
                           cursor: isSlotDisabled ? 'not-allowed' : 'pointer',
                           background: slotBg,
                         }}
@@ -1037,7 +1044,7 @@ export default function CalendarPage() {
           background: '#fff',
           padding: 16,
           borderRadius: 8,
-          border: '1px solid #f0f0f0',
+          border: '1.5px solid #94a3b8',
         }}
       >
         {events.length === 0 && (
@@ -1046,7 +1053,7 @@ export default function CalendarPage() {
               marginBottom: 12,
               padding: '10px 16px',
               background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              border: '1.5px solid #94a3b8',
               borderRadius: 8,
               display: 'flex',
               alignItems: 'center',
@@ -1133,7 +1140,7 @@ export default function CalendarPage() {
           style={{
             padding: '14px 18px',
             background: '#f8fafc',
-            borderBottom: '1px solid #e2e8f0',
+            borderBottom: '1.5px solid #cbd5e1',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -1304,7 +1311,7 @@ export default function CalendarPage() {
               />
             </div>
           </Col>
-          <Col xs={24} sm={12} md={6} lg={4}>
+          <Col xs={24} sm={12} md={6} lg={6}>
             <Text strong>Tòa nhà</Text>
             <Select
               value={filterBuilding}
@@ -1316,7 +1323,7 @@ export default function CalendarPage() {
               ]}
             />
           </Col>
-          <Col xs={24} sm={12} md={6} lg={4}>
+          <Col xs={24} sm={12} md={6} lg={6}>
             <Text strong>Loại phòng</Text>
             <Select
               value={filterRoomType}
@@ -1328,7 +1335,7 @@ export default function CalendarPage() {
               ]}
             />
           </Col>
-          <Col xs={24} sm={12} md={6} lg={4}>
+          <Col xs={24} sm={12} md={6} lg={6}>
             <Text strong>Sức chứa (≥)</Text>
             <InputNumber
               value={filterMinCapacity}
@@ -1336,37 +1343,6 @@ export default function CalendarPage() {
               style={{ width: '100%', marginTop: 8 }}
               placeholder="Nhập số người"
               min={1}
-            />
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
-            <Text strong>Thiết bị</Text>
-            <Select
-              mode="multiple"
-              value={filterEquipments}
-              onChange={setFilterEquipments}
-              style={{ width: '100%', marginTop: 8 }}
-              placeholder="Chọn thiết bị"
-              options={availableEquipments.map((e) => ({ value: e as string, label: e as string }))}
-              maxTagCount="responsive"
-            />
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
-            <Text strong>Trạng thái</Text>
-            <Select
-              mode="multiple"
-              value={filterStatuses}
-              onChange={setFilterStatuses}
-              style={{ width: '100%', marginTop: 8 }}
-              placeholder="Chọn trạng thái"
-              options={[
-                { value: 'school-schedule', label: 'Thời khóa biểu chính khóa' },
-                { value: 'approved', label: 'Đã duyệt' },
-                { value: 'using', label: 'Đang sử dụng' },
-                { value: 'completed', label: 'Hoàn thành' },
-                { value: 'pending', label: 'Chờ duyệt' },
-                { value: 'rejected', label: 'Từ chối / Đã hủy' },
-              ]}
-              maxTagCount="responsive"
             />
           </Col>
           {mode === 'week' && (
@@ -1389,7 +1365,7 @@ export default function CalendarPage() {
           )}
         </Row>
 
-        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1.5px solid #cbd5e1' }}>
           <Space size="middle" align="center" style={{ flexWrap: 'wrap' }}>
             <Badge color="#1e3a8a" text="Thời khóa biểu chính khóa" />
             <Badge color="#10b981" text="Đã duyệt" />
@@ -1527,7 +1503,7 @@ export default function CalendarPage() {
           )
         })()
       ) : bookingsQuery.isLoading || roomsQuery.isLoading || (bookingsQuery.isFetching && !bookingsQuery.data) ? (
-        <Card style={{ borderRadius: 12, padding: '64px 24px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0' }}>
+        <Card style={{ borderRadius: 12, padding: '64px 24px', textAlign: 'center', background: '#fff', border: '1.5px solid #94a3b8' }}>
           <Spin size="large" />
           <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600, color: '#0d2e5c' }}>
             Đang tải lịch phòng và thời khóa biểu...

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Typography,
   Table,
@@ -43,7 +44,7 @@ import SemesterScheduleView from "./SemesterScheduleView";
 import type { Room } from "../../types/room";
 import type { Booking, BookingStatus } from "../../types/booking";
 import dayjs from "dayjs";
-import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking } from "../../utils/bookingStatusUtils";
+import { isPendingBooking, isBookingUrgent, isBookingExpired, getEffectiveBooking, getUrgentRemainingText } from "../../utils/bookingStatusUtils";
 import { getOfficialRooms } from "../../utils/roomUtils";
 import { getStorageImageUrl, handleImageFallback } from "../../utils/storageUtils";
 import { normalizeDepartmentName } from "../../utils/academicPrograms";
@@ -210,9 +211,33 @@ export default function AdminPage() {
   const currentUserName = isAdmin ? "Quản trị viên (Admin)" : "Quản lý Đào tạo & CSVC";
   const queryClient = useQueryClient();
 
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+
+  const normalizeAdminTab = (t?: string | null): string => {
+    if (!t) return "analytics";
+    const lower = t.toLowerCase().trim();
+    if (lower === "equipment-issues" || lower === "issues" || lower === "issue" || lower === "equipment") {
+      return "equipment-issues";
+    }
+    if (lower === "rooms" || lower === "room") return "rooms";
+    if (lower === "users" || lower === "user") return "users";
+    if (lower === "settings" || lower === "setting") return "settings";
+    if (lower === "bookings" || lower === "booking") return "bookings";
+    if (lower === "bookings-pending" || lower === "pending") return "bookings-pending";
+    if (lower === "schedule" || lower === "academic-schedule") return "academic-schedule";
+    return lower;
+  };
+
   // Active Tab
-  const [activeTab, setActiveTab] = useState("analytics");
+  const [activeTab, setActiveTab] = useState(() => normalizeAdminTab(tabParam));
   const [isSemesterScheduleModalOpen, setIsSemesterScheduleModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(normalizeAdminTab(tabParam));
+    }
+  }, [tabParam]);
 
   // Safeguard: non-admin users cannot access user management or configuration
   useEffect(() => {
@@ -768,13 +793,14 @@ export default function AdminPage() {
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            backgroundColor: "#f1f5f9",
-            color: "#475569",
+            backgroundColor: "#fff7ed",
+            color: "#c2410c",
             padding: "3px 8px",
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: "1px solid #e2e8f0",
+            fontWeight: 600,
+            border: "1px solid #fed7aa",
+            boxShadow: "0 1px 2px rgba(234, 88, 12, 0.06)",
           }}
         >
           <span
@@ -782,8 +808,9 @@ export default function AdminPage() {
               width: 6,
               height: 6,
               borderRadius: "50%",
-              backgroundColor: "#64748b",
+              backgroundColor: "#ea580c",
               display: "inline-block",
+              boxShadow: "0 0 0 2px rgba(234, 88, 12, 0.2)",
             }}
           />
           Hết hạn
@@ -823,12 +850,15 @@ export default function AdminPage() {
       );
 
       if (urgent) {
+        const remainingText = record ? getUrgentRemainingText(record) : ''
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
             {tag}
             <span
               style={{
-                display: "inline-block",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
                 color: "#dc2626",
                 fontSize: 11.5,
                 fontWeight: 600,
@@ -839,7 +869,7 @@ export default function AdminPage() {
                 whiteSpace: "nowrap",
               }}
             >
-              [Cần duyệt gấp &lt; 2h]
+              Sắp đến giờ sử dụng {remainingText ? `(còn ${remainingText})` : "(< 2 tiếng)"}
             </span>
           </div>
         );
@@ -970,13 +1000,14 @@ export default function AdminPage() {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              backgroundColor: "#f8fafc",
-              color: "#475569",
+              backgroundColor: "#f5f3ff",
+              color: "#6d28d9",
               padding: "3px 8px",
               borderRadius: 6,
               fontSize: 12.5,
-              fontWeight: 500,
-              border: "1px solid #e2e8f0",
+              fontWeight: 600,
+              border: "1px solid #ddd6fe",
+              boxShadow: "0 1px 2px rgba(109, 40, 217, 0.06)",
             }}
           >
             <span
@@ -984,8 +1015,9 @@ export default function AdminPage() {
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                backgroundColor: "#64748b",
+                backgroundColor: "#8b5cf6",
                 display: "inline-block",
+                boxShadow: "0 0 0 2px rgba(139, 92, 246, 0.25)",
               }}
             />
             Đã hủy
@@ -1004,7 +1036,7 @@ export default function AdminPage() {
               borderRadius: 6,
               fontSize: 12.5,
               fontWeight: 500,
-              border: "1px solid #e2e8f0",
+              border: "1.5px solid #94a3b8",
             }}
           >
             <span
@@ -1078,7 +1110,7 @@ export default function AdminPage() {
                 height: 44,
                 borderRadius: 6,
                 background: "#f1f5f9",
-                border: "1px solid #e2e8f0",
+                border: "1.5px solid #94a3b8",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1921,7 +1953,7 @@ export default function AdminPage() {
     if (activeTab.startsWith("bookings")) {
       if (activeTab === "bookings-schedule") {
         return (
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 20 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <Text strong style={{ fontSize: 15, color: "#0f172a" }}>Lịch Biểu Đặt Phòng Tuần Hiện Tại</Text>
               <Select defaultValue="all" style={{ width: 180 }}>
@@ -1966,12 +1998,12 @@ export default function AdminPage() {
               <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 260 }}>
                 <div>
                   <div style={{ fontWeight: 700, color: "#cf1322", fontSize: 14 }}>
-                    Cảnh báo Admin: Có {urgentBookings.length} đơn đặt phòng cần duyệt gấp (&lt; 2 tiếng nữa sẽ bắt đầu)!
+                    Cảnh báo Admin: Có {urgentBookings.length} đơn đặt phòng sắp đến giờ sử dụng (&lt; 2 tiếng nữa sẽ bắt đầu)!
                   </div>
                   <div style={{ fontSize: 13, color: "#820014", marginTop: 2 }}>
                     {urgentBookings.slice(0, 2).map((b: Booking) => (
                       <span key={b.id} style={{ marginRight: 12 }}>
-                        • Đơn đặt phòng <strong>#{b.id}</strong> tại <strong>{b.roomName}</strong> chỉ còn dưới 2 tiếng nữa sẽ diễn ra ({dayjs(b.startTime).format("HH:mm DD/MM")}), cần phê duyệt gấp!
+                        • Đơn đặt phòng <strong>#{b.id}</strong> tại <strong>{b.roomName}</strong> chỉ còn dưới 2 tiếng nữa sẽ diễn ra ({dayjs(b.startTime).format("HH:mm DD/MM")}), cần phê duyệt sớm!
                       </span>
                     ))}
                     {urgentBookings.length > 2 && <span>và {urgentBookings.length - 2} đơn khác...</span>}
@@ -1994,7 +2026,7 @@ export default function AdminPage() {
           )}
 
           {/* Flat Toolbar */}
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <Space wrap size={[8, 8]} align="center">
@@ -2033,7 +2065,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
             {bookingsQuery.isLoading ? (
               <div style={{ padding: 24 }}>
                 <Skeleton active paragraph={{ rows: 6 }} />
@@ -2058,7 +2090,7 @@ export default function AdminPage() {
       return (
         <div>
           {/* Flat Toolbar */}
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <Space wrap size={[8, 8]} align="center">
@@ -2113,11 +2145,11 @@ export default function AdminPage() {
           </div>
 
           {roomsQuery.isLoading ? (
-            <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24 }}>
+            <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: 24 }}>
               <Skeleton active paragraph={{ rows: 6 }} />
             </div>
           ) : roomViewMode === "table" ? (
-            <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
               <Table
                 className="academic-table"
                 columns={roomColumns}
@@ -2187,7 +2219,7 @@ export default function AdminPage() {
                         </Tag>
                       </div>
                     }
-                    style={{ borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden" }}
+                    style={{ borderRadius: 8, border: "1.5px solid #94a3b8", overflow: "hidden" }}
                     actions={[
                       <button
                         key="edit"
@@ -2252,7 +2284,7 @@ export default function AdminPage() {
     if (activeTab === "equipment-inventory") {
       return (
         <div>
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <Input
@@ -2273,7 +2305,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
             <Table
               className="academic-table"
               columns={equipmentInventoryColumns}
@@ -2292,7 +2324,7 @@ export default function AdminPage() {
     if (activeTab === "equipment-issues") {
       return (
         <div>
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={18}>
                 <Space wrap size="middle">
@@ -2336,7 +2368,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
             <Table
               className="academic-table"
               columns={issueColumns}
@@ -2354,7 +2386,7 @@ export default function AdminPage() {
 
     if (!isAdmin && (activeTab.startsWith("users") || activeTab.startsWith("settings"))) {
       return (
-        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 32, textAlign: "center" }}>
+        <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: 32, textAlign: "center" }}>
           <Empty
             description={
               <div>
@@ -2390,7 +2422,7 @@ export default function AdminPage() {
 
       return (
         <div>
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <Space wrap size="middle">
@@ -2429,7 +2461,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
             <Table
               className="academic-table"
               columns={userColumns}
@@ -2451,7 +2483,7 @@ export default function AdminPage() {
 
     if (activeTab === "settings-shifts") {
       return (
-        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 24, maxWidth: 840 }}>
+        <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: 24, maxWidth: 840 }}>
           <div>
             <div style={{ marginBottom: 16 }}>
                 <Title level={4} style={{ color: "#0f172a", marginBottom: 6 }}>
@@ -2490,7 +2522,7 @@ export default function AdminPage() {
                   <div
                     style={{
                       background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
+                      border: "1.5px solid #94a3b8",
                       borderRadius: 8,
                       padding: "14px 16px",
                     }}
@@ -2928,7 +2960,7 @@ export default function AdminPage() {
                     height: 200,
                     borderRadius: 8,
                     overflow: "hidden",
-                    border: "1.5px solid #cbd5e1",
+                    border: "1.5px solid #94a3b8",
                     boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
                     background: "#f8fafc",
                   }}
@@ -3411,7 +3443,7 @@ export default function AdminPage() {
                 style={{
                   padding: "12px 14px",
                   borderRadius: 6,
-                  border: "1px solid #e2e8f0",
+                  border: "1.5px solid #94a3b8",
                   background: "#f8fafc",
                 }}
               >

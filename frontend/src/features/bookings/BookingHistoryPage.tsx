@@ -1,10 +1,11 @@
 
 import { QRCodeSVG } from 'qrcode.react'
-import { Modal, Form, DatePicker, Select, Row, Col, Alert, Button, Empty, Tag, Typography, Input, InputNumber, Pagination, App } from 'antd'
+import { useSearchParams } from 'react-router-dom'
+import { Modal, Form, Row, Col, Alert, Button, Empty, Tag, Typography, Input, InputNumber, Pagination, App } from 'antd'
 import dayjs from 'dayjs'
-import { HomeOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
+import { HomeOutlined, SearchOutlined, ReloadOutlined, ClockCircleOutlined, LockOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { http, formatApiError } from '../../api/http'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
@@ -27,13 +28,7 @@ async function fetchMyBookings(): Promise<Booking[]> {
   return response.data
 }
 
-const TIME_OPTIONS = [
-  '07:00', '07:30', '08:00', '08:30', '09:00', '09:30',
-  '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
-  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
-  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30',
-  '19:00', '19:30', '20:00', '20:30', '21:00'
-]
+
 
 const getDurationText = (startTime: string, endTime: string) => {
   const start = dayjs(startTime)
@@ -66,16 +61,26 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          backgroundColor: '#f1f5f9',
-          color: '#475569',
+          backgroundColor: '#fff7ed',
+          color: '#c2410c',
           padding: '4px 10px',
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #e2e8f0'
+          border: '1px solid #fed7aa',
+          boxShadow: '0 1px 2px rgba(234, 88, 12, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#64748b', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#ea580c',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(234, 88, 12, 0.2)'
+          }}
+        />
         Hết hạn
       </span>
     )
@@ -101,10 +106,20 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #fef3c7'
+          border: '1px solid #fde68a',
+          boxShadow: '0 1px 2px rgba(217, 119, 6, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#f59e0b',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.25)'
+          }}
+        />
         {status === 'PendingSpecial' ? 'Chờ duyệt đặc biệt' : 'Chờ phê duyệt'}
       </span>
     )
@@ -123,10 +138,20 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #d1fae5'
+          border: '1px solid #a7f3d0',
+          boxShadow: '0 1px 2px rgba(16, 185, 129, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#10b981',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.25)'
+          }}
+        />
         Đã phê duyệt
       </span>
     )
@@ -145,10 +170,20 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #fee2e2'
+          border: '1px solid #fecaca',
+          boxShadow: '0 1px 2px rgba(239, 68, 68, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#ef4444', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#ef4444',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)'
+          }}
+        />
         Từ chối
       </span>
     )
@@ -161,16 +196,26 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          backgroundColor: '#f8fafc',
-          color: '#475569',
+          backgroundColor: '#f5f3ff',
+          color: '#6d28d9',
           padding: '4px 10px',
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #e2e8f0'
+          border: '1px solid #ddd6fe',
+          boxShadow: '0 1px 2px rgba(109, 40, 217, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#64748b', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#8b5cf6',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)'
+          }}
+        />
         Đã hủy
       </span>
     )
@@ -189,10 +234,20 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #e0f2fe'
+          border: '1px solid #bae6fd',
+          boxShadow: '0 1px 2px rgba(2, 132, 199, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#0284c7', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#0284c7',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(2, 132, 199, 0.25)'
+          }}
+        />
         Đang sử dụng
       </span>
     )
@@ -211,10 +266,20 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          border: '1px solid #ccfbf1'
+          border: '1px solid #99f6e4',
+          boxShadow: '0 1px 2px rgba(20, 184, 166, 0.06)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#14b8a6', display: 'inline-block' }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: '#14b8a6',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(20, 184, 166, 0.25)'
+          }}
+        />
         Hoàn thành
       </span>
     )
@@ -226,16 +291,25 @@ const renderHistoryStatusTag = (status: any, record?: any) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: '#f8fafc',
-        color: '#475569',
+        backgroundColor: '#f1f5f9',
+        color: '#334155',
         padding: '4px 10px',
         borderRadius: 6,
         fontSize: 13,
         fontWeight: 600,
-        border: '1px solid #e2e8f0'
+        border: '1px solid #cbd5e1'
       }}
     >
-      <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#94a3b8', display: 'inline-block' }} />
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          backgroundColor: '#64748b',
+          display: 'inline-block',
+          boxShadow: '0 0 0 2px rgba(100, 116, 139, 0.2)'
+        }}
+      />
       {status}
     </span>
   )
@@ -287,7 +361,7 @@ function BookingCard({
       style={{
         background: '#ffffff',
         borderRadius: 12,
-        border: '1px solid #e2e8f0',
+        border: '1.5px solid #94a3b8',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
         padding: '20px 24px',
         display: 'flex',
@@ -305,7 +379,7 @@ function BookingCard({
           flexWrap: 'wrap',
           gap: 12,
           paddingBottom: 14,
-          borderBottom: '1px solid #f1f5f9'
+          borderBottom: '1.5px solid #cbd5e1'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -433,7 +507,7 @@ function BookingCard({
           flexWrap: 'wrap',
           gap: 12,
           paddingTop: 14,
-          borderTop: '1px solid #f1f5f9'
+          borderTop: '1.5px solid #cbd5e1'
         }}
       >
         {/* Thông báo trạng thái Check-in */}
@@ -612,10 +686,29 @@ function BookingHistoryPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [checkoutForm] = Form.useForm()
 
-  const [searchText, setSearchText] = useState('')
-  const [statusTab, setStatusTab] = useState<StatusTabKey>('all')
+  const [searchParams] = useSearchParams()
+  const rawStatusParam = searchParams.get('status')
+  const statusParam = (rawStatusParam ? rawStatusParam.toLowerCase() : null) as StatusTabKey | null
+  const searchParam = searchParams.get('search')
+
+  const [searchText, setSearchText] = useState(() => searchParam || '')
+  const [statusTab, setStatusTab] = useState<StatusTabKey>(() => {
+    if (statusParam && ['all', 'pending', 'approved', 'rejected', 'cancelled', 'expired'].includes(statusParam)) {
+      return statusParam
+    }
+    return 'all'
+  })
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 6
+
+  useEffect(() => {
+    if (statusParam && ['all', 'pending', 'approved', 'rejected', 'cancelled', 'expired'].includes(statusParam)) {
+      setStatusTab(statusParam)
+    }
+    if (searchParam !== null && searchParam !== undefined) {
+      setSearchText(searchParam)
+    }
+  }, [statusParam, searchParam])
 
   const checkinMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -724,9 +817,26 @@ function BookingHistoryPage() {
     }
   })
 
-  const watchedDate = Form.useWatch('date', editForm) || dayjs()
-  const watchedStartTime = Form.useWatch('startTime', editForm) || '07:00'
-  const watchedEndTime = Form.useWatch('endTime', editForm) || '08:00'
+  const watchedDate = useMemo(() => {
+    if (bookingToEdit?.startTime) {
+      return dayjs(bookingToEdit.startTime).startOf('day')
+    }
+    return dayjs()
+  }, [bookingToEdit])
+
+  const watchedStartTime = useMemo(() => {
+    if (bookingToEdit?.startTime) {
+      return dayjs(bookingToEdit.startTime).format('HH:mm')
+    }
+    return '07:00'
+  }, [bookingToEdit])
+
+  const watchedEndTime = useMemo(() => {
+    if (bookingToEdit?.endTime) {
+      return dayjs(bookingToEdit.endTime).format('HH:mm')
+    }
+    return '08:00'
+  }, [bookingToEdit])
 
   const selectedRoom = roomsQuery.data?.find(r => r.id === bookingToEdit?.roomId || r.name === bookingToEdit?.roomName)
   const selectedRoomCapacity = selectedRoom?.capacity || bookingToEdit?.participantCount || 50
@@ -774,13 +884,8 @@ function BookingHistoryPage() {
 
   const handleEditClick = (booking: Booking) => {
     setBookingToEdit(booking)
-    const startDayjs = dayjs(booking.startTime)
-    const endDayjs = dayjs(booking.endTime)
 
     editForm.setFieldsValue({
-      date: startDayjs.isValid() ? startDayjs.startOf('day') : dayjs(),
-      startTime: startDayjs.isValid() ? startDayjs.format('HH:mm') : '07:00',
-      endTime: endDayjs.isValid() ? endDayjs.format('HH:mm') : '08:00',
       purpose: booking.purpose || '',
       participantCount: booking.participantCount || 1,
       department: normalizeDepartmentName(booking.department) || '',
@@ -796,18 +901,6 @@ function BookingHistoryPage() {
       const values = await editForm.validateFields()
       if (!bookingToEdit) return
 
-      const selectedDate = values.date as dayjs.Dayjs
-      const dateStr = selectedDate.format('YYYY-MM-DD')
-      const startTimeIso = `${dateStr}T${values.startTime}:00`
-      const endTimeIso = `${dateStr}T${values.endTime}:00`
-
-      const [startH, startM] = (values.startTime as string).split(':').map(Number)
-      const [endH, endM] = (values.endTime as string).split(':').map(Number)
-      if (endH * 60 + endM <= startH * 60 + startM) {
-        AppMessage.error('Giờ kết thúc phải lớn hơn giờ bắt đầu!')
-        return
-      }
-
       if (values.participantCount > selectedRoomCapacity) {
         AppMessage.error(`Số lượng người (${values.participantCount}) vượt quá sức chứa tối đa của phòng ${bookingToEdit.roomName} (${selectedRoomCapacity} người).`)
         return
@@ -815,8 +908,8 @@ function BookingHistoryPage() {
 
       const updatedPayload: Partial<Booking> = {
         ...bookingToEdit,
-        startTime: startTimeIso,
-        endTime: endTimeIso,
+        startTime: bookingToEdit.startTime,
+        endTime: bookingToEdit.endTime,
         purpose: values.purpose,
         participantCount: values.participantCount,
         department: normalizeDepartmentName(values.department),
@@ -1171,7 +1264,7 @@ function BookingHistoryPage() {
           style={{
             background: '#ffffff',
             borderRadius: 12,
-            border: '1px solid #e2e8f0',
+            border: '1.5px solid #94a3b8',
             padding: '48px 24px',
             textAlign: 'center'
           }}
@@ -1258,7 +1351,7 @@ function BookingHistoryPage() {
                 padding: '12px 16px',
                 background: '#f8fafc',
                 borderRadius: 8,
-                border: '1px solid #e2e8f0',
+                border: '1.5px solid #94a3b8',
                 flexWrap: 'wrap',
                 gap: 8
               }}
@@ -1282,7 +1375,7 @@ function BookingHistoryPage() {
             </div>
 
             {isExpiredBooking(selectedBookingForDetail) && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: 8, color: '#475569', fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ background: '#f8fafc', border: '1.5px solid #94a3b8', padding: '10px 14px', borderRadius: 8, color: '#475569', fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <strong style={{ color: '#334155' }}>Thông báo hết hạn:</strong>{' '}
                   <span>Đơn đặt phòng đã hết hạn xử lý do đã quá thời gian bắt đầu sử dụng.</span>
@@ -1434,7 +1527,7 @@ function BookingHistoryPage() {
         centered
       >
         <Form form={checkoutForm} layout="vertical" onFinish={handleCheckoutSubmit}>
-          <div style={{ marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 6, border: '1.5px solid #94a3b8' }}>
             <div style={{ marginBottom: 4 }}>Phòng: <strong>{selectedBookingForQR?.roomName}</strong></div>
             <div>Giờ Check-in: <strong>{selectedBookingForQR?.actualStartTime ? dayjs(selectedBookingForQR.actualStartTime).format('HH:mm DD/MM/YYYY') : 'N/A'}</strong></div>
           </div>
@@ -1489,42 +1582,50 @@ function BookingHistoryPage() {
         destroyOnHidden
       >
         {bookingToEdit && (
-          <div style={{ paddingTop: 8 }}>
-            {/* 1. Thông tin phòng */}
-            <div style={{ background: '#f8fafc', borderRadius: 8, border: '1px solid #cbd5e1', padding: '12px 16px', marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <div>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Phòng đăng ký (Cố định):</Typography.Text>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: '#0d2e5c', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <HomeOutlined style={{ color: '#1890ff' }} />
+          <div style={{ paddingTop: 4 }}>
+            {/* 1. Khối thông tin cố định: Phòng học & Thời gian giữ chỗ */}
+            <div style={{ background: '#f8fafc', borderRadius: 10, border: '1.5px solid #94a3b8', padding: '14px 16px', marginBottom: 18 }}>
+              <Row gutter={[16, 12]}>
+                <Col xs={24} sm={12}>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>Phòng đăng ký (Cố định):</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: '#0d2e5c', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <HomeOutlined style={{ color: '#0284c7' }} />
                     <span>{bookingToEdit.roomName}</span>
+                    <Tag color="blue" style={{ borderRadius: 4, marginLeft: 4, fontSize: 11.5, fontWeight: 600 }}>
+                      Sức chứa: {selectedRoomCapacity} người
+                    </Tag>
                   </div>
-                </div>
-                <Tag color="blue" style={{ borderRadius: 6, padding: '4px 10px', fontSize: 13, fontWeight: 600 }}>
-                  Sức chứa: {selectedRoomCapacity} người
-                </Tag>
-              </div>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>Thời gian sử dụng (Cố định):</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: '#0d2e5c', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ClockCircleOutlined style={{ color: '#0284c7' }} />
+                    <span>
+                      {dayjs(bookingToEdit.startTime).format('HH:mm')} - {dayjs(bookingToEdit.endTime).format('HH:mm')}
+                    </span>
+                    <span style={{ color: '#475569', fontWeight: 500, fontSize: 13 }}>
+                      ({dayjs(bookingToEdit.startTime).format('DD/MM/YYYY')})
+                    </span>
+                    <Tag color="default" icon={<LockOutlined />} style={{ borderRadius: 4, marginLeft: 4, fontSize: 11 }}>
+                      Đã giữ chỗ
+                    </Tag>
+                  </div>
+                </Col>
+              </Row>
+
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginTop: 12, borderRadius: 8, fontSize: 12.5, background: '#eff6ff', borderColor: '#bfdbfe' }}
+                description={
+                  <span>
+                    <strong>Quy định:</strong> Khung giờ và phòng học đã được giữ chỗ trong hàng chờ xét duyệt. Bạn có thể cập nhật mục đích sử dụng, số lượng người, thiết bị mượn kèm và thông tin liên hệ bên dưới. Nếu cần đổi ngày, giờ hoặc phòng khác, vui lòng <strong>Hủy yêu cầu này</strong> và đặt đơn mới.
+                  </span>
+                }
+              />
             </div>
 
             <Form form={editForm} layout="vertical">
-              {/* 2. Chọn lại Ngày & Thời gian mượn */}
-              <Row gutter={16}>
-                <Col xs={24} sm={12}>
-                  <Form.Item name="date" label="Ngày mượn phòng" rules={[{ required: true, message: 'Vui lòng chọn ngày mượn!' }]}>
-                    <DatePicker format="DD/MM/YYYY" style={{ width: '100%' }} allowClear={false} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <Form.Item name="startTime" label="Giờ bắt đầu" rules={[{ required: true, message: 'Chọn giờ!' }]}>
-                    <Select options={TIME_OPTIONS.map(t => ({ label: t, value: t }))} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <Form.Item name="endTime" label="Giờ kết thúc" rules={[{ required: true, message: 'Chọn giờ!' }]}>
-                    <Select options={TIME_OPTIONS.map(t => ({ label: t, value: t }))} />
-                  </Form.Item>
-                </Col>
-              </Row>
 
               {/* 3. Nội dung sử dụng */}
               <Row gutter={16}>

@@ -138,7 +138,7 @@ var studentCalendar = BookingCalendarPolicy.VisibleTo("student-viewer").Compile(
 foreach (var status in Enum.GetValues<BookingStatus>())
 {
     var otherBooking = new Booking { UserId = "other-user", Status = status };
-    Check(studentCalendar(otherBooking) == (status is BookingStatus.Approved or BookingStatus.Using or BookingStatus.Completed),
+    Check(studentCalendar(otherBooking) == (status is BookingStatus.Approved or BookingStatus.Using or BookingStatus.Completed or BookingStatus.Pending),
         $"Student calendar visibility for another user's {status} booking");
     otherBooking.UserId = "student-viewer";
     Check(studentCalendar(otherBooking), $"Own {status} booking remains visible");

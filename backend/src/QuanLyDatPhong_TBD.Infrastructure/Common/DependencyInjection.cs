@@ -48,7 +48,8 @@ public static class DependencyInjection
                 options.Password.RequireUppercase = false;
             })
             .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<ApplicationDbContext>();
+            .AddEntityFrameworkStores<ApplicationDbContext>()
+            ;
 
         services.AddScoped<IRoomReadService, RoomReadService>();
         services.AddScoped<IBookingService, BookingService>();

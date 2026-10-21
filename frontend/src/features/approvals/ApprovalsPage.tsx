@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Card, Table, Tag, Typography, Button, DatePicker, Select, Input, Modal, Popconfirm, App } from 'antd'
 import { CheckCircleOutlined, CheckCircleFilled, CheckOutlined, CloseCircleOutlined, SearchOutlined, WarningOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import { getUserRole, getUserEmail } from '../../api/authUtils'
 import type { Booking } from '../../types/booking'
 import type { Room } from '../../types/room'
-import { isBookingUrgent, isBookingExpired, getEffectiveBooking } from '../../utils/bookingStatusUtils'
+import { isBookingUrgent, isBookingExpired, getEffectiveBooking, getUrgentRemainingText } from '../../utils/bookingStatusUtils'
 import { normalizeDepartmentName } from '../../utils/academicPrograms'
 
 dayjs.extend(isBetween)
@@ -21,16 +22,36 @@ const { Title, Text } = Typography
 
 export default function ApprovalsPage() {
   const { message } = App.useApp()
+  const [searchParams] = useSearchParams()
+  const statusParam = searchParams.get('status')
+  const userParam = searchParams.get('user')
+
   const userRole = getUserRole()
   const currentUserEmail = getUserEmail()
   const canApprove = userRole === 'admin' || userRole === 'approver'
   const queryClient = useQueryClient()
 
   // Filters
+  const normalizeStatus = (val?: string | null) => {
+    if (!val) return 'All'
+    const valid = ['All', 'Pending', 'Approved', 'Using', 'Completed', 'Rejected', 'Cancelled', 'Expired', 'NoShow']
+    const found = valid.find(opt => opt.toLowerCase() === val.toLowerCase())
+    return found || val
+  }
+
   const [filterDate, setFilterDate] = useState<dayjs.Dayjs | null>(null)
   const [filterRoom, setFilterRoom] = useState<number | null>(null)
-  const [filterUser, setFilterUser] = useState<string>('')
-  const [filterStatus, setFilterStatus] = useState<string>('All')
+  const [filterUser, setFilterUser] = useState<string>(() => userParam || '')
+  const [filterStatus, setFilterStatus] = useState<string>(() => normalizeStatus(statusParam))
+
+  useEffect(() => {
+    if (statusParam) {
+      setFilterStatus(normalizeStatus(statusParam))
+    }
+    if (userParam) {
+      setFilterUser(userParam)
+    }
+  }, [statusParam, userParam])
 
   // Modals
   const [processModalOpen, setProcessModalOpen] = useState(false)
@@ -195,16 +216,26 @@ export default function ApprovalsPage() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            backgroundColor: '#f1f5f9',
-            color: '#475569',
+            backgroundColor: '#fff7ed',
+            color: '#c2410c',
             padding: '3px 8px',
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: '1px solid #e2e8f0'
+            fontWeight: 600,
+            border: '1px solid #fed7aa',
+            boxShadow: '0 1px 2px rgba(234, 88, 12, 0.06)'
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#64748b', display: 'inline-block' }} />
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: '#ea580c',
+              display: 'inline-block',
+              boxShadow: '0 0 0 2px rgba(234, 88, 12, 0.2)'
+            }}
+          />
           Hết hạn
         </span>
       )
@@ -222,11 +253,21 @@ export default function ApprovalsPage() {
             padding: '3px 8px',
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: '1px solid #fef3c7'
+            fontWeight: 600,
+            border: '1px solid #fde68a',
+            boxShadow: '0 1px 2px rgba(217, 119, 6, 0.06)'
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }} />
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: '#f59e0b',
+              display: 'inline-block',
+              boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.25)'
+            }}
+          />
           Chờ phê duyệt
         </span>
       )
@@ -244,11 +285,21 @@ export default function ApprovalsPage() {
             padding: '3px 8px',
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: '1px solid #d1fae5'
+            fontWeight: 600,
+            border: '1px solid #a7f3d0',
+            boxShadow: '0 1px 2px rgba(16, 185, 129, 0.06)'
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: '#10b981',
+              display: 'inline-block',
+              boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.25)'
+            }}
+          />
           Đã phê duyệt
         </span>
       )
@@ -266,11 +317,21 @@ export default function ApprovalsPage() {
             padding: '3px 8px',
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: '1px solid #fee2e2'
+            fontWeight: 600,
+            border: '1px solid #fecaca',
+            boxShadow: '0 1px 2px rgba(239, 68, 68, 0.06)'
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ef4444', display: 'inline-block' }} />
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: '#ef4444',
+              display: 'inline-block',
+              boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)'
+            }}
+          />
           Từ chối
         </span>
       )
@@ -283,16 +344,26 @@ export default function ApprovalsPage() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            backgroundColor: '#f8fafc',
-            color: '#475569',
+            backgroundColor: '#f5f3ff',
+            color: '#6d28d9',
             padding: '3px 8px',
             borderRadius: 6,
             fontSize: 12.5,
-            fontWeight: 500,
-            border: '1px solid #e2e8f0'
+            fontWeight: 600,
+            border: '1px solid #ddd6fe',
+            boxShadow: '0 1px 2px rgba(109, 40, 217, 0.06)'
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#64748b', display: 'inline-block' }} />
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: '#8b5cf6',
+              display: 'inline-block',
+              boxShadow: '0 0 0 2px rgba(139, 92, 246, 0.25)'
+            }}
+          />
           Đã hủy
         </span>
       )
@@ -310,7 +381,7 @@ export default function ApprovalsPage() {
           borderRadius: 6,
           fontSize: 12.5,
           fontWeight: 500,
-          border: '1px solid #e2e8f0'
+          border: '1.5px solid #94a3b8'
         }}
       >
         <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#94a3b8', display: 'inline-block' }} />
@@ -520,7 +591,7 @@ export default function ApprovalsPage() {
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
               backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              border: '1.5px solid #94a3b8',
               borderRadius: 6,
               padding: '6px 10px',
               marginTop: 2
@@ -538,13 +609,16 @@ export default function ApprovalsPage() {
       width: 155,
       render: (_: any, record: Booking) => {
         const urgent = isBookingUrgent(record)
+        const remainingText = urgent ? getUrgentRemainingText(record) : ''
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
             {renderStatusTag(record.status, record.rejectReason || record.rejectionReason || record.adminNotes || '')}
             {urgent && (
               <span
                 style={{
-                  display: 'inline-block',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
                   color: '#dc2626',
                   fontSize: 11,
                   fontWeight: 600,
@@ -556,7 +630,7 @@ export default function ApprovalsPage() {
                   lineHeight: 1.3
                 }}
               >
-                [Cần duyệt gấp &lt; 2h]
+                Sắp đến giờ sử dụng {remainingText ? `(còn ${remainingText})` : '(< 2 tiếng)'}
               </span>
             )}
           </div>
@@ -704,16 +778,16 @@ export default function ApprovalsPage() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 280 }}>
             <div>
               <div style={{ fontWeight: 700, color: '#cf1322', fontSize: 14.5 }}>
-                Cảnh báo khẩn cấp: Có {urgentBookings.length} đơn đặt phòng cần duyệt gấp (&lt; 2 tiếng nữa sẽ bắt đầu)!
+                Cảnh báo khẩn cấp: Có {urgentBookings.length} đơn đặt phòng sắp đến giờ sử dụng (&lt; 2 tiếng nữa sẽ bắt đầu)!
               </div>
               <div style={{ fontSize: 13, color: '#820014', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {urgentBookings.slice(0, 3).map((b) => (
                   <span key={b.id}>
-                    • Đơn đặt phòng <strong>#{b.id}</strong> tại <strong>{b.roomName}</strong> chỉ còn dưới 2 tiếng nữa sẽ diễn ra ({dayjs(b.startTime).format('HH:mm DD/MM')}), cần phê duyệt gấp!
+                    • Đơn đặt phòng <strong>#{b.id}</strong> tại <strong>{b.roomName}</strong> chỉ còn dưới 2 tiếng nữa sẽ diễn ra ({dayjs(b.startTime).format('HH:mm DD/MM')}), cần phê duyệt sớm!
                   </span>
                 ))}
                 {urgentBookings.length > 3 && (
-                  <span style={{ fontStyle: 'italic' }}>...và {urgentBookings.length - 3} đơn khác cần duyệt gấp.</span>
+                  <span style={{ fontStyle: 'italic' }}>...và {urgentBookings.length - 3} đơn khác sắp đến giờ sử dụng.</span>
                 )}
               </div>
             </div>
@@ -729,7 +803,7 @@ export default function ApprovalsPage() {
         </div>
       )}
       
-      <Card style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+      <Card style={{ marginBottom: 24, borderRadius: 12, border: '1.5px solid #94a3b8' }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 180px' }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Ngày sử dụng</Text>
@@ -788,7 +862,7 @@ export default function ApprovalsPage() {
       </Card>
 
       <Card 
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }} 
+        style={{ borderRadius: 12, border: '1.5px solid #94a3b8', overflow: 'hidden' }} 
         styles={{ body: { padding: 0 } }}
       >
         <Table
@@ -819,7 +893,7 @@ export default function ApprovalsPage() {
       >
         {processingBooking && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
-            <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1.5px solid #94a3b8' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px 12px' }}>
                 <Text type="secondary">Phòng:</Text>
                 <Text strong style={{ color: '#0d2e5c' }}>{processingBooking.roomName}</Text>
@@ -857,7 +931,7 @@ export default function ApprovalsPage() {
                   return isExp ? (
                     <>
                       <Text type="secondary">Thông tin hệ thống:</Text>
-                      <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', padding: '6px 10px', borderRadius: 6, color: '#475569', fontSize: 13 }}>
+                      <div style={{ background: '#f8fafc', border: '1.5px dashed #94a3b8', padding: '6px 10px', borderRadius: 6, color: '#475569', fontSize: 13 }}>
                         {reason}
                       </div>
                     </>
@@ -882,7 +956,7 @@ export default function ApprovalsPage() {
                   {[processingBooking, ...conflictQuery.data.conflicts]
                     .sort((a, b) => getPriority(a).level - getPriority(b).level)
                     .map(b => (
-                    <div key={b.id} style={{ background: '#fff', padding: 12, borderRadius: 6, border: b.id === processingBooking.id ? '2px solid #1890ff' : '1px solid #d9d9d9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={b.id} style={{ background: '#fff', padding: 12, borderRadius: 6, border: b.id === processingBooking.id ? '2px solid #0d2e5c' : '1.5px solid #94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div>
                           <Tag color="magenta">Ưu tiên {getPriority(b).level}: {getPriority(b).label}</Tag>
@@ -930,7 +1004,7 @@ export default function ApprovalsPage() {
 
 
             {(processingBooking.status === 'Expired' || isBookingExpired(processingBooking)) && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 12, borderRadius: 8, color: '#64748b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ background: '#f8fafc', border: '1.5px solid #94a3b8', padding: 12, borderRadius: 8, color: '#64748b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <InfoCircleOutlined style={{ fontSize: 16, color: '#64748b' }} />
                 <span>Đơn đặt phòng đã hết hạn xử lý do đã quá thời gian bắt đầu sử dụng. Không thể thao tác duyệt đơn quá giờ.</span>
               </div>

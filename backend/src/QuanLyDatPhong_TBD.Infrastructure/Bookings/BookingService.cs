@@ -135,11 +135,20 @@ internal sealed class BookingService : IBookingService
             return BookingResult.Failure("Phòng này hiện không thể đặt.");
         }
 
-        var settings = await _policies.GetAsync(cancellationToken);
-        var violation = BookingPolicy.Validate(settings, request.RoomId,
-            request.StartTime, request.EndTime, DateTime.UtcNow);
-        if (violation != null) return BookingResult.Failure(violation);
+        var settings = await _policies.GetAsync(cancellationToken);
+
+        var managerRoleIds = await _dbContext.Roles
+            .Where(r => r.Name == "Admin" || r.Name == "Approver" || r.Name == "Manager")
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
 
+        var isAdmin = managerRoleIds.Count > 0 && await _dbContext.UserRoles
+            .AnyAsync(ur => ur.UserId == userId && managerRoleIds.Contains(ur.RoleId), cancellationToken);
+
+        var violation = BookingPolicy.Validate(settings, request.RoomId,
+            request.StartTime, request.EndTime, DateTime.UtcNow, approval: isAdmin);
+        if (violation != null) return BookingResult.Failure(violation);
+
         var hasConflict = await _dbContext.Bookings.AnyAsync(
             booking => booking.RoomId == request.RoomId
                 && (booking.Status == BookingStatus.Pending || booking.Status == BookingStatus.Approved || booking.Status == BookingStatus.Using)
@@ -154,13 +163,7 @@ internal sealed class BookingService : IBookingService
 
         var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
-        var managerRoleIds = await _dbContext.Roles
-            .Where(r => r.Name == "Admin" || r.Name == "Approver" || r.Name == "Manager")
-            .Select(r => r.Id)
-            .ToListAsync(cancellationToken);
 
-        var isAdmin = managerRoleIds.Count > 0 && await _dbContext.UserRoles
-            .AnyAsync(ur => ur.UserId == userId && managerRoleIds.Contains(ur.RoleId), cancellationToken);
 
         var facultyRoleId = await _dbContext.Roles
             .Where(r => r.Name == "Faculty")
@@ -349,6 +352,13 @@ internal sealed class BookingService : IBookingService
         if (booking.Status != BookingStatus.Pending)
         {
             return BookingResult.Failure("Chỉ được phép chỉnh sửa yêu cầu đặt phòng khi đang ở trạng thái Chờ duyệt.");
+        }
+
+        // Phương án B: Khóa cố định khung giờ và phòng học đã giữ chỗ trong hàng chờ xét duyệt
+        if (Math.Abs((request.StartTime - booking.StartTime).TotalMinutes) > 1 ||
+            Math.Abs((request.EndTime - booking.EndTime).TotalMinutes) > 1)
+        {
+            return BookingResult.Failure("Khung giờ và phòng học đã được giữ chỗ cố định trong hàng chờ xét duyệt. Nếu muốn thay đổi thời gian hoặc phòng, vui lòng hủy yêu cầu này và tạo đơn mới.");
         }
 
         var room = await _dbContext.Rooms.FirstOrDefaultAsync(r => r.Id == booking.RoomId, cancellationToken);

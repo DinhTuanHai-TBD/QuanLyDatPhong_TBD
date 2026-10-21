@@ -5,6 +5,7 @@ import { Alert, Button, Form, Input, App } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { http, formatApiError } from '../../api/http'
 import { STATIC_IMAGES, handleImageFallback } from '../../utils/storageUtils'
+import ForgotPasswordModal from './ForgotPasswordModal'
 
 interface AuthFormValues {
   email: string
@@ -26,6 +27,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { message } = App.useApp()
+  const [forgotModalOpen, setForgotModalOpen] = useState(false)
 
   const redirectParam = searchParams.get('redirect')
 
@@ -330,7 +332,7 @@ export default function LoginPage() {
                 { required: true, message: 'Vui lòng nhập mật khẩu!' },
                 { min: 6, message: 'Mật khẩu phải tối thiểu từ 6 ký tự!' }
               ]}
-              style={{ marginBottom: 14 }}
+              style={{ marginBottom: 8 }}
             >
               <Input.Password 
                 prefix={<LockOutlined style={{ color: '#0d2e5c' }} />} 
@@ -343,6 +345,24 @@ export default function LoginPage() {
                 }}
               />
             </Form.Item>
+
+            {/* Nút Quên mật khẩu đặt phía dưới ô nhập mật khẩu */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 }}>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => setForgotModalOpen(true)}
+                style={{
+                  padding: 0,
+                  height: 'auto',
+                  fontSize: '13px',
+                  color: '#0d2e5c',
+                  fontWeight: 600,
+                }}
+              >
+                Quên mật khẩu?
+              </Button>
+            </div>
 
             {loginMutation.isError && (() => {
               const errorInfo = getLoginErrorDetails()
@@ -408,7 +428,7 @@ export default function LoginPage() {
             lineHeight: 1.45,
             padding: '0 4px'
           }}>
-            Tài khoản do Nhà trường cấp. Quên mật khẩu vui lòng liên hệ Phòng CTSV để được cấp mới.
+            Tài khoản do Nhà trường cấp. Nếu gặp sự cố đăng nhập, vui lòng liên hệ Phòng CTSV để được hỗ trợ.
           </div>
 
           {/* Chân trang */}
@@ -451,6 +471,19 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      <ForgotPasswordModal
+        open={forgotModalOpen}
+        onClose={() => setForgotModalOpen(false)}
+        initialEmail={form.getFieldValue('email')}
+        onSuccessReset={(newPassword, email) => {
+          form.setFieldsValue({
+            email,
+            password: newPassword,
+          })
+          message.success('Mật khẩu mới đã được điền sẵn. Bạn có thể nhấn Đăng Nhập!')
+        }}
+      />
     </div>
   )
 }

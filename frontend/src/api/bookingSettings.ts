@@ -298,7 +298,7 @@ export function validateBookingAgainstSettings({
   // Role detection
   const roleNorm = (userRole || '').toLowerCase()
   const facultyUser = isFaculty || roleNorm.includes('faculty') || roleNorm.includes('giảng viên') || roleNorm.includes('lecturer') || roleNorm.includes('teacher')
-  const adminUser = isAdmin || roleNorm === 'admin' || roleNorm === 'approver' || roleNorm === 'superadmin'
+  const adminUser = isAdmin || roleNorm === 'admin' || roleNorm === 'approver' || roleNorm === 'superadmin' || roleNorm.includes('manager') || roleNorm.includes('quanly') || roleNorm.includes('admin') || roleNorm.includes('approver')
   const isStudent = !facultyUser && !adminUser
 
   // 2. Check advance booking limits (studentMaxAdvanceDays / facultyMaxAdvanceDays)
@@ -351,10 +351,12 @@ export function validateBookingAgainstSettings({
     violations.push(`Giờ kết thúc (${endTime.format('HH:mm')}) vượt quá giờ đóng cửa quy định (${settings.closeTime}).`)
   }
 
-  // 5. Check maximum duration (studentMaxHoursPerBooking / facultyMaxHoursPerBooking)
+  // 5. Check duration limits (Minimum 1 hour, maximum according to role)
   const durationHours = endTime.diff(startTime, 'hour', true)
   if (durationHours <= 0) {
     violations.push('Giờ kết thúc phải sau giờ bắt đầu.')
+  } else if (durationHours < 1.0) {
+    violations.push(`Thời lượng mượn phòng tối thiểu là 1 giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
   } else {
     const maxHours = facultyUser 
       ? (settings.facultyMaxHoursPerBooking ?? 6.0) 

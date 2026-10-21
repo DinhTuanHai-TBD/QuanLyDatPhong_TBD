@@ -181,24 +181,12 @@ function App() {
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
-  // Kiểm tra xem hồ sơ có thiếu thông tin không:
-  // Nếu tài khoản đã có đầy đủ Họ và tên, Khoa / Phòng ban, và Số điện thoại thì KHÔNG tự động bật Modal
+  // Kiểm tra xem hồ sơ đã có số điện thoại liên hệ chưa (các thông tin định danh do Admin cấp đã có sẵn)
   const isProfileIncomplete = Boolean(
     isLoggedIn &&
     userProfile &&
-    (!userProfile.fullName?.trim() ||
-      !userProfile.phoneNumber?.trim() ||
-      !userProfile.department?.trim())
+    !userProfile.phoneNumber?.trim()
   );
-
-  // 2. Tự động hiển thị Modal "Hoàn thiện Hồ sơ" khi tài khoản mới tạo và còn thiếu một trong các thông tin trên
-  useEffect(() => {
-    if (isLoggedIn && userProfile && !isLoginPage) {
-      if (isProfileIncomplete) {
-        setProfileModalOpen(true);
-      }
-    }
-  }, [isLoggedIn, userProfile, isLoginPage, isProfileIncomplete]);
 
   const userRole = getUserRole();
   const isAdmin = isLoggedIn && (userRole === "admin" || userProfile?.role === "Admin" || String(userProfile?.role).toLowerCase() === "admin");
@@ -527,7 +515,7 @@ function App() {
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         userProfile={userProfile}
-        isMandatory={isProfileIncomplete}
+        isMandatory={false}
       />
     </Layout>
   );
