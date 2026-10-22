@@ -969,7 +969,7 @@ footer,
 .footer-content {
   display: grid;
   width: min(1200px, calc(100% - 48px));
-  grid-template-columns: 1.45fr 1fr 1fr 1fr;
+  grid-template-columns: 1.15fr 1.65fr 0.85fr 0.95fr;
   gap: 40px;
   margin: 0 auto;
   padding: 72px 0 48px;
@@ -2498,4 +2498,25 @@ img {
 .wizard-step-content {
   border: 1.5px solid #94a3b8 !important;
   border-radius: 12px;
+}
+
+/* Nút cố định cuộn lên đầu trang (Back to top) */
+.ant-float-btn.ant-float-btn-circle {
+  background-color: #0d2e5c !important;
+  border: 1.5px solid #38bdf8 !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.ant-float-btn.ant-float-btn-circle:hover {
+  transform: translateY(-3px) scale(1.06);
+  box-shadow: 0 8px 24px rgba(13, 46, 92, 0.5) !important;
+  border-color: #fbbf24 !important;
+}
+
+.ant-float-btn.ant-float-btn-circle .ant-float-btn-body {
+  background-color: #0d2e5c !important;
+}
+
+.ant-float-btn.ant-float-btn-circle .ant-float-btn-icon {
+  color: #ffffff !important;
 }

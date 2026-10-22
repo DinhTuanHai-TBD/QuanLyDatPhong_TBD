@@ -201,7 +201,7 @@ export const TBD_OFFICIAL_ACCOUNTS: AccountItem[] = [
 ];
 
 export default function AdminPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const activeUserRole = getUserRole();
   const isAdmin = activeUserRole === "admin";
   const isApprover = activeUserRole === "approver";
@@ -277,6 +277,9 @@ export default function AdminPage() {
   const [isRejectModalVisible, setIsRejectModalVisible] = useState(false);
   const [rejectBookingId, setRejectBookingId] = useState<number | null>(null);
   const [rejectReasonForm] = Form.useForm();
+
+  const [bookingToApprove, setBookingToApprove] = useState<Booking | null>(null);
+  const [approveNotes, setApproveNotes] = useState("");
 
   const [isEquipmentModalVisible, setIsEquipmentModalVisible] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<EquipmentItem | null>(null);
@@ -1190,18 +1193,23 @@ export default function AdminPage() {
           >
             Chỉnh sửa
           </button>
-          <Popconfirm
-            title="Xóa phòng học"
-            description="Bạn có chắc chắn muốn xóa phòng học này?"
-            onConfirm={() => deleteRoomMutation.mutate(record.id)}
-            okText="Xóa"
-            cancelText="Hủy"
-            okButtonProps={{ danger: true }}
+          <button
+            type="button"
+            className="academic-action-btn danger"
+            onClick={() => {
+              modal.confirm({
+                title: "Xác nhận xóa phòng học",
+                content: `Bạn có chắc chắn muốn xóa phòng học "${record.name}" khỏi hệ thống không?`,
+                centered: true,
+                okText: "Xóa",
+                cancelText: "Hủy",
+                okButtonProps: { danger: true },
+                onOk: () => deleteRoomMutation.mutate(record.id),
+              });
+            }}
           >
-            <button type="button" className="academic-action-btn danger">
-              Xóa
-            </button>
-          </Popconfirm>
+            Xóa
+          </button>
         </Space>
       ),
     },
@@ -1313,38 +1321,28 @@ export default function AdminPage() {
 
             {isPending && (
               <>
-                <Popconfirm
-                  title="Duyệt đơn đặt phòng"
-                  description="Bạn muốn chấp thuận đơn đăng ký đặt phòng này?"
-                  onConfirm={() =>
-                    bookingMutation.mutate({
-                      id: record.id,
-                      status: "Approved",
-                      notes: "Ban Quản lý đồng ý",
-                    })
+                <Button
+                  type="primary"
+                  size="small"
+                  style={{
+                    backgroundColor: "#059669",
+                    borderColor: "#059669",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: "0 10px",
+                  }}
+                  loading={
+                    bookingMutation.isPending &&
+                    bookingMutation.variables?.id === record.id &&
+                    bookingMutation.variables?.status === "Approved"
                   }
-                  okText="Duyệt"
-                  cancelText="Hủy"
+                  onClick={() => {
+                    setBookingToApprove(record);
+                    setApproveNotes("Ban Quản lý đồng ý");
+                  }}
                 >
-                  <Button
-                    type="primary"
-                    size="small"
-                    style={{
-                      backgroundColor: "#059669",
-                      borderColor: "#059669",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      padding: "0 10px",
-                    }}
-                    loading={
-                      bookingMutation.isPending &&
-                      bookingMutation.variables?.id === record.id &&
-                      bookingMutation.variables?.status === "Approved"
-                    }
-                  >
-                    Duyệt
-                  </Button>
-                </Popconfirm>
+                  Duyệt
+                </Button>
 
                 <Button
                   danger
@@ -1545,18 +1543,23 @@ export default function AdminPage() {
             Chỉnh sửa
           </button>
 
-          <Popconfirm
-            title="Xóa thiết bị"
-            description="Bạn muốn xóa thiết bị này khỏi danh mục?"
-            onConfirm={() => deleteEquipmentMutation.mutate(record.id)}
-            okText="Xóa"
-            cancelText="Hủy"
-            okButtonProps={{ danger: true }}
+          <button
+            type="button"
+            className="academic-action-btn danger"
+            onClick={() => {
+              modal.confirm({
+                title: "Xác nhận xóa thiết bị",
+                content: `Bạn muốn xóa thiết bị "${record.name}" khỏi danh mục không?`,
+                centered: true,
+                okText: "Xóa",
+                cancelText: "Hủy",
+                okButtonProps: { danger: true },
+                onOk: () => deleteEquipmentMutation.mutate(record.id),
+              });
+            }}
           >
-            <button type="button" className="academic-action-btn danger">
-              Xóa
-            </button>
-          </Popconfirm>
+            Xóa
+          </button>
         </Space>
       ),
     },
@@ -1707,18 +1710,23 @@ export default function AdminPage() {
             </button>
 
             {!isProtectedAdmin && (
-              <Popconfirm
-                title="Xóa tài khoản"
-                description={`Bạn có chắc muốn xóa tài khoản ${record.email} khỏi cơ sở dữ liệu?`}
-                onConfirm={() => deleteUserMutation.mutate(record.email)}
-                okText="Xóa"
-                cancelText="Hủy"
-                okButtonProps={{ danger: true }}
+              <button
+                type="button"
+                className="academic-action-btn danger"
+                onClick={() => {
+                  modal.confirm({
+                    title: "Xác nhận xóa tài khoản",
+                    content: `Bạn có chắc muốn xóa tài khoản ${record.email} khỏi cơ sở dữ liệu không?`,
+                    centered: true,
+                    okText: "Xóa",
+                    cancelText: "Hủy",
+                    okButtonProps: { danger: true },
+                    onOk: () => deleteUserMutation.mutate(record.email),
+                  });
+                }}
               >
-                <button type="button" className="academic-action-btn danger">
-                  Xóa
-                </button>
-              </Popconfirm>
+                Xóa
+              </button>
             )}
           </Space>
         );
@@ -3214,6 +3222,96 @@ export default function AdminPage() {
               </Descriptions.Item>
             )}
           </Descriptions>
+        )}
+      </Modal>
+
+      {/* MODAL: Phê duyệt đơn đặt phòng (Popup giữa màn hình) */}
+      <Modal
+        title="Xác nhận Phê duyệt Đơn Đặt Phòng"
+        open={!!bookingToApprove}
+        onCancel={() => {
+          setBookingToApprove(null);
+          setApproveNotes("");
+        }}
+        centered
+        okText="Xác nhận duyệt"
+        cancelText="Hủy bỏ"
+        okButtonProps={{
+          style: { backgroundColor: "#059669", borderColor: "#059669", fontWeight: 600 },
+          loading: bookingMutation.isPending && bookingMutation.variables?.status === "Approved",
+        }}
+        onOk={() => {
+          if (bookingToApprove) {
+            bookingMutation.mutate({
+              id: bookingToApprove.id,
+              status: "Approved",
+              notes: approveNotes.trim() || "Ban Quản lý đồng ý",
+            });
+            setBookingToApprove(null);
+            setApproveNotes("");
+          }
+        }}
+      >
+        {bookingToApprove && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 14, color: "#334155", marginBottom: 14 }}>
+              Bạn có chắc chắn muốn chấp thuận đơn đăng ký đặt phòng này không?
+            </p>
+            <div
+              style={{
+                background: "#f8fafc",
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                fontSize: 13,
+                lineHeight: 1.8,
+              }}
+            >
+              <div>
+                <strong>Mã đơn:</strong>{" "}
+                <span style={{ fontFamily: "monospace", color: "#0d2e5c", fontWeight: 700 }}>
+                  #TBD-{bookingToApprove.id}
+                </span>
+              </div>
+              <div>
+                <strong>Phòng đăng ký:</strong>{" "}
+                <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                  {bookingToApprove.roomName || `Phòng ${bookingToApprove.roomId}`}
+                </span>
+              </div>
+              <div>
+                <strong>Người đăng ký:</strong>{" "}
+                <span>{bookingToApprove.personInCharge || bookingToApprove.userEmail || "Chưa cập nhật"}</span>
+              </div>
+              {bookingToApprove.department && (
+                <div>
+                  <strong>Đơn vị / Khoa:</strong>{" "}
+                  <span>{normalizeDepartmentName(bookingToApprove.department)}</span>
+                </div>
+              )}
+              <div>
+                <strong>Thời gian đặt:</strong>{" "}
+                <span style={{ fontWeight: 600, color: "#0284c7" }}>
+                  {dayjs(bookingToApprove.startTime).format("DD/MM/YYYY HH:mm")} - {dayjs(bookingToApprove.endTime).format("HH:mm")}
+                </span>
+              </div>
+              <div>
+                <strong>Mục đích:</strong>{" "}
+                <span>{bookingToApprove.purpose || "Chưa ghi mục đích"}</span>
+              </div>
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 500, color: "#334155" }}>
+                Ghi chú phê duyệt:
+              </label>
+              <Input.TextArea
+                rows={2}
+                placeholder="Nhập ghi chú phê duyệt hoặc nhắc nhở khi nhận phòng..."
+                value={approveNotes}
+                onChange={(e) => setApproveNotes(e.target.value)}
+              />
+            </div>
+          </div>
         )}
       </Modal>
 

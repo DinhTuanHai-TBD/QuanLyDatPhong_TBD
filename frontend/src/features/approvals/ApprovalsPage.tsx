@@ -60,6 +60,7 @@ export default function ApprovalsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [approvedId, setApprovedId] = useState<number | null>(null)
   const [removingIds, setRemovingIds] = useState<number[]>([])
+  const [approveConfirmBooking, setApproveConfirmBooking] = useState<Booking | null>(null)
 
   const { data: rawBookings = [], isLoading: bookingsLoading } = useQuery({
     queryKey: ['admin-bookings'],
@@ -660,29 +661,22 @@ export default function ApprovalsPage() {
             )}
             {isPending && (
               <>
-                <Popconfirm
-                  title="Xác nhận phê duyệt"
-                  description="Bạn có chắc chắn muốn duyệt yêu cầu này không?"
-                  onConfirm={() => handleApprove(record.id)}
-                  okText="Duyệt"
-                  cancelText="Hủy"
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={isApprovedThis ? <CheckCircleFilled /> : <CheckOutlined />}
+                  className={isApprovedThis ? 'btn-approve-success' : ''}
+                  style={{
+                    backgroundColor: isApprovedThis ? '#10b981' : '#059669',
+                    borderColor: isApprovedThis ? '#10b981' : '#059669',
+                    fontWeight: 500,
+                    transition: 'all 0.3s'
+                  }}
+                  loading={processMutation.isPending && processMutation.variables?.id === record.id && processMutation.variables?.action === 'approve'}
+                  onClick={() => setApproveConfirmBooking(record)}
                 >
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={isApprovedThis ? <CheckCircleFilled /> : <CheckOutlined />}
-                    className={isApprovedThis ? 'btn-approve-success' : ''}
-                    style={{
-                      backgroundColor: isApprovedThis ? '#10b981' : '#059669',
-                      borderColor: isApprovedThis ? '#10b981' : '#059669',
-                      fontWeight: 500,
-                      transition: 'all 0.3s'
-                    }}
-                    loading={processMutation.isPending && processMutation.variables?.id === record.id && processMutation.variables?.action === 'approve'}
-                  >
-                    {isApprovedThis ? 'Đã duyệt' : 'Duyệt'}
-                  </Button>
-                </Popconfirm>
+                  {isApprovedThis ? 'Đã duyệt' : 'Duyệt'}
+                </Button>
                 <Button
                   size="small"
                   danger
@@ -1050,29 +1044,93 @@ export default function ApprovalsPage() {
                   Từ chối
                 </Button>
                 
-                <Popconfirm
-                  title="Xác nhận phê duyệt"
-                  description="Bạn có chắc chắn muốn duyệt yêu cầu này không?"
-                  onConfirm={() => handleApprove(processingBooking.id)}
-                  okText="Duyệt"
-                  cancelText="Hủy"
+                <Button 
+                  type="primary" 
+                  icon={approvedId === processingBooking.id ? <CheckCircleFilled /> : <CheckCircleOutlined />}
+                  className={approvedId === processingBooking.id ? 'btn-approve-success' : ''}
+                  style={{
+                    backgroundColor: approvedId === processingBooking.id ? '#10b981' : undefined,
+                    borderColor: approvedId === processingBooking.id ? '#10b981' : undefined,
+                    transition: 'all 0.3s'
+                  }}
+                  loading={processMutation.isPending && processMutation.variables?.id === processingBooking.id}
+                  onClick={() => setApproveConfirmBooking(processingBooking)}
                 >
-                  <Button 
-                    type="primary" 
-                    icon={approvedId === processingBooking.id ? <CheckCircleFilled /> : <CheckCircleOutlined />}
-                    className={approvedId === processingBooking.id ? 'btn-approve-success' : ''}
-                    style={{
-                      backgroundColor: approvedId === processingBooking.id ? '#10b981' : undefined,
-                      borderColor: approvedId === processingBooking.id ? '#10b981' : undefined,
-                      transition: 'all 0.3s'
-                    }}
-                    loading={processMutation.isPending && processMutation.variables?.id === processingBooking.id}
-                  >
-                    {approvedId === processingBooking.id ? 'Đã phê duyệt' : 'Duyệt yêu cầu'}
-                  </Button>
-                </Popconfirm>
+                  {approvedId === processingBooking.id ? 'Đã phê duyệt' : 'Duyệt yêu cầu'}
+                </Button>
               </div>
             )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal xác nhận phê duyệt (Popup giữa màn hình) */}
+      <Modal
+        title="Xác nhận Phê duyệt Đơn Đặt Phòng"
+        open={!!approveConfirmBooking}
+        onCancel={() => setApproveConfirmBooking(null)}
+        centered
+        okText="Xác nhận duyệt"
+        cancelText="Hủy bỏ"
+        okButtonProps={{
+          style: { backgroundColor: '#059669', borderColor: '#059669', fontWeight: 600 },
+          loading: processMutation.isPending && processMutation.variables?.action === 'approve'
+        }}
+        onOk={() => {
+          if (approveConfirmBooking) {
+            handleApprove(approveConfirmBooking.id);
+            setApproveConfirmBooking(null);
+          }
+        }}
+      >
+        {approveConfirmBooking && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 14, color: '#334155', marginBottom: 14 }}>
+              Bạn có chắc chắn muốn chấp thuận đơn đăng ký đặt phòng này không?
+            </p>
+            <div
+              style={{
+                background: '#f8fafc',
+                padding: '12px 16px',
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                fontSize: 13,
+                lineHeight: 1.8,
+              }}
+            >
+              <div>
+                <strong>Mã đơn:</strong>{' '}
+                <span style={{ fontFamily: 'monospace', color: '#0d2e5c', fontWeight: 700 }}>
+                  #TBD-{approveConfirmBooking.id}
+                </span>
+              </div>
+              <div>
+                <strong>Phòng đăng ký:</strong>{' '}
+                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                  {approveConfirmBooking.roomName || `Phòng ${approveConfirmBooking.roomId}`}
+                </span>
+              </div>
+              <div>
+                <strong>Người đăng ký:</strong>{' '}
+                <span>{approveConfirmBooking.personInCharge || approveConfirmBooking.userEmail || 'Chưa cập nhật'}</span>
+              </div>
+              {approveConfirmBooking.department && (
+                <div>
+                  <strong>Đơn vị / Khoa:</strong>{' '}
+                  <span>{normalizeDepartmentName(approveConfirmBooking.department)}</span>
+                </div>
+              )}
+              <div>
+                <strong>Thời gian đặt:</strong>{' '}
+                <span style={{ fontWeight: 600, color: '#0284c7' }}>
+                  {dayjs(approveConfirmBooking.startTime).format('DD/MM/YYYY HH:mm')} - {dayjs(approveConfirmBooking.endTime).format('HH:mm')}
+                </span>
+              </div>
+              <div>
+                <strong>Mục đích:</strong>{' '}
+                <span>{approveConfirmBooking.purpose || 'Chưa ghi mục đích'}</span>
+              </div>
+            </div>
           </div>
         )}
       </Modal>

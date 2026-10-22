@@ -12,8 +12,9 @@ import {
   UserOutlined,
   YoutubeFilled,
   EditOutlined,
+  VerticalAlignTopOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Layout, Tooltip, Tag } from "antd";
+import { Button, Drawer, Layout, Tooltip, Tag, FloatButton } from "antd";
 import NotificationBell from "./features/notifications/NotificationBell";
 import { useEffect, useState } from "react";
 import {
@@ -49,21 +50,62 @@ function SiteFooter() {
       <div className="footer-content">
         <section>
           <h3>ĐH Thái Bình Dương</h3>
-          <p>Hệ thống đặt phòng thông minh.</p>
+          <p style={{ color: '#cbd5e1', fontSize: 13.5, lineHeight: 1.6, marginBottom: 12 }}>
+            Hệ thống Quản lý & Đặt phòng học trực tuyến (TBD Room Booking).
+          </p>
+          <p style={{ color: '#94a3b8', fontSize: 12.5, lineHeight: 1.6 }}>
+            Phục vụ công tác giảng dạy, học tập, nghiên cứu khoa học và sinh hoạt học thuật của Giảng viên, Sinh viên và Cán bộ Nhà trường.
+          </p>
+        </section>
+
+        <section>
+          <h3>LIÊN HỆ</h3>
           <ul>
             <li>
-              <EnvironmentOutlined /> 08 Pasteur, Xương Huân, Nha Trang
+              <EnvironmentOutlined style={{ color: '#fbbf24', marginTop: 4, flexShrink: 0 }} />
+              <span style={{ color: '#e2e8f0', fontSize: 13 }}>
+                79 Mai Thị Dõng, Vĩnh Ngọc, Nha Trang, Khánh Hòa
+              </span>
             </li>
             <li>
-              <PhoneOutlined /> 0258 3727 147
+              <PhoneOutlined style={{ color: '#fbbf24', marginTop: 4, flexShrink: 0 }} />
+              <a href="tel:02583727147" style={{ color: '#e2e8f0', fontSize: 13 }}>
+                (0258) 3727 147
+              </a>
             </li>
             <li>
-              <MailOutlined /> tuyensinh@tbd.edu.vn
+              <MailOutlined style={{ color: '#fbbf24', marginTop: 4, flexShrink: 0 }} />
+              <a href="mailto:tbd@moet.edu.vn" style={{ color: '#e2e8f0', fontSize: 13 }}>
+                tbd@moet.edu.vn
+              </a>
+            </li>
+            <li>
+              <FacebookFilled style={{ color: '#fbbf24', marginTop: 4, flexShrink: 0 }} />
+              <a
+                href="https://facebook.com/TruongDaihocThaiBinhDuong"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#e2e8f0', fontSize: 13, wordBreak: 'break-all' }}
+              >
+                fb.com/TruongDaihocThaiBinhDuong
+              </a>
+            </li>
+            <li>
+              <YoutubeFilled style={{ color: '#fbbf24', marginTop: 4, flexShrink: 0 }} />
+              <a
+                href="https://youtube.com/@tbduniversity"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#e2e8f0', fontSize: 13, wordBreak: 'break-all' }}
+              >
+                youtube.com/@tbduniversity
+              </a>
             </li>
           </ul>
         </section>
+
         <section>
-          <h3>Liên kết</h3>
+          <h3>Danh mục</h3>
           <ul className="footer-links">
             <li>
               <Link to="/">Trang chủ</Link>
@@ -74,38 +116,41 @@ function SiteFooter() {
             <li>
               <Link to="/bookings">Đặt phòng</Link>
             </li>
+            <li>
+              <Link to="/calendar">Lịch phòng</Link>
+            </li>
           </ul>
         </section>
+
         <section>
           <h3>Hỗ trợ</h3>
-          <ul className="footer-links">
+          <ul className="footer-links" style={{ marginBottom: 18 }}>
             <li>
-              <Link to="/login">Tài khoản</Link>
+              <Link to="/booking-history">Lịch sử đặt phòng</Link>
             </li>
             <li>
-              <Link to="/booking-history">Lịch phòng của tôi</Link>
+              <Link to="/report-issue">Báo cáo sự cố CSVC</Link>
             </li>
             <li>
-              <Link to="/report-issue">Báo cáo sự cố</Link>
+              <a href="https://tbd.edu.vn" target="_blank" rel="noreferrer">
+                Cổng thông tin TBD
+              </a>
             </li>
           </ul>
-        </section>
-        <section>
-          <h3>Kết nối</h3>
-          <p>Theo dõi chúng tôi:</p>
+
           <div className="social-links" aria-label="Kênh mạng xã hội TBD">
-            <Tooltip title="Facebook">
+            <Tooltip title="Facebook TBD">
               <a
-                href="https://www.facebook.com/daihocTBD"
+                href="https://facebook.com/TruongDaihocThaiBinhDuong"
                 target="_blank"
                 rel="noreferrer"
               >
                 <FacebookFilled />
               </a>
             </Tooltip>
-            <Tooltip title="YouTube">
+            <Tooltip title="YouTube TBD">
               <a
-                href="https://www.youtube.com"
+                href="https://youtube.com/@tbduniversity"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -121,7 +166,7 @@ function SiteFooter() {
         </section>
       </div>
       <div className="footer-copyright">
-        © 2025 - TBD Room Booking. All Rights Reserved.
+        © 2026 - Trường Đại học Thái Bình Dương (TBD). Hệ thống Đặt phòng học trực tuyến.
       </div>
     </footer>
   );
@@ -510,6 +555,20 @@ function App() {
         </Routes>
       </Content>
       <SiteFooter />
+
+      {/* Nút cố định chuyển nhanh lên đầu trang (Back to top) */}
+      <FloatButton.BackTop
+        tooltip="Lên đầu trang"
+        visibilityHeight={200}
+        icon={<VerticalAlignTopOutlined style={{ color: '#ffffff', fontSize: 16 }} />}
+        style={{
+          right: 24,
+          bottom: 24,
+          width: 44,
+          height: 44,
+          boxShadow: '0 4px 16px rgba(13, 46, 92, 0.35)',
+        }}
+      />
 
       <UserProfileModal
         open={profileModalOpen}
