@@ -255,6 +255,63 @@ export default function CalendarPage() {
     return true
   }, [userRole, userProfile])
 
+  const isOwnerOrManager = (b: Booking | null | undefined): boolean => {
+    if (!b) return false
+    // 1. Thoi khoa bieu chinh khoa cong khai toan truong
+    if (isSchoolScheduleBooking(b)) return true
+    // 2. Admin, Approver, Manager xem day du thong tin
+    if (!isStudentOrLecturer) return true
+
+    // 3. Chu so huu don dat phong xem day du thong tin
+    const curEmail = (userEmail || '').toLowerCase().trim()
+    const bEmail = (b.userEmail || (b as any).email || '').toLowerCase().trim()
+    if (curEmail && bEmail && curEmail === bEmail) {
+      return true
+    }
+
+    const curName = (userProfile?.fullName || '').toLowerCase().trim()
+    const bPerson = (b.personInCharge || '').toLowerCase().trim()
+    if (curName && bPerson && (curName === bPerson || bPerson.includes(curName))) {
+      return true
+    }
+
+    const curId = String(userId || '').toLowerCase().trim()
+    const bUserId = String((b as any).userId ?? (b as any).createdBy ?? '').toLowerCase().trim()
+    if (curId && bUserId && (curId === bUserId || curId.includes(bUserId) || bUserId.includes(curId))) {
+      return true
+    }
+
+    return false
+  }
+
+  const getMaskedBookingTitle = (b: Booking): string => {
+    const s = String(b.status ?? '').toLowerCase().trim()
+    if (s === '0' || s === 'pending' || s === 'pendingspecial') {
+      return 'Đang giữ chỗ (Chờ duyệt)'
+    }
+    if (s === '1' || s === 'approved' || s === '4' || s === 'using') {
+      return 'Đã có lịch mượn phòng'
+    }
+    if (s === '5' || s === 'completed') {
+      return 'Đã sử dụng phòng'
+    }
+    if (s === '2' || s === 'rejected') {
+      return 'Đã từ chối'
+    }
+    if (s === '3' || s === 'cancelled' || s === 'expired') {
+      return 'Đã hủy'
+    }
+    return 'Đã có lịch mượn phòng'
+  }
+
+  const getShortMaskedBookingTitle = (b: Booking): string => {
+    const s = String(b.status ?? '').toLowerCase().trim()
+    if (s === '0' || s === 'pending' || s === 'pendingspecial') {
+      return 'Đang giữ chỗ'
+    }
+    return 'Đã có lịch mượn'
+  }
+
   useEffect(() => {
     if (isStudentOrLecturer) {
       setMode('room')
@@ -947,12 +1004,17 @@ export default function CalendarPage() {
                     const statusInfo = getBookingStatusInfo(b)
                     const color = statusInfo.color
                     const isSchool = isSchoolScheduleBooking(b)
+                    const canView = isOwnerOrManager(b)
+                    const displayPurpose = canView ? (b.purpose || 'Đã đặt') : getShortMaskedBookingTitle(b)
+                    const tooltipText = canView
+                      ? `${formatVNTime(b.startTime)} - ${formatVNTime(b.endTime)}: ${b.purpose || 'Đã đặt'} (${statusInfo.label})`
+                      : `${formatVNTime(b.startTime)} - ${formatVNTime(b.endTime)}: ${getMaskedBookingTitle(b)} (${statusInfo.label})`
 
                     return (
                       <div
                         key={b.id}
                         onClick={() => handleBookingClick(b)}
-                        title={`${formatVNTime(b.startTime)} - ${formatVNTime(b.endTime)}: ${b.purpose || 'Đã đặt'} (${statusInfo.label})`}
+                        title={tooltipText}
                         style={{
                           position: 'absolute',
                           top: 8,
@@ -975,7 +1037,7 @@ export default function CalendarPage() {
                       >
                         <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', fontWeight: 500 }}>
                           {isSchool ? '🏛 ' : ''}
-                          {formatVNTime(b.startTime)}: {b.purpose || 'Đã đặt'}
+                          {formatVNTime(b.startTime)}: {displayPurpose}
                         </span>
                       </div>
                     )
@@ -1024,9 +1086,14 @@ export default function CalendarPage() {
         const startDate = new Date(st.year(), st.month(), st.date(), st.hour(), st.minute())
         const endDate = new Date(et.year(), et.month(), et.date(), et.hour(), et.minute())
 
+        const canView = isOwnerOrManager(b)
+        const displayPurpose = canView
+          ? (b.purpose ? ` - ${b.purpose}` : '')
+          : ` - ${getMaskedBookingTitle(b)}`
+
         return {
           id: b.id,
-          title: `${b.roomName || `Phòng ${b.roomId}`}${b.purpose ? ` - ${b.purpose}` : ''}`,
+          title: `${b.roomName || `Phòng ${b.roomId}`}${displayPurpose}`,
           start: startDate,
           end: endDate,
           resource: b,
@@ -1198,12 +1265,23 @@ export default function CalendarPage() {
             title: 'Mục đích / Học phần',
             dataIndex: 'purpose',
             responsive: ['md'],
-            render: (val, record) => (
-              <span>
-                {isSchoolScheduleBooking(record) && <span style={{ marginRight: 6 }}>🏛️</span>}
-                {val || 'Chưa ghi mục đích'}
-              </span>
-            ),
+            render: (val, record) => {
+              const canView = isOwnerOrManager(record)
+              const isSchool = isSchoolScheduleBooking(record)
+              if (canView) {
+                return (
+                  <span>
+                    {isSchool && <span style={{ marginRight: 6 }}>🏛️</span>}
+                    {val || 'Chưa ghi mục đích'}
+                  </span>
+                )
+              }
+              return (
+                <span style={{ color: '#475569', fontStyle: 'italic' }}>
+                  {getMaskedBookingTitle(record)}
+                </span>
+              )
+            },
           },
           {
             title: 'Trạng thái',
@@ -1559,119 +1637,172 @@ export default function CalendarPage() {
         {selectedBooking &&
           (() => {
             const isSchool = isSchoolScheduleBooking(selectedBooking)
+            const canView = isOwnerOrManager(selectedBooking)
             return (
-              <Descriptions column={1} bordered size="small" style={{ marginTop: 16 }}>
-                <Descriptions.Item label="Phòng">
-                  <strong>{selectedBooking.roomName || `Phòng ${selectedBooking.roomId}`}</strong>
-                </Descriptions.Item>
-
-                {isSchool && (
-                  <Descriptions.Item label="Phân loại">
-                    <Tag
-                      style={{
-                        backgroundColor: '#f3e8ff',
-                        color: '#6b21a8',
-                        borderColor: '#e9d5ff',
-                        fontWeight: 600,
-                        padding: '2px 10px',
-                        borderRadius: 4,
-                      }}
-                    >
-                      🏛 Lịch học chính khóa
-                    </Tag>
+              <div>
+                <Descriptions column={1} bordered size="small" style={{ marginTop: 16 }}>
+                  <Descriptions.Item label="Phòng">
+                    <strong>{selectedBooking.roomName || `Phòng ${selectedBooking.roomId}`}</strong>
                   </Descriptions.Item>
-                )}
 
-                {selectedBooking.subjectCode && (
-                  <Descriptions.Item label="Mã học phần">{selectedBooking.subjectCode}</Descriptions.Item>
-                )}
+                  {isSchool && (
+                    <Descriptions.Item label="Phân loại">
+                      <Tag
+                        style={{
+                          backgroundColor: '#f3e8ff',
+                          color: '#6b21a8',
+                          borderColor: '#e9d5ff',
+                          fontWeight: 600,
+                          padding: '2px 10px',
+                          borderRadius: 4,
+                        }}
+                      >
+                        🏛 Lịch học chính khóa
+                      </Tag>
+                    </Descriptions.Item>
+                  )}
 
-                <Descriptions.Item label={isSchool ? 'Môn học / Nội dung' : 'Mục đích sử dụng'}>
-                  {selectedBooking.purpose || 'Không có'}
-                </Descriptions.Item>
+                  {selectedBooking.subjectCode && (
+                    <Descriptions.Item label="Mã học phần">{selectedBooking.subjectCode}</Descriptions.Item>
+                  )}
 
-                {selectedBooking.lecturerName && (
-                  <Descriptions.Item label="Giảng viên phụ trách">{selectedBooking.lecturerName}</Descriptions.Item>
-                )}
+                  <Descriptions.Item label={isSchool ? 'Môn học / Nội dung' : 'Mục đích sử dụng'}>
+                    {isSchool || canView ? (
+                      selectedBooking.purpose || 'Không có'
+                    ) : (
+                      <span style={{ color: '#0369a1', fontWeight: 600 }}>
+                        {getMaskedBookingTitle(selectedBooking)}
+                      </span>
+                    )}
+                  </Descriptions.Item>
 
-                {selectedBooking.semester && (
-                  <Descriptions.Item label="Học kỳ áp dụng">{selectedBooking.semester}</Descriptions.Item>
-                )}
+                  {selectedBooking.lecturerName && (
+                    <Descriptions.Item label="Giảng viên phụ trách">{selectedBooking.lecturerName}</Descriptions.Item>
+                  )}
 
-                <Descriptions.Item label="Thời gian">
-                  <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                    {formatVNDateTimeRange(selectedBooking.startTime, selectedBooking.endTime)}
-                  </span>
-                </Descriptions.Item>
+                  {selectedBooking.semester && (
+                    <Descriptions.Item label="Học kỳ áp dụng">{selectedBooking.semester}</Descriptions.Item>
+                  )}
 
-                <Descriptions.Item label="Trạng thái">
-                  {(() => {
-                    const statusInfo = getBookingStatusInfo(selectedBooking)
-                    return (
-                      <Space wrap>
-                        {isSchool && (
+                  <Descriptions.Item label="Thời gian">
+                    <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                      {formatVNDateTimeRange(selectedBooking.startTime, selectedBooking.endTime)}
+                    </span>
+                  </Descriptions.Item>
+
+                  <Descriptions.Item label="Trạng thái">
+                    {(() => {
+                      const statusInfo = getBookingStatusInfo(selectedBooking)
+                      return (
+                        <Space wrap>
+                          {isSchool && (
+                            <Tag
+                              style={{
+                                backgroundColor: '#e0f2fe',
+                                color: '#0369a1',
+                                borderColor: '#bae6fd',
+                                fontWeight: 600,
+                                padding: '2px 10px',
+                                borderRadius: 4,
+                              }}
+                            >
+                              Thời khóa biểu chính khóa
+                            </Tag>
+                          )}
                           <Tag
+                            color={statusInfo.color}
                             style={{
-                              backgroundColor: '#e0f2fe',
-                              color: '#0369a1',
-                              borderColor: '#bae6fd',
                               fontWeight: 600,
                               padding: '2px 10px',
                               borderRadius: 4,
                             }}
                           >
-                            Thời khóa biểu chính khóa
+                            {statusInfo.label}
                           </Tag>
-                        )}
-                        <Tag
-                          color={statusInfo.color}
-                          style={{
-                            fontWeight: 600,
-                            padding: '2px 10px',
-                            borderRadius: 4,
-                          }}
-                        >
-                          {statusInfo.label}
-                        </Tag>
-                      </Space>
-                    )
-                  })()}
-                </Descriptions.Item>
-
-                {selectedBooking.department && (
-                  <Descriptions.Item label="Đơn vị / Khoa">{normalizeDepartmentName(selectedBooking.department)}</Descriptions.Item>
-                )}
-
-                {(() => {
-                  const majorInfo = extractMajorFromNotes(selectedBooking.notes)
-                  const displayMajor = selectedBooking.major || majorInfo.major
-                  return displayMajor ? (
-                    <Descriptions.Item label="Ngành học">
-                      <Tag color="purple" style={{ fontWeight: 600 }}>{displayMajor}</Tag>
-                    </Descriptions.Item>
-                  ) : null
-                })()}
-
-                {isSchool ? (
-                  <Descriptions.Item label="Ghi chú">
-                    <span style={{ color: '#475569', fontSize: 13 }}>
-                      Thời khóa biểu chính khóa do Phòng Quản lý Đào tạo sắp xếp.
-                    </span>
+                        </Space>
+                      )
+                    })()}
                   </Descriptions.Item>
-                ) : (
-                  (selectedBooking.rejectReason ||
-                    selectedBooking.rejectionReason ||
-                    selectedBooking.adminNotes) && (
-                    <Descriptions.Item label="Ghi chú / Lý do">
+
+                  {selectedBooking.department && (
+                    <Descriptions.Item label="Đơn vị / Khoa">{normalizeDepartmentName(selectedBooking.department)}</Descriptions.Item>
+                  )}
+
+                  {(() => {
+                    const majorInfo = extractMajorFromNotes(selectedBooking.notes)
+                    const displayMajor = selectedBooking.major || majorInfo.major
+                    return displayMajor ? (
+                      <Descriptions.Item label="Ngành học">
+                        <Tag color="purple" style={{ fontWeight: 600 }}>{displayMajor}</Tag>
+                      </Descriptions.Item>
+                    ) : null
+                  })()}
+
+                  {/* Chi tiết người đăng ký chỉ hiển thị cho Chủ đơn hoặc Ban quản lý */}
+                  {!isSchool && canView && (
+                    <>
+                      {selectedBooking.personInCharge && (
+                        <Descriptions.Item label="Người phụ trách">
+                          {selectedBooking.personInCharge}
+                        </Descriptions.Item>
+                      )}
+                      {selectedBooking.userEmail && (
+                        <Descriptions.Item label="Tài khoản đặt">
+                          {selectedBooking.userEmail}
+                        </Descriptions.Item>
+                      )}
+                      {selectedBooking.participantCount ? (
+                        <Descriptions.Item label="Số lượng người">
+                          {selectedBooking.participantCount} người
+                        </Descriptions.Item>
+                      ) : null}
+                      {selectedBooking.requestedEquipments && selectedBooking.requestedEquipments.length > 0 && (
+                        <Descriptions.Item label="Thiết bị mượn kèm">
+                          {selectedBooking.requestedEquipments.join(' • ')}
+                        </Descriptions.Item>
+                      )}
+                    </>
+                  )}
+
+                  {isSchool ? (
+                    <Descriptions.Item label="Ghi chú">
                       <span style={{ color: '#475569', fontSize: 13 }}>
-                        {selectedBooking.rejectReason ||
-                          selectedBooking.rejectionReason ||
-                          selectedBooking.adminNotes}
+                        Thời khóa biểu chính khóa do Phòng Quản lý Đào tạo sắp xếp.
                       </span>
                     </Descriptions.Item>
-                  )
+                  ) : canView ? (
+                    (selectedBooking.rejectReason ||
+                      selectedBooking.rejectionReason ||
+                      selectedBooking.adminNotes ||
+                      selectedBooking.notes) && (
+                      <Descriptions.Item label="Ghi chú / Lý do">
+                        <span style={{ color: '#475569', fontSize: 13, whiteSpace: 'pre-line' }}>
+                          {selectedBooking.rejectReason ||
+                            selectedBooking.rejectionReason ||
+                            selectedBooking.adminNotes ||
+                            selectedBooking.notes}
+                        </span>
+                      </Descriptions.Item>
+                    )
+                  ) : null}
+                </Descriptions>
+
+                {!isSchool && !canView && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '8px 12px',
+                      background: '#f8fafc',
+                      borderRadius: 6,
+                      border: '1px solid #e2e8f0',
+                      fontSize: 12,
+                      color: '#64748b',
+                    }}
+                  >
+                    Chi tiết người đặt và mục đích riêng tư được bảo mật theo quy định quản lý lịch phòng.
+                  </div>
                 )}
-              </Descriptions>
+              </div>
             )
           })()}
       </Modal>

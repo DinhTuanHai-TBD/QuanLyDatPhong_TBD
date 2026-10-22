@@ -1867,6 +1867,13 @@ function BookingPage() {
                         } else if (status === 'approved' && hit) {
                           const bStartStr = dayjs(hit.startTime).format('HH:mm')
                           const bEndStr = dayjs(hit.endTime).format('HH:mm')
+                          const isSchool = hit.isSchoolOverride || hit.IsSchoolOverride
+                          const isOwner = Boolean(
+                            (hit.userEmail && userEmail && hit.userEmail.toLowerCase().trim() === userEmail.toLowerCase().trim()) ||
+                            (hit.personInCharge && activeProfile?.fullName && hit.personInCharge.toLowerCase().trim().includes(activeProfile.fullName.toLowerCase().trim()))
+                          )
+                          const canViewPurpose = isSchool || isManagerOrAdmin || isOwner
+
                           tooltipContent = (
                             <div style={{ padding: '2px 0', maxWidth: 260, fontSize: 12.5, lineHeight: 1.5 }}>
                               <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 4, textTransform: 'uppercase', fontSize: 12 }}>
@@ -1875,11 +1882,15 @@ function BookingPage() {
                               <div style={{ color: '#cbd5e1', marginBottom: 3 }}>
                                 Thời gian: <strong>{bStartStr} - {bEndStr}</strong>
                               </div>
-                              {hit.purpose && (
+                              {canViewPurpose && hit.purpose ? (
                                 <div style={{ color: '#e2e8f0', marginBottom: 3, wordBreak: 'break-word' }}>
                                   Mục đích: {hit.purpose}
                                 </div>
-                              )}
+                              ) : hit.department ? (
+                                <div style={{ color: '#e2e8f0', marginBottom: 3 }}>
+                                  Đơn vị: {normalizeDepartmentName(hit.department)}
+                                </div>
+                              ) : null}
                               <div style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 4 }}>
                                 Khung giờ đã được duyệt, không thể chọn.
                               </div>

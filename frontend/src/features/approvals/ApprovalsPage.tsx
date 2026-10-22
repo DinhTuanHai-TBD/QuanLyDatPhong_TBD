@@ -591,7 +591,7 @@ export default function ApprovalsPage() {
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
               backgroundColor: '#f8fafc',
-              border: '1.5px solid #94a3b8',
+              border: '1px solid #cbd5e1',
               borderRadius: 6,
               padding: '6px 10px',
               marginTop: 2
@@ -731,20 +731,43 @@ export default function ApprovalsPage() {
             padding: 16px 12px 36px;
           }
         }
-        /* Bảng phê duyệt: căn nội dung các ô lên trên (vertical-align: top) */
+        /* Bảng phê duyệt: viền ô và cột đồng đều, liền mạch từ Header xuống Body */
+        .approvals-table .ant-table-wrapper,
+        .approvals-table.ant-table-wrapper,
+        .approvals-table .ant-table,
+        .approvals-table .ant-table-container {
+          border: none !important;
+          border-radius: 0 !important;
+        }
+        .approvals-table .ant-table-thead > tr > th::before {
+          display: none !important;
+        }
+        .approvals-table .ant-table-thead > tr > th {
+          vertical-align: middle !important;
+          padding: 12px 14px !important;
+          font-weight: 700 !important;
+          background-color: #f1f5f9 !important;
+          color: #0f172a !important;
+          border-bottom: 1.5px solid #94a3b8 !important;
+          border-right: 1px solid #cbd5e1 !important;
+        }
+        .approvals-table .ant-table-thead > tr > th:last-child {
+          border-right: none !important;
+        }
         .approvals-table .ant-table-tbody > tr > td {
           vertical-align: top !important;
           padding: 12px 14px !important;
           white-space: normal !important;
           word-break: break-word !important;
           overflow-wrap: anywhere !important;
+          border-bottom: 1px solid #cbd5e1 !important;
+          border-right: 1px solid #cbd5e1 !important;
         }
-        .approvals-table .ant-table-thead > tr > th {
-          vertical-align: middle !important;
-          padding: 12px 14px !important;
-          font-weight: 600 !important;
-          background-color: #f8fafc !important;
-          color: #334155 !important;
+        .approvals-table .ant-table-tbody > tr > td:last-child {
+          border-right: none !important;
+        }
+        .approvals-table .ant-table-tbody > tr:last-child > td {
+          border-bottom: none !important;
         }
         .approvals-table .ant-table-cell {
           white-space: normal !important;
@@ -753,6 +776,9 @@ export default function ApprovalsPage() {
         }
         .approvals-table .ant-table-row:hover > td {
           background-color: #f8fafc !important;
+        }
+        .approvals-table .ant-pagination {
+          margin: 14px 16px !important;
         }
       `}</style>
 

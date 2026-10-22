@@ -2394,14 +2394,27 @@ img {
   box-shadow: 0 0 0 3px rgba(13, 46, 92, 0.16) !important;
 }
 
-/* 3. Viền bảng (Table): Phân tách rõ ràng giữa các cột và hàng */
-.ant-table-wrapper .ant-table {
+/* 3. Viền bảng (Table): Đồng đều, sắc nét, không bị viền kép hay đứt đoạn cột */
+.ant-card .ant-table-wrapper,
+.ant-card .ant-table-wrapper .ant-table,
+.ant-card .ant-table-container {
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.ant-table-wrapper:not(.ant-card *) .ant-table {
   border: 1.5px solid #94a3b8 !important;
   border-radius: 8px !important;
+  overflow: hidden;
+}
+
+/* Xóa notch ngắt quãng của Ant Design để đường kẻ cột liền mạch từ Header xuống Body */
+.ant-table-wrapper .ant-table-thead > tr > th::before {
+  display: none !important;
 }
 
 .ant-table-wrapper .ant-table-thead > tr > th {
-  border-bottom: 2px solid #64748b !important;
+  border-bottom: 1.5px solid #94a3b8 !important;
   border-right: 1px solid #cbd5e1 !important;
   background-color: #f1f5f9 !important;
   color: #0f172a !important;
@@ -2415,6 +2428,10 @@ img {
 .ant-table-wrapper .ant-table-tbody > tr > td {
   border-bottom: 1px solid #cbd5e1 !important;
   border-right: 1px solid #cbd5e1 !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
 }
 
 .ant-table-wrapper .ant-table-tbody > tr > td:last-child {
