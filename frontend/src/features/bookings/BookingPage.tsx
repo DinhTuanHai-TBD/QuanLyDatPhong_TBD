@@ -9,11 +9,9 @@ import {
   ReloadOutlined, 
   CheckCircleFilled, 
   HistoryOutlined, 
-  PlusCircleOutlined, 
   FileTextOutlined, 
   SafetyCertificateOutlined,
-  CalendarOutlined,
-  DashboardOutlined
+  HomeOutlined
 } from '@ant-design/icons'
 import confetti from 'canvas-confetti'
 import dayjs from 'dayjs'
@@ -3001,87 +2999,47 @@ function BookingPage() {
             </div>
           )}
 
-          {isAdmin ? (
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <Button
-                size="middle"
-                icon={<CalendarOutlined />}
-                onClick={() => {
-                  setSuccessModalVisible(false)
-                  navigate('/calendar')
-                }}
-                style={{
-                  borderRadius: 8,
-                  fontWeight: 600,
-                  flex: 1,
-                  borderColor: '#0284c7',
-                  color: '#0284c7',
-                  height: 38
-                }}
-              >
-                Xem trên Lịch phòng
-              </Button>
-              <Button
-                type="primary"
-                size="middle"
-                icon={<DashboardOutlined />}
-                onClick={() => {
-                  setSuccessModalVisible(false)
-                  navigate('/admin')
-                }}
-                style={{
-                  borderRadius: 8,
-                  fontWeight: 700,
-                  background: '#0d2e5c',
-                  borderColor: '#0d2e5c',
-                  color: '#ffffff',
-                  flex: 1,
-                  height: 38,
-                  boxShadow: '0 4px 12px rgba(13, 46, 92, 0.25)'
-                }}
-              >
-                Về Trang Quản trị
-              </Button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <Button
-                size="middle"
-                icon={<PlusCircleOutlined />}
-                onClick={() => setSuccessModalVisible(false)}
-                style={{
-                  borderRadius: 8,
-                  fontWeight: 600,
-                  flex: 1,
-                  borderColor: '#cbd5e1',
-                  color: '#475569',
-                  height: 38
-                }}
-              >
-                Đặt thêm phòng khác
-              </Button>
-              <Button
-                type="primary"
-                size="middle"
-                icon={<HistoryOutlined />}
-                onClick={() => {
-                  setSuccessModalVisible(false)
-                  navigate('/booking-history')
-                }}
-                style={{
-                  borderRadius: 8,
-                  fontWeight: 600,
-                  background: '#0d2e5c',
-                  borderColor: '#0d2e5c',
-                  flex: 1,
-                  height: 38,
-                  boxShadow: '0 4px 12px rgba(13, 46, 92, 0.25)'
-                }}
-              >
-                Về Lịch sử đặt phòng
-              </Button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <Button
+              size="middle"
+              icon={<HomeOutlined />}
+              onClick={() => {
+                setSuccessModalVisible(false)
+                navigate('/')
+              }}
+              style={{
+                borderRadius: 8,
+                fontWeight: 600,
+                flex: 1,
+                borderColor: '#cbd5e1',
+                color: '#0d2e5c',
+                height: 40
+              }}
+            >
+              Trang chủ
+            </Button>
+            <Button
+              type="primary"
+              size="middle"
+              icon={<HistoryOutlined />}
+              onClick={() => {
+                setSuccessModalVisible(false)
+                navigate('/booking-history')
+              }}
+              style={{
+                borderRadius: 8,
+                fontWeight: 600,
+                background: '#0d2e5c',
+                borderColor: '#0d2e5c',
+                color: '#ffffff',
+                flex: 1,
+                height: 40,
+                boxShadow: '0 4px 12px rgba(13, 46, 92, 0.25)'
+              }}
+            >
+              Về lịch sử đặt phòng
+            </Button>
+          </div>
         </div>
       </Modal>
 
