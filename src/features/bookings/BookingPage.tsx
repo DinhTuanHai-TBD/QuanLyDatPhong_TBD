@@ -11,8 +11,6 @@ import {
   HistoryOutlined, 
   PlusCircleOutlined, 
   FileTextOutlined, 
-  ArrowLeftOutlined, 
-  ArrowRightOutlined, 
   SafetyCertificateOutlined,
   CalendarOutlined,
   DashboardOutlined
@@ -1657,7 +1655,6 @@ function BookingPage() {
                     size="large" 
                     onClick={handleGoToStep2}
                     disabled={!selectedRoom || (isStudent && isRoomRestrictedForStudent(selectedRoom))}
-                    icon={<ArrowRightOutlined />}
                     style={{ 
                       background: (selectedRoom && (!isStudent || !isRoomRestrictedForStudent(selectedRoom))) ? '#0d2e5c' : undefined, 
                       height: 44, 
@@ -2096,7 +2093,6 @@ function BookingPage() {
                   <Button 
                     size="large" 
                     onClick={() => { setCurrentStep(0); scrollToTop(); }}
-                    icon={<ArrowLeftOutlined />}
                     style={{ height: 44, borderRadius: 8, fontWeight: 600 }}
                   >
                     Quay lại: Chọn phòng
@@ -2106,7 +2102,6 @@ function BookingPage() {
                     size="large" 
                     onClick={handleGoToStep3}
                     disabled={!startTime || !endTime || limitViolations.length > 0 || isScheduleFetching || hasServerDataError || !isServerDataReady}
-                    icon={<ArrowRightOutlined />}
                     style={{ 
                       background: (startTime && endTime && limitViolations.length === 0 && !isScheduleFetching && !hasServerDataError && isServerDataReady) ? '#0d2e5c' : undefined, 
                       height: 44, 
@@ -2536,7 +2531,6 @@ function BookingPage() {
                   <Button 
                     size="large" 
                     onClick={() => { setCurrentStep(1); scrollToTop(); }}
-                    icon={<ArrowLeftOutlined />}
                     style={{ height: 44, borderRadius: 8, fontWeight: 600 }}
                   >
                     Quay lại: Chọn giờ
@@ -2545,7 +2539,6 @@ function BookingPage() {
                     type="primary" 
                     size="large" 
                     onClick={handleGoToStep4}
-                    icon={<ArrowRightOutlined />}
                     style={{ 
                       background: '#0d2e5c', 
                       height: 44, 
@@ -2874,7 +2867,6 @@ function BookingPage() {
                   <Button 
                     size="large" 
                     onClick={() => { setCurrentStep(2); scrollToTop(); }}
-                    icon={<ArrowLeftOutlined />}
                     style={{ height: 46, borderRadius: 8, fontWeight: 600 }}
                   >
                     Quay lại chỉnh sửa
