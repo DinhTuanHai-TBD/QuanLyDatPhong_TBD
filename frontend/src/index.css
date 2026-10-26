@@ -2329,6 +2329,33 @@ img {
   padding: 0 !important;
   max-height: calc(100vh - 160px) !important;
 }
+/* Ant Design user profile compact modal - Hiển thị toàn bộ thông tin không cần cuộn */
+.user-profile-modal-compact .ant-modal-content {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.user-profile-modal-compact .ant-modal-header {
+  padding: 14px 24px !important;
+  flex-shrink: 0 !important;
+}
+
+.user-profile-modal-compact .ant-modal-body {
+  max-height: none !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  padding: 12px 24px 20px !important;
+}
+
+@media (max-height: 520px) {
+  .user-profile-modal-compact .ant-modal-content {
+    max-height: 94vh !important;
+    overflow-y: auto !important;
+  }
+  .user-profile-modal-compact .ant-modal-body {
+    overflow-y: auto !important;
+  }
+}
 
 
 

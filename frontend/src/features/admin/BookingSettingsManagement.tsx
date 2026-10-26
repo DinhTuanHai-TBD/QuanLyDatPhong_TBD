@@ -935,6 +935,7 @@ export default function BookingSettingsManagement() {
           setIsPeriodModalVisible(false)
           periodForm.resetFields()
         }}
+        centered
         okText={editingPeriodIndex !== null ? 'Cập nhật' : 'Thêm vào danh sách'}
         cancelText="Đóng"
         destroyOnHidden

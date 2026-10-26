@@ -499,6 +499,7 @@ function RoomsPage() {
         open={selectedRoom !== null}
         onCancel={() => setSelectedRoom(null)}
         width={700}
+        centered
         footer={[
           <Button key="close" onClick={() => setSelectedRoom(null)}>Đóng</Button>,
           <Button 

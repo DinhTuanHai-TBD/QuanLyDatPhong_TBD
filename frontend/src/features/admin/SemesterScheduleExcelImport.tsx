@@ -1076,6 +1076,7 @@ export default function SemesterScheduleExcelImport({
         }
         open={!!conflictDetailRow}
         onCancel={() => setConflictDetailRow(null)}
+        centered
         footer={[
           <Button key="close" onClick={() => setConflictDetailRow(null)}>
             Đóng

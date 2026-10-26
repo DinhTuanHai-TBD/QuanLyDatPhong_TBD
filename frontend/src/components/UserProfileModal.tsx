@@ -115,8 +115,9 @@ export default function UserProfileModal({
         if (!isSubmitting && !isChangingPassword) onClose()
       }}
       footer={null}
-      width={580}
+      width={660}
       centered
+      className="user-profile-modal-compact"
       mask={{ closable: !isMandatory }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
@@ -180,43 +181,19 @@ export default function UserProfileModal({
               type="info"
               showIcon
               style={{
-                marginBottom: 16,
+                marginBottom: 12,
                 borderRadius: 8,
-                fontSize: 13,
+                fontSize: 12.5,
+                padding: '6px 12px',
                 border: '1px solid #bae6fd',
                 background: '#f0f9ff'
               }}
               title={
-                <div style={{ color: '#0369a1', lineHeight: 1.5 }}>
-                  <strong>Thông tin tài khoản:</strong> Các mục Họ và tên, Khoa và Mã sinh viên/cán bộ được cố định theo hồ sơ do Nhà trường cấp. Nếu có sai sót thông tin, vui lòng liên hệ <strong>Ban Quản lý</strong> hoặc <strong>Phòng CTSV</strong> để được hỗ trợ điều chỉnh.
+                <div style={{ color: '#0369a1', lineHeight: 1.45 }}>
+                  <strong>Thông tin tài khoản:</strong> Các mục Họ và tên, Khoa và Mã sinh viên/cán bộ được cố định theo hồ sơ Nhà trường cấp. Nếu có sai sót, vui lòng liên hệ <strong>Ban Quản lý</strong> hoặc <strong>Phòng CTSV</strong> để được hỗ trợ.
                 </div>
               }
             />
-
-            {/* Email tài khoản cố định */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, color: '#334155', fontSize: 13 }}>
-                Email đăng nhập
-              </label>
-              <Tooltip title={lockedTooltipText} placement="topLeft">
-                <div>
-                  <Input
-                    value={emailResolved}
-                    disabled
-                    prefix={<MailOutlined style={{ color: '#94a3b8' }} />}
-                    size="large"
-                    style={{
-                      backgroundColor: '#f8fafc',
-                      color: '#334155',
-                      cursor: 'not-allowed',
-                      border: '1.5px solid #cbd5e1',
-                      borderRadius: 8,
-                      fontWeight: 600,
-                    }}
-                  />
-                </div>
-              </Tooltip>
-            </div>
 
             <Form
               form={profileForm}
@@ -224,112 +201,134 @@ export default function UserProfileModal({
               onFinish={handleFinishProfile}
               requiredMark={false}
             >
-              {/* Họ và tên: Khóa cố định, luôn hiển thị rõ ràng */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, color: '#334155', fontSize: 13 }}>
-                  Họ và tên
-                </label>
-                <Tooltip title={lockedTooltipText} placement="topLeft">
-                  <div>
+              {/* Bố cục 2 cột gọn gàng - Hiển thị toàn bộ không cần cuộn */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', marginBottom: 8 }}>
+                {/* 1. Họ và tên */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: 3, fontWeight: 600, color: '#334155', fontSize: 12.5 }}>
+                    Họ và tên
+                  </label>
+                  <Tooltip title={lockedTooltipText} placement="topLeft">
                     <Input 
                       value={fullNameResolved}
                       disabled
                       prefix={<UserOutlined style={{ color: '#94a3b8' }} />} 
-                      size="large"
                       style={{
                         backgroundColor: '#f8fafc',
                         color: '#1e293b',
                         cursor: 'not-allowed',
                         border: '1.5px solid #cbd5e1',
-                        borderRadius: 8,
+                        borderRadius: 6,
                         fontWeight: 600,
+                        height: 36
                       }}
                     />
-                  </div>
-                </Tooltip>
-              </div>
+                  </Tooltip>
+                </div>
 
-              {/* Khoa / Phòng ban: Khóa cố định, luôn hiển thị rõ ràng */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, color: '#334155', fontSize: 13 }}>
-                  Khoa / Phòng ban / Đơn vị
-                </label>
-                <Tooltip title={lockedTooltipText} placement="topLeft">
-                  <div>
+                {/* 2. Mã sinh viên / Mã cán bộ */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: 3, fontWeight: 600, color: '#334155', fontSize: 12.5 }}>
+                    Mã sinh viên / Mã cán bộ
+                  </label>
+                  <Tooltip title={lockedTooltipText} placement="topLeft">
+                    <Input 
+                      value={userCodeResolved}
+                      disabled
+                      prefix={<IdcardOutlined style={{ color: '#94a3b8' }} />} 
+                      style={{
+                        backgroundColor: '#f8fafc',
+                        color: '#1e293b',
+                        cursor: 'not-allowed',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: 6,
+                        fontWeight: 600,
+                        height: 36
+                      }}
+                    />
+                  </Tooltip>
+                </div>
+
+                {/* 3. Email đăng nhập */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: 3, fontWeight: 600, color: '#334155', fontSize: 12.5 }}>
+                    Email đăng nhập
+                  </label>
+                  <Tooltip title={lockedTooltipText} placement="topLeft">
+                    <Input
+                      value={emailResolved}
+                      disabled
+                      prefix={<MailOutlined style={{ color: '#94a3b8' }} />}
+                      style={{
+                        backgroundColor: '#f8fafc',
+                        color: '#334155',
+                        cursor: 'not-allowed',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: 6,
+                        fontWeight: 600,
+                        height: 36
+                      }}
+                    />
+                  </Tooltip>
+                </div>
+
+                {/* 4. Số điện thoại liên hệ (Cho phép chỉnh sửa) */}
+                <div>
+                  <Form.Item
+                    label={
+                      <span style={{ fontWeight: 600, color: '#334155', fontSize: 12.5 }}>
+                        Số điện thoại liên hệ <span style={{ color: '#dc2626' }}>*</span>
+                      </span>
+                    }
+                    name="phoneNumber"
+                    style={{ marginBottom: 0 }}
+                    rules={[
+                      { required: true, message: 'Vui lòng nhập số điện thoại!' },
+                      { pattern: /^(0[3|5|7|8|9])[0-9]{8}$/, message: 'Số điện thoại gồm 10 số (bắt đầu 03, 05, 07, 08, 09)!' }
+                    ]}
+                  >
+                    <Input 
+                      prefix={<PhoneOutlined style={{ color: '#0d2e5c' }} />} 
+                      placeholder="Ví dụ: 0912345678" 
+                      maxLength={10} 
+                      style={{
+                        borderRadius: 6,
+                        border: '1.5px solid #94a3b8',
+                        fontWeight: 600,
+                        color: '#0f172a',
+                        height: 36
+                      }}
+                    />
+                  </Form.Item>
+                </div>
+
+                {/* 5. Khoa / Phòng ban / Đơn vị (chiếm trọn 2 cột ngang) */}
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ display: 'block', marginBottom: 3, fontWeight: 600, color: '#334155', fontSize: 12.5 }}>
+                    Khoa / Phòng ban / Đơn vị
+                  </label>
+                  <Tooltip title={lockedTooltipText} placement="topLeft">
                     <Input 
                       value={deptResolved}
                       disabled
                       prefix={<BankOutlined style={{ color: '#94a3b8' }} />} 
-                      size="large"
                       style={{
                         backgroundColor: '#f8fafc',
                         color: '#1e293b',
                         cursor: 'not-allowed',
                         border: '1.5px solid #cbd5e1',
-                        borderRadius: 8,
+                        borderRadius: 6,
                         fontWeight: 600,
+                        height: 36
                       }}
                     />
-                  </div>
-                </Tooltip>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                {/* Số điện thoại liên hệ: Cho phép chỉnh sửa */}
-                <Form.Item
-                  label={
-                    <strong style={{ color: '#334155' }}>
-                      Số điện thoại liên hệ <span style={{ color: '#dc2626' }}>*</span>
-                    </strong>
-                  }
-                  name="phoneNumber"
-                  rules={[
-                    { required: true, message: 'Vui lòng nhập số điện thoại liên hệ!' },
-                    { pattern: /^(0[3|5|7|8|9])[0-9]{8}$/, message: 'Số điện thoại không hợp lệ (gồm 10 số, bắt đầu bằng 03, 05, 07, 08, 09)!' }
-                  ]}
-                >
-                  <Input 
-                    prefix={<PhoneOutlined style={{ color: '#0d2e5c' }} />} 
-                    placeholder="Ví dụ: 0912345678" 
-                    maxLength={10} 
-                    size="large"
-                    style={{
-                      borderRadius: 8,
-                      border: '1.5px solid #cbd5e1',
-                      fontWeight: 600,
-                      color: '#0f172a',
-                    }}
-                  />
-                </Form.Item>
-
-                {/* Mã sinh viên / Mã cán bộ: Khóa cố định */}
-                <div style={{ marginBottom: 24 }}>
-                  <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: '#334155', fontSize: 14 }}>
-                    Mã sinh viên / Mã cán bộ
-                  </label>
-                  <Tooltip title={lockedTooltipText} placement="topLeft">
-                    <div>
-                      <Input 
-                        value={userCodeResolved}
-                        disabled
-                        prefix={<IdcardOutlined style={{ color: '#94a3b8' }} />} 
-                        size="large"
-                        style={{
-                          backgroundColor: '#f8fafc',
-                          color: '#1e293b',
-                          cursor: 'not-allowed',
-                          border: '1.5px solid #cbd5e1',
-                          borderRadius: 8,
-                          fontWeight: 600,
-                        }}
-                      />
-                    </div>
                   </Tooltip>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, paddingTop: 14, borderTop: '1px solid #e2e8f0' }}>
-                <Button onClick={onClose} disabled={isSubmitting} size="large">
+              {/* Hàng nút bấm */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                <Button onClick={onClose} disabled={isSubmitting} style={{ height: 36, borderRadius: 6, fontWeight: 500 }}>
                   Đóng
                 </Button>
                 <Button
@@ -337,12 +336,13 @@ export default function UserProfileModal({
                   htmlType="submit"
                   icon={<SaveOutlined />}
                   loading={isSubmitting}
-                  size="large"
                   style={{
                     backgroundColor: '#0d2e5c',
                     borderColor: '#0d2e5c',
                     fontWeight: 600,
-                    padding: '0 24px'
+                    height: 36,
+                    borderRadius: 6,
+                    padding: '0 20px'
                   }}
                 >
                   Cập nhật số điện thoại
@@ -355,10 +355,10 @@ export default function UserProfileModal({
             <Alert
               type="warning"
               showIcon
-              style={{ marginBottom: 16, borderRadius: 8, fontSize: 13, border: '1px solid #fed7aa', background: '#fffbeb' }}
+              style={{ marginBottom: 12, borderRadius: 8, fontSize: 12.5, padding: '6px 12px', border: '1px solid #fed7aa', background: '#fffbeb' }}
               title={
-                <div style={{ color: '#b45309' }}>
-                  <strong>Bảo mật mật khẩu:</strong> Mật khẩu mới cần có độ dài tối thiểu từ 6 ký tự. Sau khi đổi thành công, bạn sẽ sử dụng mật khẩu mới cho các lần đăng nhập tiếp theo.
+                <div style={{ color: '#b45309', lineHeight: 1.45 }}>
+                  <strong>Bảo mật mật khẩu:</strong> Mật khẩu mới cần có độ dài tối thiểu từ 6 ký tự. Sau khi đổi thành công, bạn sẽ sử dụng mật khẩu mới để đăng nhập.
                 </div>
               }
             />
@@ -369,8 +369,9 @@ export default function UserProfileModal({
               onFinish={handleFinishPassword}
             >
               <Form.Item
-                label={<strong style={{ color: '#334155' }}>Mật khẩu hiện tại <span style={{ color: '#dc2626' }}>*</span></strong>}
+                label={<span style={{ fontWeight: 600, color: '#334155', fontSize: 12.5 }}>Mật khẩu hiện tại <span style={{ color: '#dc2626' }}>*</span></span>}
                 name="currentPassword"
+                style={{ marginBottom: 10 }}
                 rules={[
                   { required: true, message: 'Vui lòng nhập mật khẩu hiện tại của bạn!' }
                 ]}
@@ -378,13 +379,14 @@ export default function UserProfileModal({
                 <Input.Password
                   prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
                   placeholder="Nhập mật khẩu hiện tại..."
-                  size="large"
+                  style={{ height: 36, borderRadius: 6 }}
                 />
               </Form.Item>
 
               <Form.Item
-                label={<strong style={{ color: '#334155' }}>Mật khẩu mới <span style={{ color: '#dc2626' }}>*</span></strong>}
+                label={<span style={{ fontWeight: 600, color: '#334155', fontSize: 12.5 }}>Mật khẩu mới <span style={{ color: '#dc2626' }}>*</span></span>}
                 name="newPassword"
+                style={{ marginBottom: 10 }}
                 rules={[
                   { required: true, message: 'Vui lòng nhập mật khẩu mới!' },
                   { min: 6, message: 'Mật khẩu mới phải có tối thiểu 6 ký tự!' }
@@ -393,14 +395,15 @@ export default function UserProfileModal({
                 <Input.Password
                   prefix={<KeyOutlined style={{ color: '#94a3b8' }} />}
                   placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
-                  size="large"
+                  style={{ height: 36, borderRadius: 6 }}
                 />
               </Form.Item>
 
               <Form.Item
-                label={<strong style={{ color: '#334155' }}>Xác nhận mật khẩu mới <span style={{ color: '#dc2626' }}>*</span></strong>}
+                label={<span style={{ fontWeight: 600, color: '#334155', fontSize: 12.5 }}>Xác nhận mật khẩu mới <span style={{ color: '#dc2626' }}>*</span></span>}
                 name="confirmPassword"
                 dependencies={['newPassword']}
+                style={{ marginBottom: 12 }}
                 rules={[
                   { required: true, message: 'Vui lòng xác nhận lại mật khẩu mới!' },
                   ({ getFieldValue }) => ({
@@ -416,12 +419,12 @@ export default function UserProfileModal({
                 <Input.Password
                   prefix={<CheckCircleOutlined style={{ color: '#94a3b8' }} />}
                   placeholder="Nhập lại mật khẩu mới..."
-                  size="large"
+                  style={{ height: 36, borderRadius: 6 }}
                 />
               </Form.Item>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, paddingTop: 14, borderTop: '1px solid #e2e8f0' }}>
-                <Button onClick={onClose} disabled={isChangingPassword} size="large">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                <Button onClick={onClose} disabled={isChangingPassword} style={{ height: 36, borderRadius: 6, fontWeight: 500 }}>
                   Hủy bỏ
                 </Button>
                 <Button
@@ -429,12 +432,13 @@ export default function UserProfileModal({
                   htmlType="submit"
                   icon={<KeyOutlined />}
                   loading={isChangingPassword}
-                  size="large"
                   style={{
                     backgroundColor: '#0d2e5c',
                     borderColor: '#0d2e5c',
                     fontWeight: 600,
-                    padding: '0 24px'
+                    height: 36,
+                    borderRadius: 6,
+                    padding: '0 20px'
                   }}
                 >
                   Xác nhận đổi mật khẩu

@@ -238,8 +238,14 @@ export const IssueResolutionModal: React.FC<IssueResolutionModalProps> = ({
       const values = await form.validateFields();
       setIsSaving(true);
 
+      let finalStatus = values.status;
+      // Nếu đã có người phụ trách hoặc tiến độ sửa chữa mà trạng thái vẫn là Pending -> tự động chuyển sang Assigned hoặc Fixing
+      if (finalStatus === "Pending" && values.assignedTo?.trim()) {
+        finalStatus = values.repairNotes?.trim() ? "Fixing" : "Assigned";
+      }
+
       const payload = {
-        status: values.status,
+        status: finalStatus,
         assignedTo: values.assignedTo?.trim() || null,
         repairNotes: values.repairNotes?.trim() || null,
       };
@@ -660,7 +666,19 @@ export const IssueResolutionModal: React.FC<IssueResolutionModalProps> = ({
             Cập nhật trạng thái & phân công
           </div>
 
-          <Form form={form} layout="vertical" disabled={!canUpdate}>
+          <Form
+            form={form}
+            layout="vertical"
+            disabled={!canUpdate}
+            onValuesChange={(changedValues) => {
+              if (changedValues.assignedTo && changedValues.assignedTo.trim()) {
+                const curStatus = form.getFieldValue("status");
+                if (!curStatus || curStatus === "Pending") {
+                  form.setFieldsValue({ status: "Assigned" });
+                }
+              }
+            }}
+          >
             <Row gutter={[16, 0]}>
               {/* Trạng thái xử lý: Bắt buộc */}
               <Col xs={24} sm={12}>

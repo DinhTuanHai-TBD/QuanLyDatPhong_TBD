@@ -1240,6 +1240,7 @@ function BookingPage() {
         open={isPolicyModalOpen}
         onOk={() => setIsPolicyModalOpen(false)}
         onCancel={() => setIsPolicyModalOpen(false)}
+        centered
         footer={[
           <Button key="close" type="primary" onClick={() => setIsPolicyModalOpen(false)} style={{ background: '#0d2e5c' }}>
             Xác nhận đã đọc

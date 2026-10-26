@@ -908,6 +908,7 @@ export default function ApprovalsPage() {
         title={<span style={{ color: '#0d2e5c', fontSize: 18 }}>Chi tiết yêu cầu #{processingBooking?.id}</span>}
         open={processModalOpen}
         onCancel={() => setProcessModalOpen(false)}
+        centered
         footer={null}
         width={700}
       >
@@ -1141,6 +1142,7 @@ export default function ApprovalsPage() {
         open={rejectModalOpen}
         onCancel={() => setRejectModalOpen(false)}
         onOk={handleReject}
+        centered
         okText="Xác nhận từ chối"
         cancelText="Hủy"
         okButtonProps={{ danger: true, loading: processMutation.isPending }}

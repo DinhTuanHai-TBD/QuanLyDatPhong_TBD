@@ -1319,6 +1319,7 @@ function BookingHistoryPage() {
         title={`Phiếu Đặt Phòng - #TBD-${selectedBookingForDetail?.id}`}
         open={detailModalVisible}
         onCancel={() => setDetailModalVisible(false)}
+        centered
         footer={[
           selectedBookingForDetail && isExpiredBooking(selectedBookingForDetail) && (
             <Button
@@ -1338,7 +1339,6 @@ function BookingHistoryPage() {
           </Button>
         ]}
         width={640}
-        centered
       >
         {selectedBookingForDetail && (
           <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>

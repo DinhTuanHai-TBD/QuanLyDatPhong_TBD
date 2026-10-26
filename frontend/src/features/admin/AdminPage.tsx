@@ -34,6 +34,7 @@ import {
   PictureOutlined,
   DeleteOutlined,
   InboxOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { http } from "../../api/http";
@@ -50,6 +51,7 @@ import { getStorageImageUrl, handleImageFallback } from "../../utils/storageUtil
 import { normalizeDepartmentName } from "../../utils/academicPrograms";
 import BookingSettingsManagement from "./BookingSettingsManagement";
 import IssueResolutionModal from "./IssueResolutionModal";
+import UserExcelImportModal from "./UserExcelImportModal";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -254,6 +256,7 @@ export default function AdminPage() {
 
   const [bookingSearch, setBookingSearch] = useState("");
   const [bookingStatusFilter, setBookingStatusFilter] = useState("all");
+  const [bookingSortOrder, setBookingSortOrder] = useState<string>("newest");
 
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("all");
@@ -289,6 +292,7 @@ export default function AdminPage() {
   const [editingIssue, setEditingIssue] = useState<EquipmentIssue | null>(null);
 
   const [isUserModalVisible, setIsUserModalVisible] = useState(false);
+  const [isUserImportModalVisible, setIsUserImportModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<AccountItem | null>(null);
   const [userForm] = Form.useForm();
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
@@ -406,29 +410,37 @@ export default function AdminPage() {
           list = (res.data as any).items;
         }
         if (list.length > 0) {
-          // Lọc nghiêm ngặt: Chỉ giữ lại đúng 4 tài khoản thật của TBD từ CSDL
           const officialEmails = new Set(TBD_OFFICIAL_ACCOUNTS.map((a) => a.email.toLowerCase()));
-          const matchedList = list.filter((u) => u.email && officialEmails.has(u.email.toLowerCase()));
           
-          if (matchedList.length > 0) {
-            // Hợp nhất dữ liệu cập nhật từ CSDL vào danh sách 4 tài khoản chuẩn
-            return TBD_OFFICIAL_ACCOUNTS.map((official) => {
-              const fromDb = matchedList.find(
-                (m) => m.email.toLowerCase() === official.email.toLowerCase()
-              );
-              if (!fromDb) return official;
-              return {
-                ...official,
-                ...fromDb,
-                fullName: fromDb.fullName || official.fullName,
-                userCode: fromDb.userCode || official.userCode,
-                department: normalizeDepartmentName(fromDb.department || official.department),
-                phoneNumber: fromDb.phoneNumber || fromDb.phone || official.phoneNumber,
-                phone: fromDb.phoneNumber || fromDb.phone || official.phone,
-                role: fromDb.role || official.role,
-              };
-            });
-          }
+          // Hợp nhất dữ liệu cập nhật từ CSDL vào danh sách 4 tài khoản chuẩn
+          const mergedOfficialAccounts = TBD_OFFICIAL_ACCOUNTS.map((official) => {
+            const fromDb = list.find(
+              (m) => m.email && m.email.toLowerCase() === official.email.toLowerCase()
+            );
+            if (!fromDb) return official;
+            return {
+              ...official,
+              ...fromDb,
+              fullName: fromDb.fullName || official.fullName,
+              userCode: fromDb.userCode || official.userCode,
+              department: normalizeDepartmentName(fromDb.department || official.department),
+              phoneNumber: fromDb.phoneNumber || fromDb.phone || official.phoneNumber,
+              phone: fromDb.phoneNumber || fromDb.phone || official.phone,
+              role: fromDb.role || official.role,
+            };
+          });
+
+          // Các tài khoản mới được tạo thêm trong CSDL (hoặc nhập từ file Excel)
+          const customAccounts = list
+            .filter((u) => u.email && !officialEmails.has(u.email.toLowerCase()))
+            .map((u) => ({
+              ...u,
+              id: u.id || `acc-${u.email}`,
+              department: normalizeDepartmentName(u.department || ""),
+              isProfileComplete: u.isProfileComplete ?? true,
+            }));
+
+          return [...mergedOfficialAccounts, ...customAccounts];
         }
       } catch (err) {
         console.warn("Could not fetch /api/auth/users, using official TBD database accounts:", err);
@@ -451,11 +463,11 @@ export default function AdminPage() {
     const action = String(status).toLowerCase() === "approved" || status === "Approved" ? "approve" : "reject";
     if (action === "approve") {
       await http.put(`/api/bookings/${id}/approve`, {
-        notes: notes || "Ban Quản lý đồng ý",
+        notes: notes || "Phê duyệt bởi Ban Quản lý",
       });
     } else {
       await http.put(`/api/bookings/${id}/reject`, {
-        reason: notes || "Ban Quản lý từ chối yêu cầu đặt phòng",
+        reason: notes || "Từ chối bởi Ban Quản lý",
       });
     }
   };
@@ -687,10 +699,15 @@ export default function AdminPage() {
         }
       }
 
+      const bDateStr = dayjs(b.startTime).format("DD/MM/YYYY");
+      const bTimeStr = `${dayjs(b.startTime).format("HH:mm")} - ${dayjs(b.endTime).format("HH:mm")}`;
+
       const matchSearch =
         (b.roomName && b.roomName.toLowerCase().includes(bookingSearch.toLowerCase())) ||
         (b.userEmail && b.userEmail.toLowerCase().includes(bookingSearch.toLowerCase())) ||
         (b.purpose && b.purpose.toLowerCase().includes(bookingSearch.toLowerCase())) ||
+        bDateStr.includes(bookingSearch) ||
+        bTimeStr.includes(bookingSearch) ||
         String(b.id).includes(bookingSearch) ||
         `#tbd-${b.id}`.toLowerCase().includes(bookingSearch.toLowerCase());
 
@@ -706,9 +723,20 @@ export default function AdminPage() {
           return dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf();
         }
       }
-      return dayjs(b.startTime).valueOf() - dayjs(a.startTime).valueOf();
+
+      if (bookingSortOrder === "oldest") {
+        return a.id - b.id;
+      }
+      if (bookingSortOrder === "start-soon") {
+        return dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf();
+      }
+      if (bookingSortOrder === "start-far") {
+        return dayjs(b.startTime).valueOf() - dayjs(a.startTime).valueOf();
+      }
+      // Mặc định: "newest" (Mới nhất theo mã đơn / đơn vừa đặt lên đầu)
+      return b.id - a.id;
     });
-  }, [effectiveBookings, activeTab, bookingStatusFilter, bookingSearch]);
+  }, [effectiveBookings, activeTab, bookingStatusFilter, bookingSearch, bookingSortOrder]);
 
   const accountsData = (accountsQuery.data || []).filter((a: AccountItem) => {
     let matchRoleFilter = true;
@@ -1222,6 +1250,7 @@ export default function AdminPage() {
       dataIndex: "id",
       key: "id",
       width: 100,
+      sorter: (a: Booking, b: Booking) => a.id - b.id,
       render: (id: number) => (
         <Text code style={{ fontWeight: 600, color: "#0d2e5c" }}>
           #TBD-{id}
@@ -1338,7 +1367,7 @@ export default function AdminPage() {
                   }
                   onClick={() => {
                     setBookingToApprove(record);
-                    setApproveNotes("Ban Quản lý đồng ý");
+                    setApproveNotes("Phê duyệt bởi Ban Quản lý");
                   }}
                 >
                   Duyệt
@@ -1427,18 +1456,22 @@ export default function AdminPage() {
       dataIndex: "status",
       key: "status",
       render: (status: string, record: EquipmentIssue) => {
+        let effectiveStatus = status;
+        if ((effectiveStatus === "Pending" || !effectiveStatus) && record.assignedTo) {
+          effectiveStatus = record.repairNotes ? "Fixing" : "Assigned";
+        }
         let dotClass = "amber";
         let label = "Chờ tiếp nhận";
-        if (status === "Assigned") {
+        if (effectiveStatus === "Assigned") {
           dotClass = "blue";
           label = "Đã phân công";
-        } else if (status === "Fixing") {
+        } else if (effectiveStatus === "Fixing" || effectiveStatus === "InProgress") {
           dotClass = "purple";
           label = "Đang sửa chữa";
-        } else if (status === "Resolved") {
+        } else if (effectiveStatus === "Resolved") {
           dotClass = "green";
           label = "Đã hoàn tất";
-        } else if (status === "Rejected") {
+        } else if (effectiveStatus === "Rejected") {
           dotClass = "red";
           label = "Từ chối";
         }
@@ -1894,18 +1927,28 @@ export default function AdminPage() {
     }
     if (activeTab.startsWith("users")) {
       return (
-        <Button
-          type="primary"
-          icon={<UserAddOutlined />}
-          onClick={() => {
-            setEditingUser(null);
-            userForm.resetFields();
-            setIsUserModalVisible(true);
-          }}
-          style={{ background: "#0284c7", borderColor: "#0284c7" }}
-        >
-          Thêm tài khoản mới
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            icon={<UserAddOutlined />}
+            onClick={() => {
+              setEditingUser(null);
+              userForm.resetFields();
+              setIsUserModalVisible(true);
+            }}
+            style={{ background: "#0284c7", borderColor: "#0284c7" }}
+          >
+            Thêm tài khoản mới
+          </Button>
+
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={() => setIsUserImportModalVisible(true)}
+            style={{ color: "#059669", borderColor: "#059669", fontWeight: 600 }}
+          >
+            Nhập từ file danh sách
+          </Button>
+        </Space>
       );
     }
     if (activeTab.startsWith("bookings")) {
@@ -2036,21 +2079,21 @@ export default function AdminPage() {
           {/* Flat Toolbar */}
           <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
-              <Col xs={24} lg={16}>
+              <Col xs={24} xl={17} lg={16}>
                 <Space wrap size={[8, 8]} align="center">
                   <Input
                     placeholder="Tìm kiếm theo tên phòng, mã đơn, email..."
                     prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
                     value={bookingSearch}
                     onChange={(e) => setBookingSearch(e.target.value)}
-                    style={{ width: 300 }}
+                    style={{ width: 280 }}
                     allowClear
                   />
 
                   <Select
                     value={bookingStatusFilter}
                     onChange={setBookingStatusFilter}
-                    style={{ minWidth: 160, width: 170 }}
+                    style={{ minWidth: 155, width: 165 }}
                   >
                     <Select.Option value="all">Tất cả trạng thái</Select.Option>
                     <Select.Option value="Pending">Chờ duyệt (Thường)</Select.Option>
@@ -2062,9 +2105,20 @@ export default function AdminPage() {
                     <Select.Option value="Cancelled">Đã hủy</Select.Option>
                     <Select.Option value="Expired">Hết hạn</Select.Option>
                   </Select>
+
+                  <Select
+                    value={bookingSortOrder}
+                    onChange={setBookingSortOrder}
+                    style={{ minWidth: 180, width: 195 }}
+                  >
+                    <Select.Option value="newest">Xếp theo: Mới nhất</Select.Option>
+                    <Select.Option value="oldest">Xếp theo: Cũ nhất</Select.Option>
+                    <Select.Option value="start-soon">Thời gian: Sắp diễn ra</Select.Option>
+                    <Select.Option value="start-far">Thời gian: Xa nhất</Select.Option>
+                  </Select>
                 </Space>
               </Col>
-              <Col xs={24} lg={8} style={{ textAlign: "right" }}>
+              <Col xs={24} xl={7} lg={8} style={{ textAlign: "right" }}>
                 <Space wrap size={[8, 8]} align="center">
                   <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
                   <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
@@ -2879,6 +2933,7 @@ export default function AdminPage() {
         }}
         onOk={() => roomForm.submit()}
         confirmLoading={saveRoomMutation.isPending}
+        centered
         width={680}
         okText={editingRoom ? "Lưu thay đổi" : "Tạo phòng"}
         cancelText="Hủy bỏ"
@@ -3164,6 +3219,7 @@ export default function AdminPage() {
         title="Chi Tiết Đơn Đăng Ký Đặt Phòng"
         open={isBookingDetailModalVisible}
         onCancel={() => setIsBookingDetailModalVisible(false)}
+        centered
         footer={[
           <Button key="close" onClick={() => setIsBookingDetailModalVisible(false)}>
             Đóng
@@ -3245,7 +3301,7 @@ export default function AdminPage() {
             bookingMutation.mutate({
               id: bookingToApprove.id,
               status: "Approved",
-              notes: approveNotes.trim() || "Ban Quản lý đồng ý",
+              notes: approveNotes.trim() || "Phê duyệt bởi Ban Quản lý",
             });
             setBookingToApprove(null);
             setApproveNotes("");
@@ -3321,6 +3377,7 @@ export default function AdminPage() {
         open={isRejectModalVisible}
         onCancel={() => setIsRejectModalVisible(false)}
         onOk={() => rejectReasonForm.submit()}
+        centered
       >
         <Form
           form={rejectReasonForm}
@@ -3354,6 +3411,7 @@ export default function AdminPage() {
         open={isEquipmentModalVisible}
         onCancel={() => setIsEquipmentModalVisible(false)}
         onOk={() => equipmentForm.submit()}
+        centered
       >
         <Form
           form={equipmentForm}
@@ -3420,7 +3478,38 @@ export default function AdminPage() {
         onCancel={() => setIsUserModalVisible(false)}
         onOk={() => userForm.submit()}
         confirmLoading={saveUserMutation.isPending}
+        centered
       >
+        {!editingUser && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "10px 14px",
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#166534" }}>
+              <strong>Mẹo:</strong> Bạn có nhiều tài khoản cần thêm cùng lúc?
+            </div>
+            <Button
+              size="small"
+              icon={<FileExcelOutlined />}
+              onClick={() => {
+                setIsUserModalVisible(false);
+                setIsUserImportModalVisible(true);
+              }}
+              style={{ color: "#059669", borderColor: "#059669", fontWeight: 600 }}
+            >
+              Nhập từ file Excel/CSV
+            </Button>
+          </div>
+        )}
         <Form
           form={userForm}
           layout="vertical"
@@ -3521,6 +3610,16 @@ export default function AdminPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* MODAL: Nhập danh sách tài khoản từ file Excel / CSV */}
+      <UserExcelImportModal
+        open={isUserImportModalVisible}
+        onClose={() => setIsUserImportModalVisible(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["accounts"] });
+        }}
+        existingAccounts={accountsData}
+      />
 
       {/* Notifications Drawer */}
       <Drawer

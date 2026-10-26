@@ -1623,6 +1623,7 @@ export default function CalendarPage() {
         }
         open={!!selectedBooking}
         onCancel={() => setSelectedBooking(null)}
+        centered
         footer={[
           <Button
             key="close"

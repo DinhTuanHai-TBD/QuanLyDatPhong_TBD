@@ -283,13 +283,17 @@ export default function ReportIssuePage() {
       title: 'Trạng thái xử lý', 
       dataIndex: 'status', 
       key: 'status', 
-      render: (val: string) => {
-        const st = STATUS_LABELS[val] || { label: val || 'Chờ tiếp nhận', color: 'warning' }
+      render: (val: string, record: IssueReport) => {
+        let effectiveStatus = val;
+        if ((effectiveStatus === 'Pending' || !effectiveStatus) && record.assignedTo) {
+          effectiveStatus = record.repairNotes ? 'Fixing' : 'Assigned';
+        }
+        const st = STATUS_LABELS[effectiveStatus] || { label: effectiveStatus || 'Chờ tiếp nhận', color: 'warning' };
         return (
           <Tag color={st.color} style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
             {st.label}
           </Tag>
-        )
+        );
       }
     },
     { 
@@ -584,6 +588,7 @@ export default function ReportIssuePage() {
         }
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
+        centered
         footer={[
           <Button 
             key="close" 
@@ -613,9 +618,18 @@ export default function ReportIssuePage() {
             <Row>
               <Col span={8} style={{ color: '#64748b' }}>Trạng thái xử lý:</Col>
               <Col span={16}>
-                <Tag color={STATUS_LABELS[selectedIssue.status]?.color || 'default'} style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
-                  {STATUS_LABELS[selectedIssue.status]?.label || selectedIssue.status}
-                </Tag>
+                {(() => {
+                  let effectiveStatus = selectedIssue.status;
+                  if ((effectiveStatus === 'Pending' || !effectiveStatus) && selectedIssue.assignedTo) {
+                    effectiveStatus = selectedIssue.repairNotes ? 'Fixing' : 'Assigned';
+                  }
+                  const st = STATUS_LABELS[effectiveStatus] || { label: effectiveStatus, color: 'default' };
+                  return (
+                    <Tag color={st.color} style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
+                      {st.label}
+                    </Tag>
+                  );
+                })()}
               </Col>
             </Row>
             <Row>

@@ -362,6 +362,7 @@ export default function SemesterScheduleModal({
       }
       open={open}
       onCancel={onClose}
+      centered
       width={activeTab === 'excel' ? 1040 : 980}
       footer={
         activeTab === 'manual' ? (

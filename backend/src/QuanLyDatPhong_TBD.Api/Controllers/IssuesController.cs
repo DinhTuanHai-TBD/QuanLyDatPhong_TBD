@@ -258,6 +258,13 @@ public class IssuesController : ControllerBase
         if (request.AssignedTo != null) issue.AssignedTo = request.AssignedTo;
         if (request.RepairNotes != null) issue.RepairNotes = request.RepairNotes;
         if (request.AdminNotes != null) issue.AdminNotes = request.AdminNotes;
+
+        // Tự động chuyển trạng thái nếu đã có người phụ trách
+        if (!string.IsNullOrWhiteSpace(issue.AssignedTo) && issue.Status == "Pending")
+        {
+            issue.Status = !string.IsNullOrWhiteSpace(issue.RepairNotes) ? "Fixing" : "Assigned";
+        }
+
         issue.UpdatedAt = DateTime.UtcNow;
 
         if (!string.IsNullOrEmpty(issue.UserId))

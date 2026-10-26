@@ -117,12 +117,25 @@ internal sealed class BookingService : IBookingService
         return list.Select(b => MapToDto(b, roomDict.GetValueOrDefault(b.RoomId, "Phòng"))).ToList();
     }
 
+        private static DateTime ToUtcTime(DateTime dt)
+    {
+        return dt.Kind switch
+        {
+            DateTimeKind.Utc => dt,
+            DateTimeKind.Local => dt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+        };
+    }
+
     public async Task<BookingResult> CreateAsync(
         string userId,
         CreateBookingRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request.EndTime <= request.StartTime)
+        var startUtc = ToUtcTime(request.StartTime);
+        var endUtc = ToUtcTime(request.EndTime);
+
+        if (endUtc <= startUtc)
         {
             return BookingResult.Failure("Thời gian kết thúc phải sau thời gian bắt đầu.");
         }
@@ -135,25 +148,32 @@ internal sealed class BookingService : IBookingService
             return BookingResult.Failure("Phòng này hiện không thể đặt.");
         }
 
-        var settings = await _policies.GetAsync(cancellationToken);
-
+        var settings = await _policies.GetAsync(cancellationToken);
+
+
+
         var managerRoleIds = await _dbContext.Roles
             .Where(r => r.Name == "Admin" || r.Name == "Approver" || r.Name == "Manager")
             .Select(r => r.Id)
             .ToListAsync(cancellationToken);
 
         var isAdmin = managerRoleIds.Count > 0 && await _dbContext.UserRoles
-            .AnyAsync(ur => ur.UserId == userId && managerRoleIds.Contains(ur.RoleId), cancellationToken);
-
-        var violation = BookingPolicy.Validate(settings, request.RoomId,
-            request.StartTime, request.EndTime, DateTime.UtcNow, approval: isAdmin);
-        if (violation != null) return BookingResult.Failure(violation);
-
+            .AnyAsync(ur => ur.UserId == userId && managerRoleIds.Contains(ur.RoleId), cancellationToken);
+
+
+
+        var violation = BookingPolicy.Validate(settings, request.RoomId,
+            startUtc, endUtc, DateTime.UtcNow, approval: isAdmin);
+
+        if (violation != null) return BookingResult.Failure(violation);
+
+
+
         var hasConflict = await _dbContext.Bookings.AnyAsync(
             booking => booking.RoomId == request.RoomId
                 && (booking.Status == BookingStatus.Pending || booking.Status == BookingStatus.Approved || booking.Status == BookingStatus.Using)
-                && request.StartTime < booking.EndTime
-                && request.EndTime > booking.StartTime,
+                && startUtc < booking.EndTime
+                && endUtc > booking.StartTime,
             cancellationToken);
 
         if (hasConflict)
@@ -191,8 +211,8 @@ internal sealed class BookingService : IBookingService
             settings,
             userRole,
             room.RoomType,
-            request.StartTime,
-            request.EndTime,
+            startUtc,
+            endUtc,
             DateTime.UtcNow,
             request.IsSpecialRequest);
         if (roleViolation != null) return BookingResult.Failure(roleViolation);
@@ -213,7 +233,7 @@ internal sealed class BookingService : IBookingService
             }
 
             var maxWeeklyHours = settings.MaxBookedHoursPerUserPerWeek > 0 ? settings.MaxBookedHoursPerUserPerWeek : 20.0;
-            var reqVn = DateTime.SpecifyKind(request.StartTime, DateTimeKind.Utc).AddHours(7);
+            var reqVn = startUtc.AddHours(7);
             int diff = (7 + ((int)reqVn.DayOfWeek - 1)) % 7;
             var weekStartVn = reqVn.Date.AddDays(-diff);
             var weekEndVn = weekStartVn.AddDays(7);
@@ -228,7 +248,7 @@ internal sealed class BookingService : IBookingService
                 .ToListAsync(cancellationToken);
 
             double currentHours = activeWeekBookings.Sum(b => (b.EndTime - b.StartTime).TotalHours);
-            double requestedHours = (request.EndTime - request.StartTime).TotalHours;
+            double requestedHours = (endUtc - startUtc).TotalHours;
             if (currentHours + requestedHours > maxWeeklyHours)
             {
                 return BookingResult.Failure($"Tổng thời lượng đặt phòng trong tuần vượt quá hạn mức tối đa ({maxWeeklyHours} giờ/tuần). Hiện tại bạn đã đặt {currentHours:0.#} giờ.");
@@ -244,8 +264,8 @@ internal sealed class BookingService : IBookingService
             UserId = userId,
             RoomId = request.RoomId,
             UserEmail = user?.Email,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
+            StartTime = startUtc,
+            EndTime = endUtc,
             Purpose = request.Purpose?.Trim(),
             ParticipantCount = request.ParticipantCount,
             RequestedEquipmentsJson = request.RequestedEquipments != null ? JsonSerializer.Serialize(request.RequestedEquipments) : null,
@@ -336,7 +356,10 @@ internal sealed class BookingService : IBookingService
         UpdateBookingRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request.EndTime <= request.StartTime)
+        var startUtc = ToUtcTime(request.StartTime);
+        var endUtc = ToUtcTime(request.EndTime);
+
+        if (endUtc <= startUtc)
         {
             return BookingResult.Failure("Thời gian kết thúc phải sau thời gian bắt đầu.");
         }
@@ -355,8 +378,8 @@ internal sealed class BookingService : IBookingService
         }
 
         // Phương án B: Khóa cố định khung giờ và phòng học đã giữ chỗ trong hàng chờ xét duyệt
-        if (Math.Abs((request.StartTime - booking.StartTime).TotalMinutes) > 1 ||
-            Math.Abs((request.EndTime - booking.EndTime).TotalMinutes) > 1)
+        if (Math.Abs((startUtc - booking.StartTime).TotalMinutes) > 1 ||
+            Math.Abs((endUtc - booking.EndTime).TotalMinutes) > 1)
         {
             return BookingResult.Failure("Khung giờ và phòng học đã được giữ chỗ cố định trong hàng chờ xét duyệt. Nếu muốn thay đổi thời gian hoặc phòng, vui lòng hủy yêu cầu này và tạo đơn mới.");
         }
@@ -367,7 +390,7 @@ internal sealed class BookingService : IBookingService
         if (room is null || !room.IsActive || room.Status != RoomStatus.Active)
             return BookingResult.Failure("Phòng này hiện không thể đặt.");
         var violation = BookingPolicy.Validate(await _policies.GetAsync(cancellationToken), booking.RoomId,
-            request.StartTime, request.EndTime, DateTime.UtcNow);
+            startUtc, endUtc, DateTime.UtcNow);
         if (violation != null) return BookingResult.Failure(violation);
 
         // Check for conflicts excluding the current booking itself
@@ -375,8 +398,8 @@ internal sealed class BookingService : IBookingService
             b => b.Id != bookingId
                 && b.RoomId == booking.RoomId
                 && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Approved)
-                && request.StartTime < b.EndTime
-                && request.EndTime > b.StartTime,
+                && startUtc < b.EndTime
+                && endUtc > b.StartTime,
             cancellationToken);
 
         if (hasConflict)
@@ -384,8 +407,8 @@ internal sealed class BookingService : IBookingService
             return BookingResult.Failure("Khoảng thời gian sửa đổi bị trùng với lịch đặt phòng khác.");
         }
 
-        booking.StartTime = request.StartTime;
-        booking.EndTime = request.EndTime;
+        booking.StartTime = startUtc;
+        booking.EndTime = endUtc;
         booking.Purpose = request.Purpose?.Trim();
         booking.ParticipantCount = request.ParticipantCount;
         booking.RequestedEquipmentsJson = request.RequestedEquipments != null ? JsonSerializer.Serialize(request.RequestedEquipments) : null;
