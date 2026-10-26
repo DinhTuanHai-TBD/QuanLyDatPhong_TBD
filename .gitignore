@@ -17,3 +17,10 @@ backend/**/appsettings.Local.json
 *.user
 *.log
 .DS_Store
+~$*.docx
+*.bak
+*.tmp
+__pycache__/
+*.pyc
+bun.lock
+
