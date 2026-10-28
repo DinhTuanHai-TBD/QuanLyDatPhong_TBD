@@ -2,7 +2,7 @@ name: room-booking-platform
 
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: quan_ly_dat_phong_tbd
       POSTGRES_USER: postgres
@@ -25,6 +25,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=quan_ly_dat_phong_tbd;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
+      Database__InitializeOnStartup: "true"
       Jwt__Issuer: QuanLyDatPhong_TBD
       Jwt__Audience: QuanLyDatPhong_TBD_Frontend
       Jwt__SecretKey: ${JWT_SECRET_KEY:-CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_KEY_32_CHARS}
