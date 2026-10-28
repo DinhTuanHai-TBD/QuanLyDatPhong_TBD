@@ -16,12 +16,27 @@ const isLocalhost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 
-const targetBaseUrl =
-  envUrl && !isDeadTunnel(envUrl)
-    ? envUrl
-    : isLocalhost
-      ? 'http://localhost:5250'
-      : ''
+// Khi chạy qua Docker (port 8080 / Nginx) hoặc production build:
+// Luôn sử dụng baseURL = '' để Nginx reverse proxy /api sang container backend.
+// Bỏ qua giá trị envUrl nếu trỏ vào localhost:5250 của môi trường dev ngoài máy.
+const targetBaseUrl = (() => {
+  if (typeof window !== 'undefined') {
+    const isDockerOrProd = window.location.port === '8080' || window.location.port === '80' || !import.meta.env.DEV
+    if (isDockerOrProd) {
+      if (envUrl && !isDeadTunnel(envUrl) && !envUrl.includes('localhost:5250') && !envUrl.includes('127.0.0.1:5250')) {
+        return envUrl
+      }
+      return ''
+    }
+  }
+
+  if (envUrl && !isDeadTunnel(envUrl)) {
+    return envUrl
+  }
+
+  return isLocalhost ? 'http://localhost:5250' : ''
+})()
+
 
 export const http = axios.create({
   baseURL: targetBaseUrl,
