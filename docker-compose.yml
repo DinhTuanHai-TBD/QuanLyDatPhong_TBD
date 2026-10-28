@@ -1,22 +1,6 @@
 name: room-booking-platform
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: quan_ly_dat_phong_tbd
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d quan_ly_dat_phong_tbd"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: ./backend
@@ -24,15 +8,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=quan_ly_dat_phong_tbd;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
-      Database__InitializeOnStartup: "true"
+      ConnectionStrings__DefaultConnection: Host=aws-0-ap-northeast-2.pooler.supabase.com;Port=5432;Database=postgres;Username=postgres.jpijxwxsoxrmssosgblj;Password=${SUPABASE_DB_PASSWORD:-Hahai171225@};SSL Mode=Require;Trust Server Certificate=true
+      Database__InitializeOnStartup: "false"
       Jwt__Issuer: QuanLyDatPhong_TBD
       Jwt__Audience: QuanLyDatPhong_TBD_Frontend
       Jwt__SecretKey: ${JWT_SECRET_KEY:-CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_KEY_32_CHARS}
       Jwt__ExpirationMinutes: 120
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "7000:8080"
 
@@ -46,5 +27,18 @@ services:
     ports:
       - "8080:80"
 
-volumes:
-  postgres-data:
+# Cấu hình dự phòng nếu muốn chạy PostgreSQL offline cục bộ thay vì Supabase:
+# services:
+#   postgres:
+#     image: postgres:17-alpine
+#     environment:
+#       POSTGRES_DB: quan_ly_dat_phong_tbd
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+#     ports:
+#       - "5433:5432"
+#     volumes:
+#       - postgres-data:/var/lib/postgresql/data
+# volumes:
+#   postgres-data:
+
