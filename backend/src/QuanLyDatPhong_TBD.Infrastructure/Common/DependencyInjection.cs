@@ -35,7 +35,8 @@ public static class DependencyInjection
                     maxRetryCount: 3,
                     maxRetryDelay: TimeSpan.FromSeconds(2),
                     errorCodesToAdd: null);
-            }));
+            })
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 
         services
             .AddIdentityCore<ApplicationUser>(options =>
