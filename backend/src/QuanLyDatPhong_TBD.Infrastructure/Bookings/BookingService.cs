@@ -389,8 +389,17 @@ internal sealed class BookingService : IBookingService
 
         if (room is null || !room.IsActive || room.Status != RoomStatus.Active)
             return BookingResult.Failure("Phòng này hiện không thể đặt.");
+
+        var updateManagerRoleIds = await _dbContext.Roles
+            .Where(r => r.Name == "Admin" || r.Name == "Approver" || r.Name == "Manager")
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        var isEditorAdmin = updateManagerRoleIds.Count > 0 && await _dbContext.UserRoles
+            .AnyAsync(ur => ur.UserId == userId && updateManagerRoleIds.Contains(ur.RoleId), cancellationToken);
+
         var violation = BookingPolicy.Validate(await _policies.GetAsync(cancellationToken), booking.RoomId,
-            startUtc, endUtc, DateTime.UtcNow);
+            startUtc, endUtc, DateTime.UtcNow, approval: isEditorAdmin);
         if (violation != null) return BookingResult.Failure(violation);
 
         // Check for conflicts excluding the current booking itself

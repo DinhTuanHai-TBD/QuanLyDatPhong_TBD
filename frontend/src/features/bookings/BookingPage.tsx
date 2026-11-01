@@ -403,16 +403,18 @@ function BookingPage() {
   }, [bookingSettings, selectedRoom, selectedDate, startTime, endTime, userRole, isFaculty, isStaff, isAdmin])
 
   const userMaxAdvanceDays = useMemo(() => {
+    if (isAdmin) return 365 // Admin và Quản lý không bị giới hạn số ngày đặt trước
     if (!bookingSettings) return 7
-    if (isFaculty || isStaff || isAdmin) {
+    if (isFaculty || isStaff) {
       return bookingSettings.facultyMaxAdvanceDays ?? 30
     }
     return bookingSettings.studentMaxAdvanceDays ?? 7
   }, [bookingSettings, isFaculty, isStaff, isAdmin])
 
   const userMaxHoursPerBooking = useMemo(() => {
+    if (isAdmin) return 24 // Admin và Quản lý không bị giới hạn thời lượng (linh hoạt theo khung giờ vận hành)
     if (!bookingSettings) return 3
-    if (isFaculty || isStaff || isAdmin) {
+    if (isFaculty || isStaff) {
       return bookingSettings.facultyMaxHoursPerBooking ?? 6
     }
     return bookingSettings.studentMaxHoursPerBooking ?? 3
@@ -424,8 +426,8 @@ function BookingPage() {
     const today = toVN().startOf('day')
     const cur = toVN(current).startOf('day')
     if (cur.isBefore(today)) return true
-    if (cur.diff(today, 'day') > userMaxAdvanceDays) return true
-    if (!bookingSettings.workingDays.includes(cur.day())) return true
+    if (!isAdmin && cur.diff(today, 'day') > userMaxAdvanceDays) return true
+    if (!isAdmin && !bookingSettings.workingDays.includes(cur.day())) return true
     return false
   }
 
@@ -665,11 +667,15 @@ function BookingPage() {
       }
 
       const hours = clickedTime.diff(curStart, 'hour', true)
-      if (hours < 1.0) {
+      if (hours <= 0) {
+        message.warning('Giờ kết thúc phải sau giờ bắt đầu!')
+        return
+      }
+      if (!isAdmin && hours < 1.0) {
         message.warning(`Thời lượng mượn phòng tối thiểu là 1 giờ (hiện tại chọn ${Math.round(hours * 60)} phút). Vui lòng chọn giờ kết thúc từ ${curStart.add(1, 'hour').format('HH:mm')} trở đi!`)
         return
       }
-      if (hours > userMaxHoursPerBooking) {
+      if (!isAdmin && hours > userMaxHoursPerBooking) {
         message.warning(`Thời lượng chọn (${hours.toFixed(1)} giờ) vượt quá giới hạn tối đa cho phép (${userMaxHoursPerBooking} giờ). Vui lòng chọn giờ kết thúc sớm hơn!`)
         return
       }
@@ -1789,7 +1795,14 @@ function BookingPage() {
                         <span>
                           Khung giờ vận hành giảng đường: <strong style={{ color: '#0d2e5c' }}>{openTime} - {closeTime}</strong>
                         </span>
-                        <span>Đặt trước tối đa: <strong>{userMaxAdvanceDays} ngày</strong> | Thời lượng: <strong>Tối thiểu 1 giờ - Tối đa {userMaxHoursPerBooking} giờ</strong></span>
+                        {isAdmin ? (
+                          <span style={{ color: '#0d2e5c', fontWeight: 600 }}>
+                            <SafetyCertificateOutlined style={{ marginRight: 5, color: '#16a34a' }} />
+                            Quyền Admin/Quản lý: <strong>Không giới hạn thời lượng chọn</strong> (linh hoạt toàn ca trong ngày)
+                          </span>
+                        ) : (
+                          <span>Đặt trước tối đa: <strong>{userMaxAdvanceDays} ngày</strong> | Thời lượng: <strong>Tối thiểu 1 giờ - Tối đa {userMaxHoursPerBooking} giờ</strong></span>
+                        )}
                       </div>
                     )}
 

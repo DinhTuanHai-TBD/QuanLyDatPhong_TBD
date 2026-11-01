@@ -298,22 +298,20 @@ export function validateBookingAgainstSettings({
   // Role detection
   const roleNorm = (userRole || '').toLowerCase()
   const facultyUser = isFaculty || roleNorm.includes('faculty') || roleNorm.includes('giảng viên') || roleNorm.includes('lecturer') || roleNorm.includes('teacher')
-  const adminUser = isAdmin || roleNorm === 'admin' || roleNorm === 'approver' || roleNorm === 'superadmin' || roleNorm.includes('manager') || roleNorm.includes('quanly') || roleNorm.includes('admin') || roleNorm.includes('approver')
+  const adminUser = isAdmin || roleNorm === 'admin' || roleNorm === 'approver' || roleNorm === 'superadmin' || roleNorm.includes('manager') || roleNorm.includes('quanly') || roleNorm.includes('admin') || roleNorm.includes('approver') || roleNorm.includes('quản lý') || roleNorm.includes('quan ly')
   const isStudent = !facultyUser && !adminUser
 
-  // 2. Check advance booking limits (studentMaxAdvanceDays / facultyMaxAdvanceDays)
+  // 2. Check advance booking limits (studentMaxAdvanceDays / facultyMaxAdvanceDays) - Admin & Quản lý không bị giới hạn
   const todayStart = now.startOf('day')
   const bookingDayStart = bookingDate.startOf('day')
   const diffDays = bookingDayStart.diff(todayStart, 'day')
 
   if (diffDays < 0) {
     violations.push('Không thể đặt phòng cho ngày trong quá khứ.')
-  } else {
+  } else if (!adminUser) {
     const maxDays = facultyUser 
       ? (settings.facultyMaxAdvanceDays ?? 30) 
-      : adminUser 
-        ? (settings.facultyMaxAdvanceDays ?? 30) 
-        : (settings.studentMaxAdvanceDays ?? 7)
+      : (settings.studentMaxAdvanceDays ?? 7)
 
     if (diffDays > maxDays) {
       if (facultyUser) {
@@ -351,24 +349,22 @@ export function validateBookingAgainstSettings({
     violations.push(`Giờ kết thúc (${endTime.format('HH:mm')}) vượt quá giờ đóng cửa quy định (${settings.closeTime}).`)
   }
 
-  // 5. Check duration limits (Minimum 1 hour, maximum according to role)
+  // 5. Check duration limits - Admin & Quản lý không bị giới hạn thời lượng mượn phòng (linh hoạt toàn ca)
   const durationHours = endTime.diff(startTime, 'hour', true)
   if (durationHours <= 0) {
     violations.push('Giờ kết thúc phải sau giờ bắt đầu.')
-  } else if (durationHours < 1.0) {
+  } else if (!adminUser && durationHours < 1.0) {
     violations.push(`Thời lượng mượn phòng tối thiểu là 1 giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
-  } else {
+  } else if (!adminUser) {
     const maxHours = facultyUser 
       ? (settings.facultyMaxHoursPerBooking ?? 6.0) 
-      : adminUser 
-        ? Math.max(settings.facultyMaxHoursPerBooking ?? 6.0, settings.maxHoursPerBooking ?? 4.0) 
-        : (settings.studentMaxHoursPerBooking ?? 3.0)
+      : (settings.studentMaxHoursPerBooking ?? 3.0)
 
     if (durationHours > maxHours) {
       if (facultyUser) {
         violations.push(`Thời lượng đặt phòng tối đa mỗi lượt đối với Giảng viên là ${maxHours} giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
       } else if (isStudent) {
-        violations.push(`Thời lượng đặt phòng tối đa mỗi lượt đối với Sinh viên là ${maxHours} giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
+        violations.push(`Sinh viên chỉ được đặt phòng tối đa ${maxHours} giờ mỗi lượt (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
       } else {
         violations.push(`Thời lượng đặt phòng tối đa mỗi lượt là ${maxHours} giờ (Hiện tại: ${durationHours.toFixed(1)} giờ).`)
       }

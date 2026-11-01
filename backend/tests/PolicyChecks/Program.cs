@@ -103,6 +103,8 @@ Check(BookingPolicy.ValidateCancellation(policy, now.AddHours(2), now) == null, 
 Check(BookingPolicy.ValidateCancellation(policy, now.AddHours(2).AddSeconds(-1), now) != null, "late cancellation rejected");
 Check(Validate(now.AddDays(28), now.AddDays(28).AddHours(8), timetable: true) == null, "timetable bypasses personal duration/horizon");
 Check(Validate(now.AddMinutes(10), now.AddHours(1), approval: true) == null, "approval does not reapply creation notice");
+Check(Validate(now.AddHours(1), now.AddHours(10), approval: true) == null, "approval allows full day booking without duration restriction");
+Check(Validate(now.AddDays(40), now.AddDays(40).AddHours(2), approval: true) == null, "approval allows advance booking without horizon restriction");
 policy.ClosedPeriodsJson = JsonSerializer.Serialize(new[] { new ClosedPeriod(1, now.AddHours(1), now.AddHours(3), "Maintenance") });
 Check(Validate(now.AddHours(2), now.AddHours(4)) != null, "room maintenance blocks overlap");
 Check(Validate(now.AddHours(3), now.AddHours(4)) == null, "maintenance end boundary is available");

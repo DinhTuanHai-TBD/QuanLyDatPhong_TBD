@@ -25,8 +25,8 @@ public static class BookingPolicy
         {
             if (start <= now) return "Không thể đặt/duyệt lịch đã bắt đầu.";
             if (!approval && start < now.AddMinutes(settings.MinAdvanceMinutes)) return $"Phải đặt trước ít nhất {settings.MinAdvanceMinutes} phút.";
-            if (localStart.Date > now.AddHours(7).Date.AddDays(settings.MaxAdvanceDays)) return $"Chỉ được đặt trước tối đa {settings.MaxAdvanceDays} ngày.";
-            if ((end - start).TotalHours > settings.MaxHoursPerBooking) return $"Mỗi lượt đặt tối đa {settings.MaxHoursPerBooking} giờ.";
+            if (!approval && localStart.Date > now.AddHours(7).Date.AddDays(settings.MaxAdvanceDays)) return $"Chỉ được đặt trước tối đa {settings.MaxAdvanceDays} ngày.";
+            if (!approval && (end - start).TotalHours > settings.MaxHoursPerBooking) return $"Mỗi lượt đặt tối đa {settings.MaxHoursPerBooking} giờ.";
         }
         return null;
     }
@@ -58,7 +58,7 @@ public static class BookingPolicy
         if (!isFaculty && !isManager)
         {
             // Sinh viên / người dùng thông thường
-            if (roomType == Enums.RoomType.LectureHall || roomType == Enums.RoomType.Lab)
+            if (!isSpecialRequest && (roomType == Enums.RoomType.LectureHall || roomType == Enums.RoomType.Lab))
             {
                 return "Tài khoản Sinh viên không được phép đặt Hội trường, Phòng Lab hoặc Cinema theo quy chế của Nhà trường.";
             }
