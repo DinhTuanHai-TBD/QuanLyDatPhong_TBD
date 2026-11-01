@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useSearchParams } from 'react-router-dom'
 import { Modal, Form, Row, Col, Alert, Button, Empty, Tag, Typography, Input, InputNumber, Pagination, App } from 'antd'
 import dayjs from 'dayjs'
-import { HomeOutlined, SearchOutlined, ReloadOutlined, ClockCircleOutlined, LockOutlined } from '@ant-design/icons'
+import { HomeOutlined, SearchOutlined, ReloadOutlined, ClockCircleOutlined, LockOutlined, CheckCircleOutlined, LogoutOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useState, useEffect, useMemo } from 'react'
 import { http, formatApiError } from '../../api/http'
@@ -43,8 +43,11 @@ const getDurationText = (startTime: string, endTime: string) => {
   return `${mins} phút`
 }
 
+export const DEMO_BOOKING_ID = 88888
+
 export const isExpiredBooking = (b: any): boolean => {
   if (!b) return false
+  if (b.id === DEMO_BOOKING_ID) return false
   const s = String(b.status).toLowerCase()
   const reason = (b.rejectReason || b.rejectionReason || b.notes || '').toLowerCase()
   return s === '3' || s === 'expired' || reason.includes('hết hạn') || isBookingExpired(b)
@@ -326,6 +329,7 @@ interface BookingCardProps {
   setSelectedBookingForQR: (b: Booking) => void
   setQrModalVisible: (v: boolean) => void
   setCheckoutModalVisible: (v: boolean) => void
+  onResetDemo?: () => void
 }
 
 function BookingCard({
@@ -336,20 +340,23 @@ function BookingCard({
   handleDetailClick,
   setSelectedBookingForQR,
   setQrModalVisible,
-  setCheckoutModalVisible
+  setCheckoutModalVisible,
+  onResetDemo
 }: BookingCardProps) {
-  const isExpired = isExpiredBooking(record)
+  const isDemo = record.id === DEMO_BOOKING_ID
+  const isExpired = !isDemo && isExpiredBooking(record)
   const isPending = !isExpired && (String(record.status) === '0' || record.status === 'Pending' || record.status === 'PendingSpecial')
   const isApproved = !isExpired && (String(record.status) === '1' || record.status === 'Approved')
   const isUsing = !isExpired && record.status === 'Using'
-  const isEditable = isPending
-  const isCancellable = (isPending || isApproved) && !isExpired
+  const isCompleted = !isExpired && record.status === 'Completed'
+  const isEditable = isPending && !isDemo
+  const isCancellable = (isPending || isApproved) && !isExpired && !isDemo
 
   const startTime = dayjs(record.startTime)
   const diffMinutes = startTime.diff(now, 'minute', true)
 
-  const canCheckIn = isApproved && diffMinutes <= 15 && diffMinutes >= -15
-  const isNoShowRisk = isApproved && diffMinutes < -15
+  const canCheckIn = isApproved && (isDemo || (diffMinutes <= 15 && diffMinutes >= -15))
+  const isNoShowRisk = isApproved && !isDemo && diffMinutes < -15
 
   const durationText = getDurationText(record.startTime, record.endTime)
   const equipmentsStr = record.requestedEquipments && record.requestedEquipments.length > 0
@@ -401,13 +408,28 @@ function BookingCard({
       {/* 2. Body Thẻ */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {/* Mã đơn & Tên phòng */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 19, fontWeight: 700, color: '#0d2e5c' }}>
             Phòng {record.roomName}
           </span>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>
             #TBD-{record.id}
           </span>
+          {isDemo && (
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#1d4ed8',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                padding: '2px 8px',
+                borderRadius: 4
+              }}
+            >
+              MẪU DEMO BƯỚC 4
+            </span>
+          )}
           {record.department && (
             <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>
               • {normalizeDepartmentName(record.department)}
@@ -466,11 +488,12 @@ function BookingCard({
           </div>
         )}
 
-        {/* Thời gian Check-in / Check-out thực tế */}
-        {!isExpired && (record.actualStartTime || record.actualEndTime) && (
-          <div style={{ fontSize: 13, color: '#059669', display: 'flex', gap: 16, marginTop: 4 }}>
-            {record.actualStartTime && <span>Đã Check-in: <strong>{dayjs(record.actualStartTime).format('HH:mm DD/MM')}</strong></span>}
-            {record.actualEndTime && <span>Đã Check-out: <strong>{dayjs(record.actualEndTime).format('HH:mm DD/MM')}</strong></span>}
+        {/* Thời gian Check-in / Check-out thực tế & ghi chú bàn giao */}
+        {!isExpired && (record.actualStartTime || record.actualEndTime || record.checkoutNotes) && (
+          <div style={{ fontSize: 13, color: '#059669', display: 'flex', gap: 16, marginTop: 4, flexWrap: 'wrap' }}>
+            {record.actualStartTime && <span>Đã Check-in (Nhận phòng): <strong>{dayjs(record.actualStartTime).format('HH:mm DD/MM')}</strong></span>}
+            {record.actualEndTime && <span>Đã Check-out (Trả phòng): <strong>{dayjs(record.actualEndTime).format('HH:mm DD/MM')}</strong></span>}
+            {record.checkoutNotes && <span>Ghi chú bàn giao: <em>"{record.checkoutNotes}"</em></span>}
           </div>
         )}
 
@@ -510,17 +533,28 @@ function BookingCard({
           borderTop: '1.5px solid #cbd5e1'
         }}
       >
-        {/* Thông báo trạng thái Check-in */}
+        {/* Thông báo trạng thái Check-in / Sử dụng / Hoàn tất */}
         <div>
           {isApproved && (
-            <span style={{ fontSize: 13, fontWeight: 500, color: diffMinutes <= 15 && diffMinutes > 0 ? '#d97706' : '#64748b' }}>
-              {diffMinutes > 15 ? 'Check-in mở trước 15 phút' :
+            <span style={{ fontSize: 13, fontWeight: 500, color: diffMinutes <= 15 && diffMinutes > 0 ? '#d97706' : '#059669' }}>
+              {isDemo ? '🟢 Đang trong khung giờ nhận phòng (Sẵn sàng điểm danh)' :
+               diffMinutes > 15 ? 'Check-in mở trước 15 phút' :
                diffMinutes > 0 ? `Có thể check-in (còn ${Math.floor(diffMinutes)} phút)` :
                canCheckIn ? 'Đang trong thời gian check-in' :
                isNoShowRisk ? 'Quá giờ check-in (No-show)' : ''}
             </span>
           )}
-          {isNoShowRisk && (
+          {isUsing && (
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#0284c7' }}>
+              🔵 Phòng đang sử dụng (Bấm "Trả phòng" khi hoàn tất)
+            </span>
+          )}
+          {isCompleted && (
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#16a34a' }}>
+              ✅ Buổi mượn phòng đã hoàn tất & bàn giao cơ sở vật chất
+            </span>
+          )}
+          {isNoShowRisk && !isDemo && (
             <span style={{ marginLeft: 8, fontSize: 12, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 4, border: '1px solid #fecaca' }}>
               Quá hạn
             </span>
@@ -565,10 +599,15 @@ function BookingCard({
                 fontWeight: 600,
                 fontSize: 13,
                 cursor: 'pointer',
-                transition: 'background 0.15s ease'
+                transition: 'background 0.15s ease',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)'
               }}
             >
-              Check-in
+              <CheckCircleOutlined />
+              {isDemo ? 'Điểm danh (Nhận phòng)' : 'Check-in'}
             </button>
           )}
 
@@ -585,10 +624,39 @@ function BookingCard({
                 fontWeight: 600,
                 fontSize: 13,
                 cursor: 'pointer',
-                transition: 'background 0.15s ease'
+                transition: 'background 0.15s ease',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)'
               }}
             >
-              Check-out
+              <LogoutOutlined />
+              {isDemo ? 'Trả phòng (Kết thúc)' : 'Check-out'}
+            </button>
+          )}
+
+          {isDemo && (
+            <button
+              type="button"
+              onClick={onResetDemo}
+              title="Đặt lại dữ liệu về trạng thái ban đầu để demo lại"
+              style={{
+                background: '#f8fafc',
+                color: '#334155',
+                border: '1.5px solid #cbd5e1',
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: 12.5,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <ReloadOutlined />
+              Đặt lại demo
             </button>
           )}
 
@@ -753,14 +821,59 @@ function BookingHistoryPage() {
     }
   })
 
+  // State dữ liệu demo cho Bước 4 (Nhận phòng & Trả phòng) - Tự động reset khi tải lại trang
+  const [demoState, setDemoState] = useState<{
+    status: 'Approved' | 'Using' | 'Completed'
+    actualStartTime: string | null
+    actualEndTime: string | null
+    checkoutNotes: string | null
+  }>({
+    status: 'Approved',
+    actualStartTime: null,
+    actualEndTime: null,
+    checkoutNotes: null
+  })
+
+  const handleResetDemo = () => {
+    setDemoState({
+      status: 'Approved',
+      actualStartTime: null,
+      actualEndTime: null,
+      checkoutNotes: null
+    })
+    AppMessage.info('Đã đặt lại dữ liệu đơn mẫu về trạng thái ban đầu: Sẵn sàng điểm danh nhận phòng.')
+  }
+
   const handleSimulateCheckIn = () => {
     if (selectedBookingForQR) {
+      if (selectedBookingForQR.id === DEMO_BOOKING_ID) {
+        setDemoState(prev => ({
+          ...prev,
+          status: 'Using',
+          actualStartTime: new Date().toISOString()
+        }))
+        AppMessage.success('Điểm danh nhận phòng thành công! Trạng thái đơn đã chuyển sang "Đang sử dụng".')
+        setQrModalVisible(false)
+        return
+      }
       checkinMutation.mutate(selectedBookingForQR.id)
     }
   }
 
   const handleCheckoutSubmit = (values: any) => {
     if (selectedBookingForQR) {
+      if (selectedBookingForQR.id === DEMO_BOOKING_ID) {
+        setDemoState(prev => ({
+          ...prev,
+          status: 'Completed',
+          actualEndTime: new Date().toISOString(),
+          checkoutNotes: values.notes || 'Phòng học sạch sẽ, thiết bị hoạt động tốt, bàn giao chìa khóa đầy đủ.'
+        }))
+        AppMessage.success('Trả phòng và ghi nhận tình trạng bàn giao thành công! Buổi mượn phòng đã hoàn tất.')
+        setCheckoutModalVisible(false)
+        checkoutForm.resetFields()
+        return
+      }
       checkoutMutation.mutate({ id: selectedBookingForQR.id, notes: values.notes })
     }
   }
@@ -966,10 +1079,34 @@ function BookingHistoryPage() {
     setDetailModalVisible(true)
   }
 
-  const bookingsData = (() => {
+  const bookingsData = useMemo(() => {
     const apiData = bookingsQuery.data ?? []
-    return apiData.map((b) => getEffectiveBooking(b))
-  })()
+    const mapped = apiData.map((b) => getEffectiveBooking(b))
+
+    // Đơn mượn phòng có sẵn phục vụ Thuyết trình & Demo Bước 4: Nhận phòng (Điểm danh) & Trả phòng
+    const demoBooking: Booking = {
+      id: DEMO_BOOKING_ID,
+      roomId: 1,
+      roomName: 'A101 (Khu A)',
+      startTime: dayjs().subtract(5, 'minute').toISOString(),
+      endTime: dayjs().add(85, 'minute').toISOString(),
+      purpose: 'Báo cáo Đồ án chuyên ngành (Demo Điểm danh Nhận phòng & Trả phòng)',
+      status: demoState.status,
+      actualStartTime: demoState.actualStartTime,
+      actualEndTime: demoState.actualEndTime,
+      checkoutNotes: demoState.checkoutNotes,
+      participantCount: 25,
+      department: 'Khoa Công nghệ thông tin và Bán dẫn',
+      personInCharge: 'Sinh viên Báo cáo Đồ án',
+      requestedEquipments: ['Micro không dây Shure (Bộ 2 mic)', 'Máy chiếu di động Panasonic PT-LB386'],
+      notes: 'Phiếu mượn có sẵn phục vụ thuyết trình Bước 4: Nhận phòng (Điểm danh web/QR) & Trả phòng (kết thúc và ghi chú bàn giao)',
+      approvedBy: 'Ban Quản trị Cơ sở vật chất TBD',
+      approvedAt: dayjs().subtract(1, 'hour').toISOString(),
+      adminNotes: 'Đã phê duyệt phòng và thiết bị. Sẵn sàng điểm danh nhận phòng.'
+    }
+
+    return [demoBooking, ...mapped]
+  }, [bookingsQuery.data, demoState])
 
   const isPendingBooking = (b: Booking) => {
     if (isExpiredBooking(b)) return false
@@ -1293,6 +1430,7 @@ function BookingHistoryPage() {
               setSelectedBookingForQR={setSelectedBookingForQR}
               setQrModalVisible={setQrModalVisible}
               setCheckoutModalVisible={setCheckoutModalVisible}
+              onResetDemo={handleResetDemo}
             />
           ))}
         </div>
@@ -1461,6 +1599,15 @@ function BookingHistoryPage() {
                 </>
               )}
 
+              {selectedBookingForDetail.checkoutNotes && (
+                <>
+                  <span style={{ color: '#64748b' }}>Tình trạng bàn giao:</span>
+                  <span style={{ color: '#059669', fontWeight: 500, whiteSpace: 'pre-line' }}>
+                    {selectedBookingForDetail.checkoutNotes}
+                  </span>
+                </>
+              )}
+
               {(selectedBookingForDetail as any).createdAt && (
                 <>
                   <span style={{ color: '#64748b' }}>Thời gian gửi đơn:</span>
@@ -1497,42 +1644,72 @@ function BookingHistoryPage() {
 
       {/* Modal QR Check-in */}
       <Modal
-        title="Mã QR Check-in"
+        title="Mã QR Điểm Danh & Nhận Phòng"
         open={qrModalVisible}
         onCancel={() => setQrModalVisible(false)}
         footer={[
-          <Button key="close" onClick={() => setQrModalVisible(false)} style={{ borderRadius: 6 }}>Đóng</Button>,
-          <Button key="simulate" type="primary" style={{ background: '#10b981', borderRadius: 6 }} onClick={handleSimulateCheckIn}>
-            Mô phỏng Quét QR (Check-in)
+          <Button key="close" onClick={() => setQrModalVisible(false)} style={{ borderRadius: 6 }}>
+            Đóng
+          </Button>,
+          <Button
+            key="simulate"
+            type="primary"
+            icon={<CheckCircleOutlined />}
+            style={{ background: '#10b981', borderColor: '#10b981', borderRadius: 6, fontWeight: 600 }}
+            onClick={handleSimulateCheckIn}
+          >
+            Điểm danh (Mô phỏng Quét QR)
           </Button>
         ]}
         centered
       >
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           <QRCodeSVG value={JSON.stringify({ bookingId: selectedBookingForQR?.id, action: 'checkin' })} size={200} />
-          <div style={{ marginTop: 16, color: '#475569', fontSize: 14 }}>
-            Quét mã này tại phòng <strong>{selectedBookingForQR?.roomName}</strong> để bắt đầu sử dụng.
+          <div style={{ marginTop: 16, color: '#334155', fontSize: 14 }}>
+            Quét mã QR tại cửa phòng <strong>{selectedBookingForQR?.roomName}</strong> hoặc bấm nút điểm danh để xác nhận nhận phòng.
           </div>
+          {selectedBookingForQR?.id === DEMO_BOOKING_ID && (
+            <div style={{ marginTop: 12, fontSize: 12.5, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '8px 12px', borderRadius: 6, textAlign: 'left' }}>
+              💡 <strong>Dữ liệu demo Bước 4:</strong> Bấm nút <strong>"Điểm danh (Mô phỏng Quét QR)"</strong> để chuyển trạng thái thành <strong>"Đang sử dụng"</strong>.
+            </div>
+          )}
         </div>
       </Modal>
 
       {/* Modal Check-out */}
       <Modal
-        title="Check-out & Bàn giao phòng"
+        title="Trả Phòng & Bàn Giao (Kết Thúc)"
         open={checkoutModalVisible}
         onCancel={() => setCheckoutModalVisible(false)}
         onOk={() => checkoutForm.submit()}
-        okText="Hoàn tất Check-out"
+        okText="Hoàn tất trả phòng"
         cancelText="Hủy"
         centered
       >
         <Form form={checkoutForm} layout="vertical" onFinish={handleCheckoutSubmit}>
           <div style={{ marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 6, border: '1.5px solid #94a3b8' }}>
             <div style={{ marginBottom: 4 }}>Phòng: <strong>{selectedBookingForQR?.roomName}</strong></div>
-            <div>Giờ Check-in: <strong>{selectedBookingForQR?.actualStartTime ? dayjs(selectedBookingForQR.actualStartTime).format('HH:mm DD/MM/YYYY') : 'N/A'}</strong></div>
+            <div>
+              Giờ Check-in (Nhận phòng):{' '}
+              <strong>
+                {selectedBookingForQR?.actualStartTime
+                  ? dayjs(selectedBookingForQR.actualStartTime).format('HH:mm DD/MM/YYYY')
+                  : dayjs().subtract(45, 'minute').format('HH:mm DD/MM/YYYY')}
+              </strong>
+            </div>
           </div>
-          <Form.Item name="notes" label="Tình trạng phòng & thiết bị khi bàn giao" rules={[{ required: true, message: 'Vui lòng nhập tình trạng!' }]}>
-            <Input.TextArea rows={4} placeholder="Ví dụ: Phòng sạch sẽ, thiết bị hoạt động bình thường..." />
+          {selectedBookingForQR?.id === DEMO_BOOKING_ID && (
+            <div style={{ marginBottom: 12, fontSize: 12.5, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '8px 12px', borderRadius: 6 }}>
+              💡 <strong>Dữ liệu demo Bước 4:</strong> Ghi chú tình trạng phòng và bấm <strong>"Hoàn tất trả phòng"</strong> để chuyển trạng thái thành <strong>"Đã hoàn thành"</strong>.
+            </div>
+          )}
+          <Form.Item
+            name="notes"
+            label="Tình trạng phòng & thiết bị khi bàn giao"
+            rules={[{ required: true, message: 'Vui lòng nhập tình trạng bàn giao phòng!' }]}
+            initialValue="Phòng học sạch sẽ, thiết bị (micro, máy chiếu) hoạt động tốt, bàn giao chìa khóa đầy đủ."
+          >
+            <Input.TextArea rows={4} placeholder="Ví dụ: Phòng sạch sẽ, thiết bị hoạt động bình thường, đã tắt điện và điều hòa..." />
           </Form.Item>
         </Form>
       </Modal>
