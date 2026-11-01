@@ -563,28 +563,7 @@ function BookingCard({
 
         {/* Các nút thao tác chữ rõ ràng */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {isExpired && (
-            <button
-              type="button"
-              onClick={() => {
-                const targetRoomId = record.roomId || (record as any).room_id;
-                window.location.href = targetRoomId ? `/bookings?roomId=${targetRoomId}` : '/bookings';
-              }}
-              style={{
-                background: '#0d2e5c',
-                color: '#ffffff',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: 6,
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: 'pointer',
-                transition: 'background 0.15s ease'
-              }}
-            >
-              Đặt lại ca khác
-            </button>
-          )}
+
 
           {isApproved && canCheckIn && (
             <button
@@ -1459,19 +1438,7 @@ function BookingHistoryPage() {
         onCancel={() => setDetailModalVisible(false)}
         centered
         footer={[
-          selectedBookingForDetail && isExpiredBooking(selectedBookingForDetail) && (
-            <Button
-              key="rebook"
-              type="primary"
-              style={{ background: '#0d2e5c', borderRadius: 6 }}
-              onClick={() => {
-                const targetRoomId = selectedBookingForDetail.roomId || (selectedBookingForDetail as any).room_id;
-                window.location.href = targetRoomId ? `/bookings?roomId=${targetRoomId}` : '/bookings';
-              }}
-            >
-              Đặt lại ca khác
-            </Button>
-          ),
+
           <Button key="close" onClick={() => setDetailModalVisible(false)} style={{ borderRadius: 6 }}>
             Đóng
           </Button>
