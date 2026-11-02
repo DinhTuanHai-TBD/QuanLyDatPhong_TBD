@@ -949,26 +949,7 @@ export const IssueResolutionModal: React.FC<IssueResolutionModalProps> = ({
             ]}
           />
 
-          {/* Minh bạch kỹ thuật theo yêu cầu 5 */}
-          <div
-            style={{
-              marginTop: 10,
-              padding: "8px 12px",
-              borderRadius: 6,
-              background: "#ffffff",
-              border: "1px dashed #cbd5e1",
-              fontSize: 11,
-              color: "#64748b",
-              lineHeight: 1.5,
-            }}
-          >
-            <strong style={{ color: "#0d2e5c" }}>Kiến trúc dữ liệu:</strong> Mốc thời gian và trạng thái được lưu trữ
-            thực tế trên máy chủ backend (trường <code>CreatedAt</code>, <code>UpdatedAt</code>, <code>Status</code>,{" "}
-            <code>RepairNotes</code>). Để lưu giữ toàn bộ chuỗi lịch sử từng lần chỉnh sửa (Audit Trail / Multi-revision
-            History), backend cần mở rộng bảng <code>EquipmentIssueHistories</code> và endpoint{" "}
-            <code>GET /api/issues/{issue.id}/history</code>. Giao diện đã được thiết kế sẵn sàng tích hợp ngay khi
-            backend phát hành API này.
-          </div>
+
         </div>
       </div>
     </Modal>
