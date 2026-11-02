@@ -668,8 +668,8 @@ internal sealed class BookingService : IBookingService
                         _dbContext.Notifications.Add(new Notification
                         {
                             UserId = nb.UserId,
-                            Title = "Phòng đã bị thu hồi do quá hạn check-in",
-                            Message = $"Đơn đặt phòng {rName} ({nb.StartTime:dd/MM/yyyy HH:mm}) của bạn đã bị hủy tự động do không check-in đúng hạn ({graceMinutes} phút sau giờ bắt đầu).",
+                            Title = "Đơn đặt phòng đã hết hạn (Quá hạn check-in)",
+                            Message = $"Đơn đặt phòng {rName} ({nb.StartTime:dd/MM/yyyy HH:mm}) của bạn đã hết hạn do không check-in đúng hạn ({graceMinutes} phút sau giờ bắt đầu).",
                             IsRead = false,
                             CreatedAt = DateTime.UtcNow
                         });

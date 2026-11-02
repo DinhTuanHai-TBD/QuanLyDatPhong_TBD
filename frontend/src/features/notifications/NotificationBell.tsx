@@ -29,7 +29,7 @@ export interface RealNotification {
   link?: string;
 }
 
-export type NotificationCategory = 'urgent' | 'expired' | 'approved' | 'rejected' | 'system';
+export type NotificationCategory = 'urgent' | 'expired' | 'approved' | 'rejected' | 'cancelled' | 'system';
 
 interface CategoryConfig {
   tagText: string;
@@ -82,25 +82,41 @@ function classifyNotification(item: RealNotification): NotificationCategory {
     return 'urgent';
   }
 
-  // 2. Hết hạn (quá giờ bắt đầu)
+  // 2. Hết hạn (quá giờ bắt đầu, quá hạn check-in, thu hồi phòng do no-show)
   if (
     full.includes('hết hạn') ||
     full.includes('expired') ||
-    full.includes('quá giờ')
+    full.includes('quá giờ') ||
+    full.includes('quá hạn') ||
+    full.includes('thu hồi') ||
+    full.includes('no-show') ||
+    full.includes('không check-in') ||
+    full.includes('chưa check-in') ||
+    type === 'expired'
   ) {
     return 'expired';
   }
 
-  // 3. Từ chối / Hủy
+  // 3. Từ chối duyệt đơn
   if (
     full.includes('từ chối') ||
     full.includes('rejected') ||
     full.includes('bác bỏ') ||
     full.includes('bị từ chối') ||
-    full.includes('đã hủy') ||
-    full.includes('bị hủy')
+    type === 'rejected'
   ) {
     return 'rejected';
+  }
+
+  // 4. Đã hủy đơn
+  if (
+    full.includes('đã hủy') ||
+    full.includes('bị hủy') ||
+    full.includes('hủy đơn') ||
+    full.includes('hủy đặt') ||
+    type === 'cancelled'
+  ) {
+    return 'cancelled';
   }
 
   // 4. Phê duyệt thành công
@@ -170,6 +186,16 @@ function getCategoryConfig(category: NotificationCategory, item: RealNotificatio
         tagColor: '#dc2626',
         tagBg: '#fef2f2',
         tagBorder: '#fecaca',
+        actionText,
+        actionLink: targetUrl,
+      };
+    case 'cancelled':
+      return {
+        tagText: '• [ĐÃ HỦY]',
+        dotColor: '#64748b',
+        tagColor: '#475569',
+        tagBg: '#f8fafc',
+        tagBorder: '#cbd5e1',
         actionText,
         actionLink: targetUrl,
       };

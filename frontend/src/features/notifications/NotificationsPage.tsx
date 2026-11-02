@@ -205,6 +205,9 @@ export default function NotificationsPage() {
       full.includes('phê duyệt') ||
       full.includes('từ chối') ||
       full.includes('hết hạn') ||
+      full.includes('quá hạn') ||
+      full.includes('thu hồi') ||
+      full.includes('check-in') ||
       full.includes('booking')
     ) {
       return 'booking';
@@ -337,7 +340,16 @@ export default function NotificationsPage() {
       };
     }
 
-    if (full.includes('hết hạn') || full.includes('expired')) {
+    if (
+      full.includes('hết hạn') ||
+      full.includes('expired') ||
+      full.includes('quá hạn') ||
+      full.includes('thu hồi') ||
+      full.includes('no-show') ||
+      full.includes('không check-in') ||
+      full.includes('chưa check-in') ||
+      (item.type || '').toLowerCase() === 'expired'
+    ) {
       return {
         icon: <ExclamationCircleFilled style={{ color: '#f59e0b', fontSize: 18 }} />,
         tagText: 'HẾT HẠN',
@@ -355,6 +367,17 @@ export default function NotificationsPage() {
         tagBg: '#fef2f2',
         tagColor: '#dc2626',
         tagBorder: '#fecaca',
+        actionLabel,
+      };
+    }
+
+    if (full.includes('đã hủy') || full.includes('bị hủy') || full.includes('hủy đơn') || full.includes('hủy đặt')) {
+      return {
+        icon: <CloseCircleFilled style={{ color: '#64748b', fontSize: 18 }} />,
+        tagText: 'ĐÃ HỦY',
+        tagBg: '#f8fafc',
+        tagColor: '#475569',
+        tagBorder: '#e2e8f0',
         actionLabel,
       };
     }

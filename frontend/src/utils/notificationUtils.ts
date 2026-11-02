@@ -82,11 +82,16 @@ export function getNotificationTargetUrl(item: NotificationLike, overrideRole?: 
     return isAdminOrApprover ? '/approvals?status=Pending' : '/booking-history?status=pending';
   }
 
-  // 5. Đơn đặt phòng hết hạn (quá giờ chưa duyệt)
+  // 5. Đơn đặt phòng hết hạn (quá giờ chưa duyệt, quá hạn check-in, thu hồi do no-show)
   if (
     full.includes('hết hạn') ||
     full.includes('expired') ||
     full.includes('quá giờ') ||
+    full.includes('quá hạn') ||
+    full.includes('thu hồi') ||
+    full.includes('no-show') ||
+    full.includes('không check-in') ||
+    full.includes('chưa check-in') ||
     type === 'expired'
   ) {
     // Nếu là sinh viên/giảng viên: nếu thông báo có nhắc đặt lại phòng thì chuyển sang trang đặt phòng
