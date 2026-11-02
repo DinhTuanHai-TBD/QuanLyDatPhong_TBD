@@ -1881,7 +1881,37 @@ footer,
 
 /* Academic Flat Data Table */
 .academic-table .ant-table {
-  background: transparent;
+  background: #ffffff !important;
+}
+
+/* Xóa viền của khung phân trang và các nút số của bảng */
+.academic-table .ant-pagination {
+  margin: 14px 0 0 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.academic-table .ant-pagination .ant-pagination-item,
+.academic-table .ant-pagination .ant-pagination-item-link,
+.academic-table .ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+.academic-table .ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.academic-table .ant-pagination .ant-pagination-item a {
+  color: #475569 !important;
+}
+
+.academic-table .ant-pagination .ant-pagination-item-active {
+  background: #e2e8f0 !important;
+  border-radius: 6px !important;
+}
+
+.academic-table .ant-pagination .ant-pagination-item-active a {
+  color: #0d2e5c !important;
+  font-weight: 700 !important;
 }
 
 .academic-table .ant-table-thead > tr > th {

@@ -2418,7 +2418,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
+          <div>
             <Table
               className="academic-table"
               columns={equipmentInventoryColumns}
@@ -2481,14 +2481,14 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
+          <div>
             <Table
               className="academic-table"
               columns={issueColumns}
               dataSource={issuesData}
               rowKey="id"
               loading={issuesQuery.isLoading}
-              pagination={false}
+              pagination={{ pageSize: 10 }}
               locale={{ emptyText: <Empty description="Không có sự cố thiết bị nào cần xử lý" /> }}
             />
           </div>
@@ -2573,7 +2573,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
+          <div>
             <Table
               className="academic-table"
               columns={userColumns}
