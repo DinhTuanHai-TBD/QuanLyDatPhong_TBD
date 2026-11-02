@@ -23,6 +23,7 @@ import {
   Drawer,
   Spin,
   Upload,
+  Tooltip,
 } from "antd";
 import {
   PlusOutlined,
@@ -1408,33 +1409,68 @@ export default function AdminPage() {
       title: "Mã Sự Cố",
       dataIndex: "id",
       key: "id",
-      width: 90,
+      width: 70,
+      align: "center" as const,
       render: (id: number) => <Text code>#{id}</Text>,
     },
     {
-      title: "Thiết Bị / Phòng Học",
+      title: "Thiết Bị / Phòng",
       key: "equip",
-      render: (_: any, record: EquipmentIssue) => (
-        <div>
-          <Text strong style={{ color: "#0f172a" }}>
-            {record.equipmentName}
-          </Text>
-          <div style={{ fontSize: 12, color: "#64748b" }}>{record.roomName}</div>
-        </div>
-      ),
+      width: 140,
+      render: (_: any, record: EquipmentIssue) => {
+        let deviceName = record.equipmentName;
+        if (!deviceName && record.issueType && record.issueType !== "HongThietBi") {
+          deviceName = record.issueType;
+        }
+        if (!deviceName) {
+          const descLower = (record.description || "").toLowerCase();
+          if (descLower.includes("điều hòa") || descLower.includes("máy lạnh")) deviceName = "Điều hòa";
+          else if (descLower.includes("máy chiếu")) deviceName = "Máy chiếu/Màn chiếu";
+          else if (descLower.includes("micro") || descLower.includes("mic") || descLower.includes("âm thanh")) deviceName = "Micro/Âm thanh";
+          else if (descLower.includes("điện") || descLower.includes("đèn") || descLower.includes("mất điện")) deviceName = "Điện/Đèn";
+          else if (descLower.includes("mạng") || descLower.includes("internet") || descLower.includes("wifi")) deviceName = "Mạng/Internet";
+          else deviceName = "Thiết bị phòng";
+        }
+
+        const roomDisplay = record.roomName
+          ? (record.roomName.toLowerCase().startsWith("phòng") ? record.roomName : `Phòng ${record.roomName}`)
+          : "Chưa gắn phòng";
+
+        return (
+          <div>
+            <Text strong style={{ color: "#0f172a", fontSize: 13, display: "block" }}>
+              {deviceName}
+            </Text>
+            <div style={{ fontSize: 12, color: "#64748b" }}>{roomDisplay}</div>
+          </div>
+        );
+      },
     },
     {
-      title: "Mức Độ Sự Cố",
+      title: "Mức Độ",
       dataIndex: "severity",
       key: "severity",
+      width: 105,
       render: (severity: string) => {
         let dotClass = "green";
-        if (severity === "Medium") dotClass = "amber";
-        if (severity === "High" || severity === "Critical") dotClass = "red";
+        let label = severity;
+        if (severity === "Medium") {
+          dotClass = "amber";
+          label = "Trung bình";
+        } else if (severity === "High") {
+          dotClass = "red";
+          label = "Nghiêm trọng";
+        } else if (severity === "Critical") {
+          dotClass = "red";
+          label = "Khẩn cấp";
+        } else if (severity === "Low") {
+          dotClass = "green";
+          label = "Thấp";
+        }
         return (
           <span className="status-dot-wrapper">
             <span className={`academic-status-dot ${dotClass}`} />
-            <span>{severity}</span>
+            <span>{label}</span>
           </span>
         );
       },
@@ -1444,17 +1480,31 @@ export default function AdminPage() {
       dataIndex: "description",
       key: "description",
       ellipsis: true,
+      render: (desc: string) => (
+        <Tooltip title={desc} placement="topLeft">
+          <span style={{ cursor: "pointer" }}>{desc}</span>
+        </Tooltip>
+      ),
     },
     {
       title: "Người Báo",
       dataIndex: "userEmail",
       key: "userEmail",
-      render: (email: string) => <Text style={{ fontSize: 12 }}>{email}</Text>,
+      width: 145,
+      ellipsis: true,
+      render: (email: string) => (
+        <Tooltip title={email} placement="topLeft">
+          <span style={{ fontSize: 12, cursor: "pointer", display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {email}
+          </span>
+        </Tooltip>
+      ),
     },
     {
       title: "Trạng Thái Xử Lý",
       dataIndex: "status",
       key: "status",
+      width: 135,
       render: (status: string, record: EquipmentIssue) => {
         let effectiveStatus = status;
         if ((effectiveStatus === "Pending" || !effectiveStatus) && record.assignedTo) {
@@ -1494,7 +1544,8 @@ export default function AdminPage() {
     {
       title: "Thao Tác",
       key: "action",
-      width: 110,
+      width: 85,
+      align: "center" as const,
       render: (_: any, record: EquipmentIssue) => (
         <button
           type="button"
@@ -2019,7 +2070,7 @@ export default function AdminPage() {
               columns={bookingColumns}
               dataSource={bookingsData}
               rowKey="id"
-              pagination={{ pageSize: 8 }}
+              pagination={{ pageSize: 8, hideOnSinglePage: true }}
               scroll={{ x: 'max-content' }}
               locale={{ emptyText: <Empty description="Chưa có lịch đăng ký trong tuần" /> }}
             />
@@ -2138,7 +2189,7 @@ export default function AdminPage() {
                 columns={bookingColumns}
                 dataSource={bookingsData}
                 rowKey="id"
-                pagination={{ pageSize: 10, showSizeChanger: true }}
+                pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
                 scroll={{ x: 'max-content' }}
                 locale={{ emptyText: <Empty description="Không tìm thấy đơn đặt phòng nào" /> }}
               />
@@ -2217,7 +2268,7 @@ export default function AdminPage() {
                 columns={roomColumns}
                 dataSource={roomsData}
                 rowKey="id"
-                pagination={{ pageSize: 10, showSizeChanger: true }}
+                pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
                 scroll={{ x: 'max-content' }}
                 locale={{ emptyText: <Empty description="Không tìm thấy phòng học" /> }}
               />
@@ -2374,7 +2425,7 @@ export default function AdminPage() {
               dataSource={equipmentsData}
               rowKey="id"
               loading={equipmentsQuery.isLoading}
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageSize: 10, hideOnSinglePage: true }}
               scroll={{ x: 'max-content' }}
               locale={{ emptyText: <Empty description="Danh mục thiết bị rỗng" /> }}
             />
@@ -2437,8 +2488,7 @@ export default function AdminPage() {
               dataSource={issuesData}
               rowKey="id"
               loading={issuesQuery.isLoading}
-              pagination={{ pageSize: 10 }}
-              scroll={{ x: 'max-content' }}
+              pagination={false}
               locale={{ emptyText: <Empty description="Không có sự cố thiết bị nào cần xử lý" /> }}
             />
           </div>
@@ -2530,7 +2580,7 @@ export default function AdminPage() {
               dataSource={accountsData}
               rowKey="email"
               loading={accountsQuery.isLoading}
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageSize: 10, hideOnSinglePage: true }}
               scroll={{ x: 'max-content' }}
               locale={{ emptyText: <Empty description="Không tìm thấy tài khoản phù hợp" /> }}
             />

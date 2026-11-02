@@ -498,7 +498,22 @@ export const IssueResolutionModal: React.FC<IssueResolutionModalProps> = ({
             <Col xs={24} sm={12}>
               <div style={{ fontSize: 12, color: "#64748b" }}>Thiết bị / Hạng mục:</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>
-                {issue.equipmentName || issue.issueType || "Sự cố chung / Không gắn thiết bị"}
+                {(() => {
+                  let dName = issue.equipmentName;
+                  if (!dName && issue.issueType && issue.issueType !== "HongThietBi") {
+                    dName = issue.issueType;
+                  }
+                  if (!dName) {
+                    const descLower = (issue.description || "").toLowerCase();
+                    if (descLower.includes("điều hòa") || descLower.includes("máy lạnh")) dName = "Điều hòa";
+                    else if (descLower.includes("máy chiếu")) dName = "Máy chiếu/Màn chiếu";
+                    else if (descLower.includes("micro") || descLower.includes("mic") || descLower.includes("âm thanh")) dName = "Micro/Âm thanh";
+                    else if (descLower.includes("điện") || descLower.includes("đèn") || descLower.includes("mất điện")) dName = "Điện/Đèn";
+                    else if (descLower.includes("mạng") || descLower.includes("internet") || descLower.includes("wifi")) dName = "Mạng/Internet";
+                    else dName = "Thiết bị phòng học";
+                  }
+                  return dName;
+                })()}
               </div>
             </Col>
 
