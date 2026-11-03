@@ -84,6 +84,15 @@ import { normalizeDepartmentName } from "../../utils/academicPrograms";
 import BookingSettingsManagement from "./BookingSettingsManagement";
 import IssueResolutionModal from "./IssueResolutionModal";
 import UserExcelImportModal from "./UserExcelImportModal";
+import {
+  exportToExcel,
+  exportToPDF,
+  formatBookingStatusText,
+  formatRoomStatusText,
+  formatIssueStatusText,
+  formatSeverityText,
+  formatUserRoleText,
+} from "../../utils/exportUtils";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -233,6 +242,25 @@ export const TBD_OFFICIAL_ACCOUNTS: AccountItem[] = [
     isProfileComplete: true,
   },
 ];
+
+// Chuẩn hóa trạng thái và loại phòng (hỗ trợ cả enum số 0, 1, 2 và chuỗi)
+const normalizeRoomStatus = (val: any): string => {
+  const s = String(val ?? "");
+  if (s === "0" || s.toLowerCase() === "active") return "Active";
+  if (s === "1" || s.toLowerCase() === "maintenance") return "Maintenance";
+  if (s === "2" || s.toLowerCase() === "closed") return "Closed";
+  return "Active";
+};
+
+const normalizeRoomType = (val: any): string => {
+  const s = String(val ?? "");
+  if (s === "0" || s.toLowerCase() === "classroom") return "Classroom";
+  if (s === "1" || s.toLowerCase() === "lecturehall") return "LectureHall";
+  if (s === "2" || s.toLowerCase() === "lab") return "Lab";
+  if (s.toLowerCase() === "computerlab") return "ComputerLab";
+  if (s.toLowerCase() === "meetingroom") return "MeetingRoom";
+  return "Classroom";
+};
 
 export default function AdminPage() {
   const { message, modal } = App.useApp();
@@ -1246,7 +1274,11 @@ export default function AdminPage() {
             className="academic-action-btn"
             onClick={() => {
               setEditingRoom(record);
-              roomForm.setFieldsValue(record);
+              roomForm.setFieldsValue({
+                ...record,
+                status: normalizeRoomStatus(record.status),
+                roomType: normalizeRoomType(record.roomType),
+              });
               setRoomPreviewImage(record.imageUrl || "");
               setIsRoomModalVisible(true);
             }}
@@ -1884,33 +1916,289 @@ export default function AdminPage() {
     },
   ];
 
-  // Hàm hỗ trợ xuất dữ liệu ra file Excel / PDF
+  // Hàm hỗ trợ xuất dữ liệu ra file Excel / PDF chuẩn đẹp
   const handleExport = (type: "excel" | "pdf") => {
-    message.loading({ content: `Đang kết xuất dữ liệu sang ${type.toUpperCase()}...`, key: "export" });
-    setTimeout(() => {
-      let csvContent = "";
+    try {
+      message.loading({ content: `Đang kết xuất dữ liệu sang ${type.toUpperCase()}...`, key: "export" });
+
+      const dateStr = dayjs().format("YYYYMMDD_HHmm");
+      const exportTimeStr = dayjs().format("DD/MM/YYYY HH:mm");
+
       if (activeTab.startsWith("rooms")) {
-        csvContent = "data:text/csv;charset=utf-8," + ["Tên phòng,Khu vực,Tầng,Sức chứa,Trạng thái"].concat(
-          roomsData.map((r: Room) => `"${r.name}","${r.building || ''}","${r.floor || ''}",${r.capacity},"${r.status}"`)
-        ).join("\n");
+        const columns = [
+          { header: "Tên Phòng", width: 16 },
+          { header: "Tòa Nhà", width: 16 },
+          { header: "Tầng", width: 12 },
+          { header: "Loại Phòng", width: 22 },
+          { header: "Sức Chứa", width: 14 },
+          { header: "Mô Tả / Tiện Ích", width: 36 },
+          { header: "Trạng Thái", width: 18 },
+        ];
+
+        const data = roomsData.map((r: Room) => [
+          r.name,
+          r.building || "N/A",
+          r.floor ? `Tầng ${r.floor}` : "N/A",
+          r.roomType || "Phòng học lý thuyết",
+          r.capacity ? `${r.capacity} người` : "0",
+          r.description || "Phòng học tiêu chuẩn",
+          formatRoomStatusText(r.status),
+        ]);
+
+        const title = "Danh Mục Phòng Học & Giảng Đường TBD";
+        const filename = `Danh_Sach_Phong_Hoc_TBD_${dateStr}`;
+        const metadata = {
+          exportDate: exportTimeStr,
+          totalRecords: roomsData.length,
+          filterSummary: `Khu vực: ${roomBuildingFilter === 'all' ? 'Tất cả' : roomBuildingFilter} | Tìm kiếm: ${roomSearch || 'Tất cả'}`,
+        };
+
+        if (type === "excel") {
+          exportToExcel({ filename, title, columns, data, metadata });
+        } else {
+          exportToPDF({
+            filename,
+            title: "Danh Muc Phong Hoc & Giang Duong TBD",
+            columns: columns.map(c => ({ header: c.header })),
+            data: roomsData.map((r: Room) => [
+              r.name,
+              r.building || "N/A",
+              r.floor ? `Tang ${r.floor}` : "N/A",
+              r.roomType || "Ly thuyet",
+              r.capacity ? `${r.capacity}` : "0",
+              r.description ? r.description.slice(0, 30) : "Tieu chuan",
+              formatRoomStatusText(r.status),
+            ]),
+            metadata,
+            orientation: "landscape",
+          });
+        }
       } else if (activeTab.startsWith("bookings")) {
-        csvContent = "data:text/csv;charset=utf-8," + ["Mã đơn,Phòng,Người đặt,Bắt đầu,Kết thúc,Trạng thái"].concat(
-          bookingsData.map((b: Booking) => `"#${b.id}","${b.roomName}","${b.userEmail}","${b.startTime}","${b.endTime}","${b.status}"`)
-        ).join("\n");
+        const columns = [
+          { header: "Mã Đơn", width: 14 },
+          { header: "Phòng Học", width: 16 },
+          { header: "Người Đăng Ký", width: 26 },
+          { header: "Khoa / Đơn Vị", width: 28 },
+          { header: "Mục Đích Sử Dụng", width: 30 },
+          { header: "Bắt Đầu", width: 18 },
+          { header: "Kết Thúc", width: 18 },
+          { header: "Sĩ Số", width: 10 },
+          { header: "Thiết Bị Mượn Kèm", width: 26 },
+          { header: "Trạng Thái", width: 18 },
+        ];
+
+        const data = bookingsData.map((b: Booking) => [
+          `#TBD-${b.id}`,
+          b.roomName || "N/A",
+          b.userEmail || "N/A",
+          b.department || "Khoa CNTT & AI",
+          b.purpose || "N/A",
+          dayjs(b.startTime).format("DD/MM/YYYY HH:mm"),
+          dayjs(b.endTime).format("DD/MM/YYYY HH:mm"),
+          b.participantCount || 0,
+          Array.isArray(b.requestedEquipments) && b.requestedEquipments.length > 0 ? b.requestedEquipments.join("; ") : "Không",
+          formatBookingStatusText(b.status, b),
+        ]);
+
+        const title = "Danh Sách Đơn Đăng Ký Mượn Phòng TBD";
+        const filename = `Danh_Sach_Don_Dat_Phong_TBD_${dateStr}`;
+        const metadata = {
+          exportDate: exportTimeStr,
+          totalRecords: bookingsData.length,
+          filterSummary: `Trạng thái: ${bookingStatusFilter} | Tìm kiếm: ${bookingSearch || 'Tất cả'}`,
+        };
+
+        if (type === "excel") {
+          exportToExcel({ filename, title, columns, data, metadata });
+        } else {
+          exportToPDF({
+            filename,
+            title: "Danh Sach Don Dang Ky Muon Phong TBD",
+            columns: [
+              { header: "Mã Đơn" },
+              { header: "Phòng" },
+              { header: "Người Đăng Ký" },
+              { header: "Mục Đích" },
+              { header: "Bắt Đầu" },
+              { header: "Kết Thúc" },
+              { header: "Trạng Thái" },
+            ],
+            data: bookingsData.map((b: Booking) => [
+              `#TBD-${b.id}`,
+              b.roomName || "N/A",
+              b.userEmail || "N/A",
+              b.purpose || "N/A",
+              dayjs(b.startTime).format("DD/MM/YYYY HH:mm"),
+              dayjs(b.endTime).format("DD/MM/YYYY HH:mm"),
+              formatBookingStatusText(b.status, b),
+            ]),
+            metadata,
+            orientation: "landscape",
+          });
+        }
+      } else if (activeTab === "equipment") {
+        const columns = [
+          { header: "Mã Thiết Bị", width: 16 },
+          { header: "Tên Thiết Bị", width: 30 },
+          { header: "Phân Loại", width: 22 },
+          { header: "Số Lượng", width: 14 },
+          { header: "Phòng / Vị Trí", width: 24 },
+          { header: "Tình Trạng", width: 20 },
+        ];
+
+        const data = equipmentsData.map((eq: EquipmentItem) => [
+          eq.code || `EQ-${eq.id}`,
+          eq.name,
+          eq.type || "Thiết bị dùng chung",
+          eq.quantity ?? 1,
+          eq.roomName || "Kho CSVC",
+          eq.status === "Active" ? "Hoạt động tốt" : eq.status === "Maintenance" ? "Bảo trì" : eq.status === "Broken" ? "Bị hỏng" : eq.status,
+        ]);
+
+        const title = "Danh Mục Thiết Bị Dùng Chung Mượn Thêm TBD";
+        const filename = `Danh_Muc_Thiet_Bi_TBD_${dateStr}`;
+        const metadata = {
+          exportDate: exportTimeStr,
+          totalRecords: equipmentsData.length,
+          filterSummary: `Tìm kiếm: ${equipmentSearch || 'Tất cả'}`,
+        };
+
+        if (type === "excel") {
+          exportToExcel({ filename, title, columns, data, metadata });
+        } else {
+          exportToPDF({
+            filename,
+            title: "Danh Muc Thiet Bi Dung Chung Muon Them TBD",
+            columns: columns.map(c => ({ header: c.header })),
+            data,
+            metadata,
+            orientation: "landscape",
+          });
+        }
+      } else if (activeTab === "issues") {
+        const columns = [
+          { header: "Mã Sự Cố", width: 14 },
+          { header: "Phòng Học", width: 16 },
+          { header: "Thiết Bị Hư Hỏng", width: 24 },
+          { header: "Mức Độ Ưu Tiên", width: 18 },
+          { header: "Nội Dung Báo Hỏng", width: 36 },
+          { header: "Người Báo Cáo", width: 24 },
+          { header: "KTV Phân Công", width: 22 },
+          { header: "Trạng Thái", width: 18 },
+          { header: "Ngày Báo Cáo", width: 18 },
+        ];
+
+        const data = issuesData.map((issue: EquipmentIssue) => [
+          `#${issue.id}`,
+          issue.roomName || "N/A",
+          issue.equipmentName || issue.issueType || "Thiết bị",
+          formatSeverityText(issue.severity),
+          issue.description || "N/A",
+          issue.userEmail || "N/A",
+          issue.assignedTo || "Chưa phân công",
+          formatIssueStatusText(issue.status, issue),
+          issue.createdAt ? dayjs(issue.createdAt).format("DD/MM/YYYY HH:mm") : "N/A",
+        ]);
+
+        const title = "Danh Sách Báo Cáo Sự Cố & Hư Hỏng Thiết Bị TBD";
+        const filename = `Danh_Sach_Su_Co_CSVC_TBD_${dateStr}`;
+        const metadata = {
+          exportDate: exportTimeStr,
+          totalRecords: issuesData.length,
+          filterSummary: `Trạng thái: ${issueStatusFilter} | Mức độ: ${issueSeverityFilter}`,
+        };
+
+        if (type === "excel") {
+          exportToExcel({ filename, title, columns, data, metadata });
+        } else {
+          exportToPDF({
+            filename,
+            title: "Danh Sach Bao Cao Su Co CSVC TBD",
+            columns: [
+              { header: "Mã SC" },
+              { header: "Phòng" },
+              { header: "Thiết Bị" },
+              { header: "Mức Độ" },
+              { header: "Nội Dung Hỏng" },
+              { header: "KTV Xử Lý" },
+              { header: "Trạng Thái" },
+            ],
+            data: issuesData.map((issue: EquipmentIssue) => [
+              `#${issue.id}`,
+              issue.roomName || "N/A",
+              issue.equipmentName || issue.issueType || "Thiết bị",
+              formatSeverityText(issue.severity),
+              issue.description || "N/A",
+              issue.assignedTo || "Chưa phân công",
+              formatIssueStatusText(issue.status, issue),
+            ]),
+            metadata,
+            orientation: "landscape",
+          });
+        }
       } else {
-        csvContent = "data:text/csv;charset=utf-8," + ["Email,Họ tên,Mã định danh,Khoa/Phòng ban,Vai trò,Hồ sơ"].concat(
-          accountsData.map((a: AccountItem) => `"${a.email}","${a.fullName || ''}","${a.userCode || ''}","${a.department}","${a.role}","${a.isProfileComplete !== false ? 'Đã hoàn thiện' : 'Chưa hoàn thiện'}"`)
-        ).join("\n");
+        // Tab quản lý người dùng (users)
+        const columns = [
+          { header: "Mã Định Danh", width: 18 },
+          { header: "Họ Và Tên", width: 24 },
+          { header: "Địa Chỉ Email", width: 28 },
+          { header: "Khoa / Phòng Ban", width: 30 },
+          { header: "Số Điện Thoại", width: 18 },
+          { header: "Vai Trò Hệ Thống", width: 20 },
+          { header: "Tình Trạng Hồ Sơ", width: 18 },
+        ];
+
+        const data = accountsData.map((a: AccountItem) => [
+          a.userCode || "N/A",
+          a.fullName || "N/A",
+          a.email,
+          a.department || "N/A",
+          a.phoneNumber || "N/A",
+          formatUserRoleText(a.role),
+          a.isProfileComplete !== false ? "Đã hoàn thiện" : "Chưa hoàn thiện",
+        ]);
+
+        const title = "Danh Sách Tài Khoản & Phân Quyền Người Dùng TBD";
+        const filename = `Danh_Sach_Tai_Khoan_TBD_${dateStr}`;
+        const metadata = {
+          exportDate: exportTimeStr,
+          totalRecords: accountsData.length,
+          filterSummary: `Vai trò: ${userRoleFilter === 'all' ? 'Tất cả' : userRoleFilter} | Tìm kiếm: ${userSearch || 'Tất cả'}`,
+        };
+
+        if (type === "excel") {
+          exportToExcel({ filename, title, columns, data, metadata });
+        } else {
+          exportToPDF({
+            filename,
+            title: "Danh Sach Tai Khoan Nguoi Dung TBD",
+            columns: [
+              { header: "Mã ĐD" },
+              { header: "Họ Và Tên" },
+              { header: "Email" },
+              { header: "Khoa / Đơn Vị" },
+              { header: "Vai Trò" },
+              { header: "Hồ Sơ" },
+            ],
+            data: accountsData.map((a: AccountItem) => [
+              a.userCode || "N/A",
+              a.fullName || "N/A",
+              a.email,
+              a.department || "N/A",
+              formatUserRoleText(a.role),
+              a.isProfileComplete !== false ? "Đã xong" : "Chưa xong",
+            ]),
+            metadata,
+            orientation: "landscape",
+          });
+        }
       }
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `tbd_${activeTab}_${dayjs().format("YYYYMMDD")}.${type === "excel" ? "csv" : "txt"}`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+
       message.success({ content: `Xuất tệp ${type.toUpperCase()} thành công!`, key: "export" });
-    }, 400);
+    } catch (err: any) {
+      console.error("Export error:", err);
+      message.error({ content: `Lỗi khi xuất tệp ${type.toUpperCase()}: ${err.message || 'Thử lại'}`, key: "export" });
+    }
   };
 
   // Xác định tiêu đề trang và thanh điều hướng Breadcrumb
@@ -2405,7 +2693,11 @@ export default function AdminPage() {
                         className="academic-action-btn"
                         onClick={() => {
                           setEditingRoom(room);
-                          roomForm.setFieldsValue(room);
+                          roomForm.setFieldsValue({
+                            ...room,
+                            status: normalizeRoomStatus(room.status),
+                            roomType: normalizeRoomType(room.roomType),
+                          });
                           setRoomPreviewImage(room.imageUrl || "");
                           setIsRoomModalVisible(true);
                         }}
@@ -2541,7 +2833,10 @@ export default function AdminPage() {
                 </Space>
               </Col>
               <Col xs={24} lg={6} style={{ textAlign: "right" }}>
-                <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                <Space size="small">
+                  <Button onClick={() => handleExport("excel")}>Xuất Excel</Button>
+                  <Button onClick={() => handleExport("pdf")}>Xuất PDF</Button>
+                </Space>
               </Col>
             </Row>
           </div>
@@ -3242,23 +3537,9 @@ export default function AdminPage() {
                 </Upload.Dragger>
               )}
 
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 500, color: "#475569", marginBottom: 6 }}>
-                  Hoặc dán đường link ảnh (URL):
-                </div>
-                <Form.Item name="imageUrl" noStyle>
-                  <Input
-                    placeholder="VD: https://images.unsplash.com/... hoặc data:image/..."
-                    allowClear
-                    value={roomPreviewImage}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setRoomPreviewImage(val);
-                      roomForm.setFieldValue("imageUrl", val);
-                    }}
-                  />
-                </Form.Item>
-              </div>
+              <Form.Item name="imageUrl" hidden>
+                <Input />
+              </Form.Item>
             </div>
           </Form.Item>
 
