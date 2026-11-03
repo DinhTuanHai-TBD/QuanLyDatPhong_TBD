@@ -22,9 +22,7 @@ import {
   PlusOutlined,
   SearchOutlined,
   BookOutlined,
-  CheckCircleOutlined,
   DeleteOutlined,
-  EyeOutlined,
   ScheduleOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -78,7 +76,7 @@ export default function SemesterScheduleView({
   const [selectedGroup, setSelectedGroup] = useState<CourseScheduleGroup | null>(null)
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false)
 
-  // Filter school schedule bookings (those with isSchoolOverride or marked as timetable)
+  // Lọc các đơn thuộc thời khóa biểu nhà trường (có gắn cờ ưu tiên hoặc đánh dấu thời khóa biểu)
   const schoolBookings = useMemo(() => {
     return bookings.filter((b) => {
       const isOverride = b.isSchoolOverride || b.IsSchoolOverride
@@ -101,7 +99,7 @@ export default function SemesterScheduleView({
     })
   }, [bookings])
 
-  // Group individual sessions into course subjects
+  // Nhóm các buổi học riêng lẻ theo từng học phần/môn học
   const courseGroups = useMemo(() => {
     const map = new Map<string, CourseScheduleGroup>()
 
@@ -202,7 +200,7 @@ export default function SemesterScheduleView({
     return Array.from(map.values())
   }, [schoolBookings])
 
-  // Filtered course groups
+  // Danh sách các nhóm học phần sau khi lọc
   const filteredCourses = useMemo(() => {
     return courseGroups.filter((g) => {
       if (semesterFilter !== 'all') {
@@ -236,13 +234,13 @@ export default function SemesterScheduleView({
     })
   }, [courseGroups, semesterFilter, roomFilter, searchQuery])
 
-  // Count by summer semester
+  // Đếm số lượng theo học kỳ hè
   const hk3Count = useMemo(() => schoolBookings.filter(b => (b.semester || b.purpose || '').includes('HK3') || (b.purpose || '').toLowerCase().includes('hè')).length, [schoolBookings])
 
-  // Delete/Cancel an entire course timetable
+  // Xóa/Hủy toàn bộ thời khóa biểu của một học phần
   const handleDeleteCourse = async (group: CourseScheduleGroup) => {
     try {
-      // 1. Cancel sessions in API if supported
+      // 1. Hủy các buổi học thông qua API
       for (const s of group.sessions) {
         try {
           await http.put(`/api/bookings/${s.id}/reject`, {
@@ -268,19 +266,20 @@ export default function SemesterScheduleView({
       title: 'Học kỳ',
       dataIndex: 'semester',
       key: 'semester',
-      width: 140,
+      width: 85,
+      align: 'center' as const,
       render: (sem: string) => {
         let color = 'blue'
         let text = sem || 'Chính khóa'
         if (sem.includes('HK1') || sem.includes('Kỳ 1')) {
           color = 'blue'
-          text = 'HK1 (Thu)'
+          text = 'HK1'
         } else if (sem.includes('HK2') || sem.includes('Kỳ 2')) {
           color = 'green'
-          text = 'HK2 (Xuân)'
+          text = 'HK2'
         } else if (sem.includes('HK3') || sem.includes('Hè') || sem.includes('Summer')) {
           color = 'orange'
-          text = 'HK3 (Hè)'
+          text = 'HK3'
         } else {
           color = 'purple'
         }
@@ -290,10 +289,20 @@ export default function SemesterScheduleView({
     {
       title: 'Môn học & Lớp học phần',
       key: 'subject',
+      width: 240,
       render: (_: any, r: CourseScheduleGroup) => (
         <div>
-          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>{r.subjectName}</div>
-          <Space orientation="horizontal" size={4} style={{ marginTop: 2 }}>
+          <div
+            style={{ fontWeight: 700, color: '#0f172a', fontSize: 13.5, cursor: 'pointer' }}
+            onClick={() => {
+              setSelectedGroup(r)
+              setIsDetailDrawerOpen(true)
+            }}
+            title="Bấm để xem chi tiết lịch học"
+          >
+            {r.subjectName}
+          </div>
+          <Space size={4} style={{ marginTop: 2 }}>
             {r.subjectCode !== 'N/A' && <Tag style={{ fontSize: 11 }}>Mã: {r.subjectCode}</Tag>}
             <Tag color="cyan" style={{ fontSize: 11 }}>Lớp: {r.classCode}</Tag>
           </Space>
@@ -303,17 +312,18 @@ export default function SemesterScheduleView({
     {
       title: 'Phòng học',
       key: 'room',
-      width: 140,
+      width: 120,
       render: (_: any, r: CourseScheduleGroup) => (
         <div>
           <div style={{ fontWeight: 600, color: '#0284c7' }}>{r.roomName}</div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>Lịch học chính khóa</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Chính khóa</div>
         </div>
       )
     },
     {
       title: 'Khung giờ & Lịch học',
       key: 'time',
+      width: 230,
       render: (_: any, r: CourseScheduleGroup) => (
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#1e40af' }}>
@@ -345,50 +355,13 @@ export default function SemesterScheduleView({
       title: 'Số buổi',
       dataIndex: 'sessionCount',
       key: 'sessionCount',
-      width: 100,
+      width: 95,
       align: 'center' as const,
       render: (count: number) => (
         <Badge
           count={`${count} buổi`}
           style={{ backgroundColor: '#0284c7', fontWeight: 600 }}
         />
-      )
-    },
-    {
-      title: 'Trạng thái',
-      key: 'status',
-      width: 130,
-      render: () => (
-        <Tag color="success" icon={<CheckCircleOutlined />}>Đã duyệt</Tag>
-      )
-    },
-    {
-      title: 'Thao tác',
-      key: 'actions',
-      width: 120,
-      render: (_: any, r: CourseScheduleGroup) => (
-        <Space size="small">
-          <Button
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => {
-              setSelectedGroup(r)
-              setIsDetailDrawerOpen(true)
-            }}
-          />
-          {canManageSchedule && (
-            <Popconfirm
-              title="Xóa toàn bộ lịch học môn này?"
-              description={`Hành động này sẽ hủy ${r.sessionCount} buổi học chính khóa của học phần tại ${r.roomName}.`}
-              onConfirm={() => handleDeleteCourse(r)}
-              okText="Xóa"
-              cancelText="Hủy"
-              okButtonProps={{ danger: true }}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          )}
-        </Space>
       )
     }
   ]
@@ -485,8 +458,8 @@ export default function SemesterScheduleView({
           style={{ width: 200 }}
         >
           <Select.Option value="all">Tất cả học kỳ</Select.Option>
-          <Select.Option value="HK1">Học kỳ 1 (Kỳ Thu)</Select.Option>
-          <Select.Option value="HK2">Học kỳ 2 (Kỳ Xuân)</Select.Option>
+          <Select.Option value="HK1">Học kỳ 1</Select.Option>
+          <Select.Option value="HK2">Học kỳ 2</Select.Option>
           <Select.Option value="HK3">Học kỳ 3 (Học kỳ Hè)</Select.Option>
           <Select.Option value="CUSTOM">Tùy chỉnh (Custom)</Select.Option>
         </Select>
@@ -512,7 +485,7 @@ export default function SemesterScheduleView({
         dataSource={filteredCourses}
         rowKey="courseKey"
         pagination={{ pageSize: 10, showSizeChanger: true }}
-        scroll={{ x: 'max-content' }}
+        
         locale={{
           emptyText: (
             <Empty
@@ -544,6 +517,25 @@ export default function SemesterScheduleView({
         size={560}
         open={isDetailDrawerOpen}
         onClose={() => setIsDetailDrawerOpen(false)}
+        extra={
+          canManageSchedule && selectedGroup && (
+            <Popconfirm
+              title="Xóa toàn bộ lịch học môn này?"
+              description={`Hành động này sẽ hủy ${selectedGroup.sessionCount} buổi học chính khóa của học phần tại ${selectedGroup.roomName}.`}
+              onConfirm={async () => {
+                await handleDeleteCourse(selectedGroup);
+                setIsDetailDrawerOpen(false);
+              }}
+              okText="Xóa"
+              cancelText="Hủy"
+              okButtonProps={{ danger: true }}
+            >
+              <Button danger icon={<DeleteOutlined />} size="small">
+                Xóa lịch môn này
+              </Button>
+            </Popconfirm>
+          )
+        }
       >
         {selectedGroup && (
           <div>

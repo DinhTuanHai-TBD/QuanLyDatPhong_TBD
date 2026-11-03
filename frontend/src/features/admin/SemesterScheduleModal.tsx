@@ -83,7 +83,7 @@ export default function SemesterScheduleModal({
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Academic Year options (current, next, previous)
+  // Danh sách các năm học (hiện tại, kế tiếp, trước đó)
   const currentYear = dayjs().year()
   const academicYears = useMemo(() => [
     { label: `${currentYear - 1} - ${currentYear}`, value: currentYear - 1 },
@@ -98,13 +98,13 @@ export default function SemesterScheduleModal({
   const [selectedRoomId, setSelectedRoomId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<'manual' | 'excel'>('manual')
 
-  // Study Periods state
+  // Trạng thái chọn các tiết học
   const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset')
   const [selectedPresetKey, setSelectedPresetKey] = useState<string>('M_1_3')
   const [fromPeriod, setFromPeriod] = useState<number>(1)
   const [toPeriod, setToPeriod] = useState<number>(3)
 
-  // School Override switch
+  // Công tắc Ưu tiên Thời khóa biểu chính khóa của trường
   const [isSchoolOverride, setIsSchoolOverride] = useState<boolean>(true)
   const [isSubmitHovered, setIsSubmitHovered] = useState<boolean>(false)
 
@@ -128,7 +128,7 @@ export default function SemesterScheduleModal({
     }))
   }, [availableMajors])
 
-  // Permission authorization check
+  // Kiểm tra phân quyền truy cập
   const isAuthorized = useMemo(() => {
     const role = (currentUserRole || '').toLowerCase()
     const email = (currentUserEmail || '').toLowerCase()
@@ -142,7 +142,7 @@ export default function SemesterScheduleModal({
     )
   }, [currentUserRole, currentUserEmail])
 
-  // Update date range when semester or academic year changes
+  // Tự động cập nhật khoảng thời gian khi học kỳ hoặc năm học thay đổi
   useEffect(() => {
     if (open) {
       const preset = SEMESTER_PRESETS[selectedSemester]
@@ -159,7 +159,7 @@ export default function SemesterScheduleModal({
     }
   }, [open, selectedSemester, selectedAcademicYear])
 
-  // Resolve start & end time strings based on period selection
+  // Xác định chuỗi giờ bắt đầu & kết thúc dựa trên tiết học đã chọn
   const { startTimeStr, endTimeStr, periodDisplayLabel } = useMemo(() => {
     if (periodMode === 'preset') {
       const preset = PERIOD_BLOCK_PRESETS.find(p => p.key === selectedPresetKey) || PERIOD_BLOCK_PRESETS[0]
@@ -179,7 +179,7 @@ export default function SemesterScheduleModal({
     }
   }, [periodMode, selectedPresetKey, fromPeriod, toPeriod])
 
-  // Live Conflict Detection calculation
+  // Tính toán và phát hiện xung đột lịch theo thời gian thực
   const conflictResult = useMemo(() => {
     if (!dateRange || !dateRange[0] || !dateRange[1] || selectedDays.length === 0 || !selectedRoomId) {
       return { totalSessions: 0, conflictSessions: 0, sessions: [], allConflictingBookings: [] }
@@ -200,7 +200,7 @@ export default function SemesterScheduleModal({
     return rooms.find(r => r.id === selectedRoomId)
   }, [rooms, selectedRoomId])
 
-  // Handle Preset Button Click
+  // Xử lý khi nhấn nút chọn nhanh buổi Sáng/Chiều/Tối
   const handlePresetSelect = (preset: typeof PERIOD_BLOCK_PRESETS[0]) => {
     setSelectedPresetKey(preset.key)
     setFromPeriod(preset.fromPeriod)
@@ -208,7 +208,7 @@ export default function SemesterScheduleModal({
     setPeriodMode('preset')
   }
 
-  // Handle Submission
+  // Xử lý lưu thời khóa biểu
   const handleFinish = async (values: any) => {
     if (!isAuthorized) {
       message.error('Bạn không có quyền nhập thời khóa biểu và lịch học định kỳ!')
@@ -235,7 +235,7 @@ export default function SemesterScheduleModal({
       return
     }
 
-    // Determine which sessions will be created
+    // Xác định danh sách các buổi học sẽ được khởi tạo
     const sessionsToCreate = isSchoolOverride
       ? conflictResult.sessions
       : conflictResult.sessions.filter(s => !s.hasConflict)
@@ -252,7 +252,7 @@ export default function SemesterScheduleModal({
       const semesterLabel = `${semesterPreset.label} (NH ${selectedAcademicYear}-${selectedAcademicYear + 1})`
       const roomName = selectedRoom?.name || `Phòng ${selectedRoomId}`
 
-      // 1. If Override is enabled, cancel/reject conflicting bookings
+      // 1. Nếu bật quyền ưu tiên trường: Hủy/từ chối các đơn đặt phòng bị trùng lịch
       if (isSchoolOverride && conflictResult.allConflictingBookings.length > 0) {
         for (const conflict of conflictResult.allConflictingBookings) {
           const cancelReason = `Ưu tiên Thời khóa biểu chính khóa Nhà trường: ${values.subjectName} (${values.classCode || 'Lớp HP'}) - ${semesterPreset.shortLabel}`
@@ -262,12 +262,12 @@ export default function SemesterScheduleModal({
               reason: cancelReason
             })
           } catch {
-            // Log rejection failure
+            // Ghi nhận nhật ký nếu thao tác từ chối đơn thất bại
           }
         }
       }
 
-      // 2. Create academic sessions
+      // 2. Khởi tạo các buổi học chính khóa
       const createdBookings: Booking[] = []
       const cleanMajor = cleanMajorValue(values.major)
       const userNotes = (values.notes || '').trim()
@@ -308,7 +308,7 @@ export default function SemesterScheduleModal({
         }
       }
 
-      // Refresh react-query caches
+      // Làm mới bộ nhớ đệm React Query
       await queryClient.invalidateQueries({ queryKey: ['bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
       await queryClient.invalidateQueries({ queryKey: ['all-bookings-validation'] })
@@ -634,7 +634,7 @@ export default function SemesterScheduleModal({
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 1 (Kỳ Thu)</div>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 1</div>
                       <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tháng 9 - Tháng 1 (~18w)</div>
                     </Radio.Button>
                     <Radio.Button
@@ -650,7 +650,7 @@ export default function SemesterScheduleModal({
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 2 (Kỳ Xuân)</div>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#0f172a' }}>Học kỳ 2</div>
                       <div style={{ fontSize: 11, color: '#475569', marginTop: 2, fontWeight: 500 }}>Tháng 2 - Tháng 6 (~18w)</div>
                     </Radio.Button>
                     <Radio.Button

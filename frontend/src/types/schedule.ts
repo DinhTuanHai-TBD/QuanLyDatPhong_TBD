@@ -17,7 +17,7 @@ export interface SemesterPreset {
 export const SEMESTER_PRESETS: Record<SemesterType, SemesterPreset> = {
   HK1: {
     key: 'HK1',
-    label: 'Học kỳ 1 (Kỳ Thu)',
+    label: 'Học kỳ 1',
     shortLabel: 'HK1 - Kỳ Thu',
     season: 'Kỳ Thu',
     weeksDesc: '~15-18 tuần',
@@ -30,7 +30,7 @@ export const SEMESTER_PRESETS: Record<SemesterType, SemesterPreset> = {
   },
   HK2: {
     key: 'HK2',
-    label: 'Học kỳ 2 (Kỳ Xuân)',
+    label: 'Học kỳ 2',
     shortLabel: 'HK2 - Kỳ Xuân',
     season: 'Kỳ Xuân',
     weeksDesc: '~15-18 tuần',
@@ -150,7 +150,7 @@ export interface ConflictCheckResult {
 }
 
 /**
- * Calculates planned academic sessions and checks for conflicts with existing bookings.
+ * Tính toán danh sách các buổi học dự kiến và kiểm tra xung đột với các đơn đặt phòng hiện có.
  */
 export function calculateScheduleSessions(params: {
   startDate: string // YYYY-MM-DD
@@ -177,7 +177,7 @@ export function calculateScheduleSessions(params: {
       const startMs = startDateTime.toDate().getTime()
       const endMs = endDateTime.toDate().getTime()
 
-      // Find any conflicting bookings in the same room
+      // Tìm kiếm các đơn đặt phòng bị trùng lịch trong cùng một phòng học
       const conflicts = allBookings.filter((b) => {
         if (b.roomId !== roomId) return false
 
@@ -194,7 +194,7 @@ export function calculateScheduleSessions(params: {
         const bStartMs = new Date(b.startTime).getTime()
         const bEndMs = new Date(b.endTime).getTime()
 
-        // Overlap condition: startA < endB && startB < endA
+        // Điều kiện trùng lặp khung giờ: startA < endB && startB < endA
         return startMs < bEndMs && bStartMs < endMs
       })
 

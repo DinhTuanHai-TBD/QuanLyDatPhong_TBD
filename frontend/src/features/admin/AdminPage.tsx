@@ -1,3 +1,32 @@
+/**
+ * =========================================================================================
+ * PHÂN HỆ: TRUNG TÂM QUẢN TRỊ TOÀN DIỆN & CƠ SỞ VẬT CHẤT (AdminPage.tsx)
+ * =========================================================================================
+ * 
+ * [DÀNH CHO: Ban Quản lý Đào tạo, Ban Cơ sở vật chất & Quản trị viên TBD]
+ * 
+ * [CHỨC NĂNG CHÍNH]
+ * 1. Bảng số liệu phân tích vận hành (Analytics Dashboard):
+ *    - Thống kê tổng số phòng, lượt mượn phòng, tổng số giờ sử dụng, số lượng sự cố báo hỏng.
+ *    - Biểu đồ trực quan tỷ lệ lấp đầy phòng theo tòa nhà Khu A và Khu B.
+ * 2. Quản lý Danh mục Phòng học (Rooms Management - CRUD):
+ *    - Thêm phòng mới, chỉnh sửa thông tin (sức chứa, phân loại, tầng, ảnh đại diện, ảnh sơ đồ).
+ *    - Cập nhật trạng thái bảo trì hoặc ngưng hoạt động khi cần sửa chữa dài hạn.
+ * 3. Quản lý Kho Thiết bị Mượn thêm (Equipment Inventory):
+ *    - Quản lý trang thiết bị lưu động (Micro, Loa kéo, Máy chiếu...).
+ *    - Theo dõi số lượng tồn kho khả dụng và số lượng đang cho mượn.
+ * 4. Quản lý Tài khoản & Phân quyền Người dùng (User & Role Management):
+ *    - Danh sách tài khoản: Sinh viên, Giảng viên, Quản lý CSVC, Admin.
+ *    - Hỗ trợ nhập danh sách người dùng hàng loạt từ file Excel.
+ * 5. Cấu hình Quy định Đặt phòng Động (Dynamic Booking Settings):
+ *    - Thiết lập giờ mở/đóng cửa, hạn mức ngày đặt trước, thời gian ân hạn Check-in.
+ * 6. Quản lý Thời khóa biểu Học kỳ (Semester Schedule):
+ *    - Xem và nhập tự động thời khóa biểu học phần từ file Excel của phòng Đào tạo.
+ * 7. Tiếp nhận & Phân công Kỹ thuật viên xử lý Sự cố CSVC (Issue Management):
+ *    - Điều phối KTV sửa chữa và cập nhật nhật ký khắc phục hư hại.
+ * =========================================================================================
+ */
+
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -27,6 +56,8 @@ import {
 } from "antd";
 import {
   PlusOutlined,
+  CheckOutlined,
+  CloseOutlined,
   SearchOutlined,
   ReloadOutlined,
   UserAddOutlined,
@@ -232,7 +263,7 @@ export default function AdminPage() {
     return lower;
   };
 
-  // Active Tab
+  // Tab đang hoạt động
   const [activeTab, setActiveTab] = useState(() => normalizeAdminTab(tabParam));
   const [isSemesterScheduleModalOpen, setIsSemesterScheduleModalOpen] = useState(false);
 
@@ -242,14 +273,14 @@ export default function AdminPage() {
     }
   }, [tabParam]);
 
-  // Safeguard: non-admin users cannot access user management or configuration
+  // Kiểm tra an toàn: Người dùng không phải Admin không thể truy cập quản lý tài khoản hoặc cấu hình quy định
   useEffect(() => {
     if (!isAdmin && (activeTab.startsWith("users") || activeTab.startsWith("settings"))) {
       setActiveTab("analytics");
     }
   }, [isAdmin, activeTab]);
 
-  // Search & Filters state
+  // Trạng thái tìm kiếm và các bộ lọc
   const [roomSearch, setRoomSearch] = useState("");
   const [roomBuildingFilter, setRoomBuildingFilter] = useState("all");
   const [roomTypeFilter, setRoomTypeFilter] = useState("all");
@@ -266,7 +297,7 @@ export default function AdminPage() {
   const [issueStatusFilter, setIssueStatusFilter] = useState("all");
   const [issueSeverityFilter, setIssueSeverityFilter] = useState("all");
 
-  // Modals & Drawers state
+  // Trạng thái hiển thị các Modal và Drawer
   const [isRoomModalVisible, setIsRoomModalVisible] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [roomPreviewImage, setRoomPreviewImage] = useState<string>("");
@@ -298,7 +329,7 @@ export default function AdminPage() {
   const [userForm] = Form.useForm();
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
 
-  // Clean up legacy mock/seed localStorage keys
+  // Dọn dẹp các khóa dữ liệu mẫu cũ trong LocalStorage
   useEffect(() => {
     const legacyKeys = [
       "tbd_accounts",
@@ -315,7 +346,7 @@ export default function AdminPage() {
     });
   }, []);
 
-  // Queries - 100% Real API Data from Database
+  // Các truy vấn dữ liệu thực tế 100% từ cơ sở dữ liệu qua API
   const roomsQuery = useQuery({
     queryKey: ["rooms"],
     queryFn: async () => {
@@ -362,7 +393,7 @@ export default function AdminPage() {
         if (res.data && Array.isArray(res.data.data)) return res.data.data;
         if (res.data && Array.isArray(res.data.items)) return res.data.items;
       } catch {
-        // fallback
+        // Dữ liệu dự phòng
       }
       return [];
     },
@@ -451,7 +482,7 @@ export default function AdminPage() {
     enabled: isAdmin,
   });
 
-  // Booking Status Mutation
+  // Các hàm cập nhật trạng thái đơn đặt phòng
   const updateBookingStatus = async ({
     id,
     status,
@@ -491,10 +522,10 @@ export default function AdminPage() {
     },
   });
 
-  // Room Mutations
+  // Các hàm thao tác thêm/sửa/xóa phòng học
   const saveRoomMutation = useMutation({
     mutationFn: async (values: Partial<Room>) => {
-      // Send to Backend API
+      // Gửi yêu cầu cập nhật lên máy chủ Backend API
       if (editingRoom) {
         await http.put(`/api/rooms/${editingRoom.id}`, values);
       } else {
@@ -529,7 +560,7 @@ export default function AdminPage() {
     },
   });
 
-  // Equipment Mutations
+  // Các hàm thao tác thêm/sửa/xóa trang thiết bị
   const saveEquipmentMutation = useMutation({
     mutationFn: async (values: Partial<EquipmentItem>) => {
       if (editingEquipment) {
@@ -563,7 +594,7 @@ export default function AdminPage() {
     },
   });
 
-  // User Accounts Mutations
+  // Các hàm thao tác cập nhật tài khoản người dùng
   const saveUserMutation = useMutation({
     mutationFn: async (values: AccountItem & { password?: string }) => {
       if (editingUser) {
@@ -585,7 +616,7 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (_err: any, variables: any) => {
-      // Optimistic local update fallback
+      // Cập nhật giao diện tạm thời (Optimistic update) dự phòng
       queryClient.setQueryData(["accounts"], (old: AccountItem[] = []) => {
         if (editingUser) {
           return old.map((u) => (u.email === editingUser.email ? { ...u, ...variables } : u));
@@ -626,7 +657,7 @@ export default function AdminPage() {
     );
   }
 
-  // Filtered lists
+  // Danh sách dữ liệu đã qua xử lý lọc
   const roomsData = getOfficialRooms(roomsQuery.data || []).filter((r: Room) => {
     let matchBuildingFilter = true;
     if (activeTab === "rooms-building-a") {
@@ -662,7 +693,7 @@ export default function AdminPage() {
     return pendingBookings.filter((b: Booking) => isBookingUrgent(b));
   }, [pendingBookings]);
 
-  // Alert toast for urgent bookings in AdminPage
+  // Thông báo nổi cảnh báo các đơn đặt phòng khẩn cấp
   useEffect(() => {
     if (urgentBookings.length > 0) {
       const first = urgentBookings[0];
@@ -714,7 +745,7 @@ export default function AdminPage() {
 
       return matchSearch && matchStatusFilter;
     }).sort((a: Booking, b: Booking) => {
-      // Prioritize urgent bookings (< 2h) to the top in pending views
+      // Ưu tiên hiển thị đơn khẩn cấp (< 2 giờ) lên đầu danh sách chờ duyệt
       if (activeTab === "bookings-pending" || bookingStatusFilter === "Pending") {
         const aUrgent = isBookingUrgent(a);
         const bUrgent = isBookingUrgent(b);
@@ -814,7 +845,7 @@ export default function AdminPage() {
     (i: EquipmentIssue) => i.status === "Pending" || i.status === "Assigned" || i.status === "Fixing"
   ).length;
 
-  // Academic dot status renderers
+  // Hàm hiển thị chấm trạng thái học phần / thời khóa biểu
   const renderAcademicBookingStatus = (statusStr: any, record?: Booking) => {
     const reason = (record?.rejectReason || record?.rejectionReason || record?.adminNotes || '').toLowerCase();
     const isExpired = statusStr === "Expired" || String(statusStr) === "3" || (record && isBookingExpired(record)) || reason.includes('hết hạn');
@@ -1112,7 +1143,7 @@ export default function AdminPage() {
     );
   };
 
-  // Columns for Room Table
+  // Cấu hình các cột cho Bảng danh mục phòng học
   const roomColumns = [
     {
       title: "Mã & Tên phòng",
@@ -1244,33 +1275,35 @@ export default function AdminPage() {
     },
   ];
 
-  // Columns for Booking Table
+  // Cấu hình các cột cho Bảng quản lý đơn đặt phòng (tối ưu kích thước hiển thị vừa vặn không cần cuộn ngang)
   const bookingColumns = [
     {
       title: "Mã Đơn",
       dataIndex: "id",
       key: "id",
-      width: 100,
+      width: 90,
+      align: "center" as const,
       sorter: (a: Booking, b: Booking) => a.id - b.id,
       render: (id: number) => (
-        <Text code style={{ fontWeight: 600, color: "#0d2e5c" }}>
+        <Text code style={{ fontWeight: 600, color: "#0d2e5c", whiteSpace: "nowrap" }}>
           #TBD-{id}
         </Text>
       ),
     },
     {
-      title: "Phòng Đăng Ký",
+      title: "Phòng",
       dataIndex: "roomName",
       key: "roomName",
+      width: 85,
       sorter: (a: Booking, b: Booking) => (a.roomName || "").localeCompare(b.roomName || ""),
       render: (text: string, record: Booking) => (
         <div>
-          <Text strong style={{ color: "#0d2e5c", fontSize: 14 }}>
+          <Text strong style={{ color: "#0d2e5c", fontSize: 13, whiteSpace: "nowrap" }}>
             {text}
           </Text>
           {record.isSpecialRequest && (
-            <div style={{ fontSize: 11, color: "#d97706" }}>
-              • Sự kiện đặc biệt
+            <div style={{ fontSize: 10, color: "#d97706", lineHeight: 1.1, whiteSpace: "nowrap" }}>
+              • Đặc biệt
             </div>
           )}
         </div>
@@ -1280,28 +1313,35 @@ export default function AdminPage() {
       title: "Người Đăng Ký",
       dataIndex: "userEmail",
       key: "userEmail",
+      width: 175,
+      ellipsis: true,
       render: (email: string, record: Booking) => (
-        <div>
-          <Text style={{ fontSize: 13, color: "#1e293b", fontWeight: 500 }}>
-            {email || "N/A"}
-          </Text>
-          {record.department && (
-            <div style={{ fontSize: 11, color: "#64748b" }}>{normalizeDepartmentName(record.department)}</div>
-          )}
-        </div>
+        <Tooltip title={email || "N/A"} placement="topLeft">
+          <div>
+            <Text style={{ fontSize: 12.5, color: "#1e293b", fontWeight: 500, display: "block" }} ellipsis>
+              {email || "N/A"}
+            </Text>
+            {record.department && (
+              <div style={{ fontSize: 11, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {normalizeDepartmentName(record.department)}
+              </div>
+            )}
+          </div>
+        </Tooltip>
       ),
     },
     {
-      title: "Thời Gian Đặt",
+      title: "Thời Gian",
       key: "time",
+      width: 115,
       sorter: (a: Booking, b: Booking) =>
         dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf(),
       render: (_: any, record: Booking) => (
         <div>
-          <Text style={{ fontSize: 13, fontWeight: 500 }}>
+          <Text style={{ fontSize: 12.5, fontWeight: 500, display: "block", whiteSpace: "nowrap" }}>
             {dayjs(record.startTime).format("DD/MM/YYYY")}
           </Text>
-          <div style={{ fontSize: 12, color: "#64748b" }}>
+          <div style={{ fontSize: 11.5, color: "#64748b", whiteSpace: "nowrap" }}>
             {dayjs(record.startTime).format("HH:mm")} - {dayjs(record.endTime).format("HH:mm")}
           </div>
         </div>
@@ -1313,25 +1353,100 @@ export default function AdminPage() {
       key: "purpose",
       ellipsis: true,
       render: (text: string) => (
-        <span style={{ color: "#334155" }}>{text || "--"}</span>
+        <Tooltip title={text || "--"} placement="topLeft">
+          <span style={{ color: "#334155", cursor: "pointer", fontSize: 12.5 }}>{text || "--"}</span>
+        </Tooltip>
       ),
     },
     {
       title: "Trạng Thái",
       dataIndex: "status",
       key: "status",
+      width: 125,
       render: (status: any, record: Booking) => renderAcademicBookingStatus(status, record),
     },
     {
       title: "Thao Tác",
       key: "actions",
-      width: 220,
+      width: 95,
+      align: "center" as const,
       render: (_: any, record: Booking) => {
         const isExpired = record.status === "Expired" || isBookingExpired(record);
         const isPending = !isExpired && isPendingBooking(record.status);
 
+        if (isPending) {
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3.5, alignItems: "center", justifyContent: "center" }}>
+              <Button
+                type="primary"
+                size="small"
+                icon={<CheckOutlined style={{ fontSize: 10 }} />}
+                style={{
+                  backgroundColor: "#059669",
+                  borderColor: "#059669",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  height: 22,
+                  width: 76,
+                  padding: 0,
+                  borderRadius: 4,
+                }}
+                loading={
+                  bookingMutation.isPending &&
+                  bookingMutation.variables?.id === record.id &&
+                  bookingMutation.variables?.status === "Approved"
+                }
+                onClick={() => {
+                  setBookingToApprove(record);
+                  setApproveNotes("Phê duyệt bởi Ban Quản lý");
+                }}
+              >
+                Duyệt
+              </Button>
+
+              <Button
+                danger
+                size="small"
+                icon={<CloseOutlined style={{ fontSize: 10 }} />}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  height: 22,
+                  width: 76,
+                  padding: 0,
+                  borderRadius: 4,
+                }}
+                onClick={() => {
+                  setRejectBookingId(record.id);
+                  rejectReasonForm.resetFields();
+                  setIsRejectModalVisible(true);
+                }}
+                loading={
+                  bookingMutation.isPending &&
+                  bookingMutation.variables?.id === record.id &&
+                  bookingMutation.variables?.status === "Rejected"
+                }
+              >
+                Từ chối
+              </Button>
+
+              <button
+                type="button"
+                className="academic-action-btn"
+                style={{ fontSize: 11, color: "#1d4ed8", padding: "1px 2px", lineHeight: 1 }}
+                onClick={() => {
+                  setSelectedBooking(record);
+                  setIsBookingDetailModalVisible(true);
+                }}
+              >
+                Chi tiết
+              </button>
+            </div>
+          );
+        }
+
         return (
-          <Space size="small">
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center", justifyContent: "center" }}>
             <button
               type="button"
               className="academic-action-btn"
@@ -1344,66 +1459,17 @@ export default function AdminPage() {
             </button>
 
             {isExpired && (
-              <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic", padding: "0 4px" }}>
+              <span style={{ fontSize: 10.5, color: "#64748b", fontStyle: "italic", whiteSpace: "nowrap" }}>
                 Quá giờ duyệt
               </span>
             )}
-
-            {isPending && (
-              <>
-                <Button
-                  type="primary"
-                  size="small"
-                  style={{
-                    backgroundColor: "#059669",
-                    borderColor: "#059669",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "0 10px",
-                  }}
-                  loading={
-                    bookingMutation.isPending &&
-                    bookingMutation.variables?.id === record.id &&
-                    bookingMutation.variables?.status === "Approved"
-                  }
-                  onClick={() => {
-                    setBookingToApprove(record);
-                    setApproveNotes("Phê duyệt bởi Ban Quản lý");
-                  }}
-                >
-                  Duyệt
-                </Button>
-
-                <Button
-                  danger
-                  size="small"
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "0 10px",
-                  }}
-                  onClick={() => {
-                    setRejectBookingId(record.id);
-                    rejectReasonForm.resetFields();
-                    setIsRejectModalVisible(true);
-                  }}
-                  loading={
-                    bookingMutation.isPending &&
-                    bookingMutation.variables?.id === record.id &&
-                    bookingMutation.variables?.status === "Rejected"
-                  }
-                >
-                  Từ chối
-                </Button>
-              </>
-            )}
-          </Space>
+          </div>
         );
       },
     },
   ];
 
-  // Columns for Equipment Issues
+  // Cấu hình các cột cho Bảng báo cáo sự cố cơ sở vật chất
   const issueColumns = [
     {
       title: "Mã Sự Cố",
@@ -1561,7 +1627,7 @@ export default function AdminPage() {
     },
   ];
 
-  // Columns for Equipment Inventory
+  // Cấu hình các cột cho Bảng kho trang thiết bị mượn thêm
   const equipmentInventoryColumns = [
     {
       title: "Mã Thiết Bị",
@@ -1649,7 +1715,7 @@ export default function AdminPage() {
     },
   ];
 
-  // Columns for Users Table
+  // Cấu hình các cột cho Bảng quản lý tài khoản người dùng
   const userColumns = [
     {
       title: "Mã định danh",
@@ -1818,7 +1884,7 @@ export default function AdminPage() {
     },
   ];
 
-  // Helper for Exporting Excel / PDF
+  // Hàm hỗ trợ xuất dữ liệu ra file Excel / PDF
   const handleExport = (type: "excel" | "pdf") => {
     message.loading({ content: `Đang kết xuất dữ liệu sang ${type.toUpperCase()}...`, key: "export" });
     setTimeout(() => {
@@ -1847,7 +1913,7 @@ export default function AdminPage() {
     }, 400);
   };
 
-  // Breadcrumb and Page Title resolution
+  // Xác định tiêu đề trang và thanh điều hướng Breadcrumb
   const getBreadcrumbAndTitle = () => {
     const rootName = isAdmin ? "Quản trị" : "Quản lý ĐT & CSVC";
     switch (activeTab) {
@@ -1941,7 +2007,7 @@ export default function AdminPage() {
 
   const currentHeaderInfo = getBreadcrumbAndTitle();
 
-  // Top action button renderer
+  // Hàm hiển thị các nút thao tác nhanh ở đầu trang
   const renderTopActionButton = () => {
     if (activeTab.startsWith("rooms")) {
       return (
@@ -2028,7 +2094,7 @@ export default function AdminPage() {
     return null;
   };
 
-  // Main Content Panes
+  // Nội dung chi tiết của từng tab quản trị
   const renderMainContent = () => {
     if (activeTab === "analytics") {
       return (
@@ -2071,7 +2137,7 @@ export default function AdminPage() {
               dataSource={bookingsData}
               rowKey="id"
               pagination={{ pageSize: 8, hideOnSinglePage: true }}
-              scroll={{ x: 'max-content' }}
+              
               locale={{ emptyText: <Empty description="Chưa có lịch đăng ký trong tuần" /> }}
             />
           </div>
@@ -2128,7 +2194,7 @@ export default function AdminPage() {
           )}
 
           {/* Flat Toolbar */}
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16, boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)" }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} xl={17} lg={16}>
                 <Space wrap size={[8, 8]} align="center">
@@ -2178,7 +2244,7 @@ export default function AdminPage() {
             </Row>
           </div>
 
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, overflow: "hidden" }}>
+          <div>
             {bookingsQuery.isLoading ? (
               <div style={{ padding: 24 }}>
                 <Skeleton active paragraph={{ rows: 6 }} />
@@ -2190,7 +2256,6 @@ export default function AdminPage() {
                 dataSource={bookingsData}
                 rowKey="id"
                 pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
-                scroll={{ x: 'max-content' }}
                 locale={{ emptyText: <Empty description="Không tìm thấy đơn đặt phòng nào" /> }}
               />
             )}
@@ -2203,7 +2268,7 @@ export default function AdminPage() {
       return (
         <div>
           {/* Flat Toolbar */}
-          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ background: "#ffffff", border: "1.5px solid #94a3b8", borderRadius: 8, padding: "12px 16px", marginBottom: 16, boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)" }}>
             <Row gutter={[12, 12]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <Space wrap size={[8, 8]} align="center">
@@ -2269,7 +2334,7 @@ export default function AdminPage() {
                 dataSource={roomsData}
                 rowKey="id"
                 pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: true }}
-                scroll={{ x: 'max-content' }}
+                
                 locale={{ emptyText: <Empty description="Không tìm thấy phòng học" /> }}
               />
             </div>
@@ -2426,7 +2491,7 @@ export default function AdminPage() {
               rowKey="id"
               loading={equipmentsQuery.isLoading}
               pagination={{ pageSize: 10, hideOnSinglePage: true }}
-              scroll={{ x: 'max-content' }}
+              
               locale={{ emptyText: <Empty description="Danh mục thiết bị rỗng" /> }}
             />
           </div>
@@ -2581,7 +2646,7 @@ export default function AdminPage() {
               rowKey="email"
               loading={accountsQuery.isLoading}
               pagination={{ pageSize: 10, hideOnSinglePage: true }}
-              scroll={{ x: 'max-content' }}
+              
               locale={{ emptyText: <Empty description="Không tìm thấy tài khoản phù hợp" /> }}
             />
           </div>
@@ -2655,7 +2720,7 @@ export default function AdminPage() {
                 className="academic-table"
                 size="small"
                 pagination={false}
-                scroll={{ x: 'max-content' }}
+                
                 columns={[
                   {
                     title: "TIẾT",
@@ -3368,7 +3433,7 @@ export default function AdminPage() {
                 background: "#f8fafc",
                 padding: "12px 16px",
                 borderRadius: 8,
-                border: "1px solid #e2e8f0",
+                border: "1.5px solid #94a3b8",
                 fontSize: 13,
                 lineHeight: 1.8,
               }}
